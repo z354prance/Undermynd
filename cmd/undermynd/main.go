@@ -17,6 +17,7 @@ import (
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/pipeline"
 	"github.com/z354prance/undermynd/internal/qbitapi"
+	"github.com/z354prance/undermynd/internal/sabapi"
 	"github.com/z354prance/undermynd/internal/store"
 	"github.com/z354prance/undermynd/internal/web"
 )
@@ -86,7 +87,12 @@ func main() {
 		logger.Fatalf("auth: %v", err)
 	}
 	eng := pipeline.New(st, cfg, logger)
-	machine := qbitapi.New(st, eng, cfg, logger)
+	qb := qbitapi.New(st, eng, cfg, logger)
+	sab := sabapi.New(st, eng, cfg, logger)
+	machine := http.NewServeMux()
+	machine.Handle("/api", sab.Handler())
+	machine.Handle("/sabnzbd/", sab.Handler())
+	machine.Handle("/", qb.Handler())
 	site := web.New(st, eng, cfg, au, logger)
 
 	if cfg.Created {
@@ -103,7 +109,7 @@ func main() {
 
 	servers := []*http.Server{
 		{Addr: env.PublicAddr, Handler: site.Handler(), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second},
-		{Addr: env.MachineAddr, Handler: machine.Handler(), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 60 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second},
+		{Addr: env.MachineAddr, Handler: machine, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 60 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second},
 	}
 	errc := make(chan error, len(servers))
 	for _, s := range servers {

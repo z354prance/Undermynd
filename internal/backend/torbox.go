@@ -1,0 +1,349 @@
+package backend
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/z354prance/undermynd/internal/job"
+)
+
+// TorBox downloads usenet items on TorBox and copies the finished files down.
+type TorBox struct {
+	BaseURL string
+	Token   string
+	Lim     *Limiter
+	Logf    func(format string, args ...any)
+	// ListTTL is how long a list result is reused. TorBox refreshes its own list about every 5 seconds.
+	ListTTL time.Duration
+	Now     func() time.Time
+
+	api *http.Client // API calls
+	dl  *http.Client // file transfers (no overall timeout)
+
+	mu       sync.Mutex
+	items    map[string]tbItem
+	cachedAt time.Time
+	seen     map[string]bool // states already logged
+}
+
+func NewTorBox(baseURL, token string, lim *Limiter) *TorBox {
+	return &TorBox{BaseURL: strings.TrimRight(baseURL, "/"), Token: token, Lim: lim, ListTTL: 10 * time.Second,
+		Now: time.Now, api: &http.Client{Timeout: 45 * time.Second}, dl: &http.Client{}, seen: map[string]bool{},
+		Logf: func(string, ...any) {}}
+}
+
+func (t *TorBox) Name() string { return "torbox" }
+
+type tbFile struct {
+	ID        json.Number `json:"id"`
+	Name      string      `json:"name"`
+	ShortName string      `json:"short_name"`
+	Size      int64       `json:"size"`
+}
+
+type tbItem struct {
+	ID               json.Number `json:"id"`
+	Name             string      `json:"name"`
+	Size             int64       `json:"size"`
+	Progress         float64     `json:"progress"`
+	DownloadState    string      `json:"download_state"`
+	DownloadFinished bool        `json:"download_finished"`
+	DownloadPresent  bool        `json:"download_present"`
+	Active           bool        `json:"active"`
+	Files            []tbFile    `json:"files"`
+}
+
+type envelope struct {
+	Success bool            `json:"success"`
+	Error   any             `json:"error"`
+	Detail  string          `json:"detail"`
+	Data    json.RawMessage `json:"data"`
+}
+
+// call performs one API request through the limiter and turns TorBox's
+// error shapes into ErrBusy, Permanent, or an ordinary error.
+func (t *TorBox) call(ctx context.Context, c Class, method, path string, q url.Values, body io.Reader, ctype string) (json.RawMessage, error) {
+	if err := t.Lim.Acquire(ctx, c); err != nil {
+		return nil, err
+	}
+	u := t.BaseURL + path
+	if len(q) > 0 {
+		u += "?" + q.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u, body)
+	if err != nil {
+		if c == Create {
+			t.Lim.Refund()
+		}
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+t.Token)
+	if ctype != "" {
+		req.Header.Set("Content-Type", ctype)
+	}
+	resp, err := t.api.Do(req)
+	if err != nil {
+		if c == Create {
+			t.Lim.Refund() // never reached TorBox
+		}
+		return nil, fmt.Errorf("torbox %s: %w", path, err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
+	if resp.StatusCode == http.StatusTooManyRequests {
+		d := 60 * time.Second
+		if s, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && s > 0 {
+			d = time.Duration(s) * time.Second
+		}
+		t.Lim.Backoff(d)
+		return nil, fmt.Errorf("%w: TorBox rate limit (HTTP 429), waiting %s", ErrBusy, d)
+	}
+	var env envelope
+	_ = json.Unmarshal(b, &env)
+	code := strings.ToUpper(fmt.Sprint(env.Error))
+	switch {
+	case strings.Contains(code, "ACTIVE_LIMIT"), strings.Contains(code, "COOLDOWN_LIMIT"):
+		t.Lim.Backoff(2 * time.Minute)
+		return nil, fmt.Errorf("%w: TorBox says %s", ErrBusy, code)
+	case strings.Contains(code, "BOZO_NZB"):
+		return nil, Permanent{"TorBox rejected the NZB as invalid"}
+	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
+		return nil, Permanent{"TorBox refused the API token"}
+	case resp.StatusCode >= 300 || (!env.Success && len(b) > 0 && env.Error != nil):
+		return nil, fmt.Errorf("torbox %s: HTTP %d %s %s", path, resp.StatusCode, code, env.Detail)
+	}
+	return env.Data, nil
+}
+
+// Add sends the stored NZB to TorBox. The post_processing field is left out so
+// TorBox repairs, unpacks and keeps only the wanted files.
+func (t *TorBox) Add(ctx context.Context, j job.Job) (string, string, error) {
+	if j.NZBPath == "" {
+		return "", "", Permanent{"torbox backend only handles NZBs in this build"}
+	}
+	nzb, err := os.ReadFile(j.NZBPath)
+	if err != nil {
+		return "", "", err
+	}
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	fw, _ := w.CreateFormFile("file", j.Name+".nzb")
+	_, _ = fw.Write(nzb)
+	_ = w.WriteField("name", j.Name)
+	_ = w.Close()
+	data, err := t.call(ctx, Create, http.MethodPost, "/v1/api/usenet/createusenetdownload", nil, &buf, w.FormDataContentType())
+	if err != nil {
+		return "", "", err
+	}
+	var out struct {
+		ID json.Number `json:"usenetdownload_id"`
+	}
+	if err := json.Unmarshal(data, &out); err != nil || out.ID == "" || out.ID == "0" {
+		return "", "", fmt.Errorf("torbox create: no download ID in the response")
+	}
+	t.invalidate()
+	return out.ID.String(), "", nil
+}
+
+func (t *TorBox) invalidate() {
+	t.mu.Lock()
+	t.cachedAt = time.Time{}
+	t.mu.Unlock()
+}
+
+// list returns every usenet item, reusing a recent result so any number of jobs
+// cost one call per interval.
+func (t *TorBox) list(ctx context.Context) (map[string]tbItem, error) {
+	t.mu.Lock()
+	if t.items != nil && t.Now().Sub(t.cachedAt) < t.ListTTL {
+		defer t.mu.Unlock()
+		return t.items, nil
+	}
+	fresh := t.items == nil || t.cachedAt.IsZero()
+	t.mu.Unlock()
+	q := url.Values{"limit": {"1000"}}
+	if fresh {
+		q.Set("bypass_cache", "true") // right after a create or delete, ask for live data
+	}
+	data, err := t.call(ctx, API, http.MethodGet, "/v1/api/usenet/mylist", q, nil, "")
+	if err != nil {
+		return nil, err
+	}
+	var list []tbItem
+	if err := json.Unmarshal(data, &list); err != nil {
+		return nil, fmt.Errorf("torbox list: %w", err)
+	}
+	m := make(map[string]tbItem, len(list))
+	for _, it := range list {
+		m[it.ID.String()] = it
+	}
+	t.mu.Lock()
+	t.items, t.cachedAt = m, t.Now()
+	t.mu.Unlock()
+	return m, nil
+}
+
+func (t *TorBox) Status(ctx context.Context, id string) (Item, error) {
+	m, err := t.list(ctx)
+	if err != nil {
+		return Item{}, err
+	}
+	it, ok := m[id]
+	if !ok {
+		return Item{Status: Missing}, nil
+	}
+	st := strings.ToLower(it.DownloadState)
+	t.mu.Lock()
+	if !t.seen[st] {
+		t.seen[st] = true
+		t.Logf("torbox: saw download_state %q (progress %v, finished %v)", it.DownloadState, it.Progress, it.DownloadFinished)
+	}
+	t.mu.Unlock()
+	p := it.Progress
+	if p > 1 {
+		p /= 100 // the docs do not say whether this is a fraction or a percentage
+	}
+	for _, bad := range []string{"fail", "error", "incomplete", "missing", "corrupt", "encrypt", "bozo", "dmca", "abort"} {
+		if strings.Contains(st, bad) {
+			return Item{Status: Errored, Progress: p, Error: "TorBox state: " + it.DownloadState}, nil
+		}
+	}
+	if it.DownloadFinished && len(it.Files) > 0 {
+		return Item{Status: Complete, Progress: 1}, nil
+	}
+	return Item{Status: Downloading, Progress: p}, nil
+}
+
+func (t *TorBox) Files(ctx context.Context, id string) ([]File, error) {
+	m, err := t.list(ctx)
+	if err != nil {
+		return nil, err
+	}
+	it, ok := m[id]
+	if !ok {
+		return nil, errors.New("torbox: item not in the list")
+	}
+	out := make([]File, 0, len(it.Files))
+	for _, f := range it.Files {
+		out = append(out, File{ID: f.ID.String(), Path: f.Name, Size: f.Size})
+	}
+	return out, nil
+}
+
+// Remove deletes the item and its stored files from the TorBox account.
+func (t *TorBox) Remove(ctx context.Context, id string, _ bool) error {
+	body, _ := json.Marshal(map[string]any{"usenet_id": json.Number(id), "operation": "delete"})
+	_, err := t.call(ctx, API, http.MethodPost, "/v1/api/usenet/controlusenetdownload", nil, bytes.NewReader(body), "application/json")
+	t.invalidate()
+	return err
+}
+
+// Fetch copies one file to dst through a permanent download link, resuming from
+// a partial copy. The link request is paced, and the URL (it carries the token)
+// is never logged.
+func (t *TorBox) Fetch(ctx context.Context, id string, f File, dst string, progress func(n int64)) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	part := dst + ".part"
+	var have int64
+	if st, err := os.Stat(part); err == nil {
+		have = st.Size()
+	}
+	if f.Size > 0 && have > f.Size {
+		_ = os.Remove(part)
+		have = 0
+	}
+	if f.Size > 0 && have == f.Size {
+		return os.Rename(part, dst)
+	}
+	if err := t.Lim.Acquire(ctx, Link); err != nil {
+		return err
+	}
+	q := url.Values{"token": {t.Token}, "usenet_id": {id}, "file_id": {f.ID}, "redirect": {"true"}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.BaseURL+"/v1/api/usenet/requestdl?"+q.Encode(), nil)
+	if err != nil {
+		return err
+	}
+	if have > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", have))
+	}
+	resp, err := t.dl.Do(req)
+	if err != nil {
+		return errors.New("torbox download request failed") // do not include the URL
+	}
+	defer resp.Body.Close()
+	switch {
+	case resp.StatusCode == http.StatusTooManyRequests:
+		d := 60 * time.Second
+		if s, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && s > 0 {
+			d = time.Duration(s) * time.Second
+		}
+		t.Lim.Backoff(d)
+		return fmt.Errorf("%w: download link rate limit, waiting %s", ErrBusy, d)
+	case resp.StatusCode == http.StatusRequestedRangeNotSatisfiable:
+		return os.Rename(part, dst)
+	case resp.StatusCode == http.StatusOK:
+		have = 0 // the server ignored Range: start over
+	case resp.StatusCode == http.StatusPartialContent:
+	default:
+		return fmt.Errorf("torbox download: HTTP %d", resp.StatusCode)
+	}
+	if have > 0 {
+		progress(have) // count the bytes already on disk
+	}
+	flags := os.O_CREATE | os.O_WRONLY
+	if have == 0 {
+		flags |= os.O_TRUNC
+	} else {
+		flags |= os.O_APPEND
+	}
+	out, err := os.OpenFile(part, flags, 0o644)
+	if err != nil {
+		return err
+	}
+	buf := make([]byte, 256<<10)
+	var written int64
+	for {
+		n, rerr := resp.Body.Read(buf)
+		if n > 0 {
+			if _, werr := out.Write(buf[:n]); werr != nil {
+				out.Close()
+				return werr
+			}
+			written += int64(n)
+			progress(int64(n))
+		}
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			out.Close() // keep the partial file so the next attempt resumes
+			return fmt.Errorf("torbox download interrupted: %w", rerr)
+		}
+	}
+	if err := out.Sync(); err != nil {
+		out.Close()
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+	if f.Size > 0 && have+written != f.Size {
+		return fmt.Errorf("size mismatch: got %d of %d bytes", have+written, f.Size)
+	}
+	return os.Rename(part, dst)
+}

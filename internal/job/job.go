@@ -1,7 +1,10 @@
 // Package job defines the per-grab job record and its state machine.
 package job
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type State string
 
@@ -41,8 +44,12 @@ type Job struct {
 	Progress float64 `json:"progress"` // backend download progress, 0..1
 	Size     int64   `json:"size"`
 
+	PullDone  int64 `json:"pullDone,omitempty"` // bytes copied from the remote backend to staging
+	PullTotal int64 `json:"pullTotal,omitempty"`
+
 	Magnet      string `json:"magnet,omitempty"`
 	TorrentPath string `json:"torrentPath,omitempty"`
+	NZBPath     string `json:"nzbPath,omitempty"`
 	Backend     string `json:"backend,omitempty"`
 	RemoteID    string `json:"remoteId,omitempty"`
 	SavePath    string `json:"savePath,omitempty"`
@@ -84,6 +91,7 @@ func (j *Job) Move(to State, reason string, now time.Time) {
 	j.Updated = now
 	j.Attempts = 0
 	j.NextRun = time.Time{}
+	j.NextRun = time.Time{}
 }
 
 func (j Job) Clone() Job {
@@ -121,12 +129,26 @@ func Overall(j Job) float64 {
 	switch j.State {
 	case Received, Submitted:
 		return 0
-	case Downloading, Pulling:
-		return j.Progress * 0.9
+	case Downloading:
+		return j.Progress * 0.8
+	case Pulling:
+		if j.PullTotal > 0 {
+			return 0.8 + 0.1*float64(j.PullDone)/float64(j.PullTotal)
+		}
+		return 0.8
 	case Downloaded, QueuedTranscode, Transcoding, Verifying:
 		return 0.95
 	case Ready, Imported, Cleaned:
 		return 1
 	}
-	return j.Progress * 0.9
+	return j.Progress * 0.8
+}
+
+// DownloadID is the ID the arr recorded for this grab: torrent hashes are
+// upper-case in the arrs' history, NZB IDs are used exactly as handed out.
+func (j Job) DownloadID() string {
+	if j.Kind == "torrent" {
+		return strings.ToUpper(j.ID)
+	}
+	return j.ID
 }

@@ -3,6 +3,9 @@ package pipeline
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -33,38 +36,94 @@ type Engine struct {
 	Log   *log.Logger
 	Now   func() time.Time
 
-	// Override replaces the configured backend (tests).
+	// Override replaces every backend (tests).
 	Override backend.Backend
 	// ArrFor replaces the arr client lookup (tests).
 	ArrFor func(config.Category) ImportChecker
 
 	submitMu sync.Mutex
 	bmu      sync.Mutex
-	bkey     string
-	bcache   backend.Backend
+	qkey     string
+	qcache   backend.Backend
+	tkey     string
+	tcache   *backend.TorBox
+	lim      *backend.Limiter
+
+	pulling sync.Map // job ID -> running
+	wg      sync.WaitGroup
+	sem     chan struct{}
 }
 
 func New(s *store.Store, c *config.Config, l *log.Logger) *Engine {
 	if l == nil {
 		l = log.New(io.Discard, "", 0)
 	}
-	return &Engine{Store: s, Cfg: c, Log: l, Now: time.Now}
+	return &Engine{Store: s, Cfg: c, Log: l, Now: time.Now, sem: make(chan struct{}, max(1, c.Get().TorBox.PullersAtOnce))}
 }
 
-func (e *Engine) backend() backend.Backend {
-	if e.Override != nil {
-		return e.Override
-	}
+// Wait blocks until background pulls have finished (tests).
+func (e *Engine) Wait() { e.wg.Wait() }
+
+func (e *Engine) qbit() backend.Backend {
 	s := e.Cfg.Get()
 	key := s.QBit.URL + "|" + s.QBit.Username + "|" + string(s.QBit.Password) + "|" + s.QBit.SaveDir
 	e.bmu.Lock()
 	defer e.bmu.Unlock()
-	if e.bcache == nil || e.bkey != key {
-		e.bcache = backend.NewQBit(s.QBit.URL, s.QBit.Username, string(s.QBit.Password), s.QBit.SaveDir)
-		e.bkey = key
+	if e.qcache == nil || e.qkey != key {
+		e.qcache = backend.NewQBit(s.QBit.URL, s.QBit.Username, string(s.QBit.Password), s.QBit.SaveDir)
+		e.qkey = key
 	}
-	return e.bcache
+	return e.qcache
 }
+
+func (e *Engine) torbox() *backend.TorBox {
+	s := e.Cfg.Get().TorBox
+	if s.Token == "" {
+		return nil
+	}
+	key := s.BaseURL + "|" + string(s.Token) + fmt.Sprint(s.CreatePerHour, s.LinkGapSeconds)
+	e.bmu.Lock()
+	defer e.bmu.Unlock()
+	if e.tcache == nil || e.tkey != key {
+		e.lim = backend.NewLimiter(filepath.Join(e.Cfg.Env.ConfigDir, "torbox-limiter.json"), s.CreatePerHour,
+			time.Duration(s.LinkGapSeconds)*time.Second)
+		e.lim.Now = func() time.Time { return e.Now() }
+		e.tcache = backend.NewTorBox(s.BaseURL, string(s.Token), e.lim)
+		e.tcache.Now = func() time.Time { return e.Now() }
+		e.tcache.Logf = e.Log.Printf
+		e.tkey = key
+	}
+	return e.tcache
+}
+
+// pick chooses the backend for a new job.
+func (e *Engine) pick(j job.Job) (backend.Backend, error) {
+	if e.Override != nil {
+		return e.Override, nil
+	}
+	if j.Kind == "usenet" {
+		if tb := e.torbox(); tb != nil {
+			return tb, nil
+		}
+		return nil, backend.Permanent{Msg: "no usenet backend is configured: set a TorBox token (NZBGet is not built yet)"}
+	}
+	return e.qbit(), nil
+}
+
+// byName returns the backend a job was already submitted to.
+func (e *Engine) byName(name string) backend.Backend {
+	if e.Override != nil {
+		return e.Override
+	}
+	if name == "torbox" {
+		if tb := e.torbox(); tb != nil {
+			return tb
+		}
+	}
+	return e.qbit()
+}
+
+func (e *Engine) backend(j job.Job) backend.Backend { return e.byName(j.Backend) }
 
 func (e *Engine) arrFor(c config.Category) ImportChecker {
 	if e.ArrFor != nil {
@@ -134,6 +193,78 @@ func (e *Engine) Submit(req SubmitRequest) (job.Job, error) {
 		return job.Job{}, err
 	}
 	e.Log.Printf("job %s received (%s, category %s)", short(id), name, req.Category)
+	return j, nil
+}
+
+type SubmitNZBRequest struct {
+	Category string
+	Name     string
+	NZB      []byte
+}
+
+// nzo IDs look like SABnzbd's, and are derived from the NZB so a repeated grab is the same job.
+func nzoID(nzb []byte) string {
+	h := sha1.Sum(nzb)
+	return "SABnzbd_nzo_" + hex.EncodeToString(h[:])[:12]
+}
+
+func nzbSize(nzb []byte) int64 {
+	var doc struct {
+		Files []struct {
+			Segments []struct {
+				Bytes int64 `xml:"bytes,attr"`
+			} `xml:"segments>segment"`
+		} `xml:"file"`
+	}
+	if xml.Unmarshal(nzb, &doc) != nil {
+		return 0
+	}
+	var n int64
+	for _, f := range doc.Files {
+		for _, s := range f.Segments {
+			n += s.Bytes
+		}
+	}
+	return n
+}
+
+// SubmitNZB creates (or returns) the job for a usenet grab. The returned ID is
+// what the arr records as the download ID.
+func (e *Engine) SubmitNZB(req SubmitNZBRequest) (job.Job, error) {
+	if len(req.NZB) == 0 || !strings.Contains(string(req.NZB[:min(len(req.NZB), 2048)]), "<nzb") {
+		return job.Job{}, errors.New("not an NZB file")
+	}
+	id := nzoID(req.NZB)
+	name := strings.TrimSuffix(strings.TrimSpace(req.Name), ".nzb")
+	if name == "" {
+		name = id
+	}
+	e.submitMu.Lock()
+	defer e.submitMu.Unlock()
+	if cur, ok := e.Store.Get(id); ok && cur.State != job.Cleaned && cur.State != job.Failed {
+		return cur, nil
+	}
+	dir := filepath.Join(e.Cfg.Env.ConfigDir, "nzbs")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return job.Job{}, err
+	}
+	path := filepath.Join(dir, id+".nzb")
+	if err := os.WriteFile(path, req.NZB, 0o600); err != nil {
+		return job.Job{}, err
+	}
+	now := e.Now()
+	j := job.Job{ID: id, Name: name, Category: req.Category, Kind: "usenet", State: job.Received,
+		Size: nzbSize(req.NZB), NZBPath: path, Created: now, Updated: now, StateChanged: now, LastProgress: now}
+	if c, ok := e.Cfg.Get().Category(req.Category); ok {
+		j.Source = c.Kind
+	} else {
+		j.Source = "unknown"
+	}
+	j.History = []job.Transition{{At: now, To: job.Received, Reason: "grab received from " + j.Source}}
+	if err := e.Store.Put(j); err != nil {
+		return job.Job{}, err
+	}
+	e.Log.Printf("job %s received (usenet %s, category %s)", short(id), name, req.Category)
 	return j, nil
 }
 
@@ -239,6 +370,8 @@ func (e *Engine) step(ctx context.Context, j job.Job) {
 		e.doDownload(ctx, j)
 	case job.Downloaded:
 		e.doDownloaded(ctx, j)
+	case job.Pulling:
+		e.doPulling(ctx, j)
 	case job.QueuedTranscode, job.Transcoding, job.Verifying:
 		e.fail(j, "transcode requested but the Tdarr stage is not enabled in this build")
 	case job.Ready:
@@ -254,6 +387,20 @@ func (e *Engine) step(ctx context.Context, j job.Job) {
 // job after max attempts.
 func (e *Engine) retry(j job.Job, err error, max int, what string) {
 	e.Log.Printf("job %s %s: %v", short(j.ID), what, err)
+	var perm backend.Permanent
+	if errors.As(err, &perm) {
+		e.fail(j, perm.Msg)
+		return
+	}
+	if errors.Is(err, backend.ErrBusy) {
+		_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
+			c.Reason = err.Error() + " (waiting)"
+			c.NextRun = e.Now().Add(time.Minute)
+			c.Updated = e.Now()
+			return nil
+		})
+		return
+	}
 	if j.Attempts+1 >= max {
 		e.fail(j, fmt.Sprintf("%s failed: %v", what, err))
 		return
@@ -280,13 +427,18 @@ func (e *Engine) fail(j job.Job, reason string) {
 }
 
 func (e *Engine) doSubmit(ctx context.Context, j job.Job) {
-	rid, save, err := e.backend().Add(ctx, j)
+	b, err := e.pick(j)
+	if err != nil {
+		e.retry(j, err, 4, "choose backend")
+		return
+	}
+	rid, save, err := b.Add(ctx, j)
 	if err != nil {
 		e.retry(j, err, 4, "submit to client")
 		return
 	}
 	_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
-		c.Backend, c.RemoteID, c.SavePath = e.backend().Name(), rid, save
+		c.Backend, c.RemoteID, c.SavePath = b.Name(), rid, save
 		c.LastProgress = e.Now()
 		c.Move(job.Submitted, "sent to "+c.Backend, e.Now())
 		return nil
@@ -294,7 +446,7 @@ func (e *Engine) doSubmit(ctx context.Context, j job.Job) {
 }
 
 func (e *Engine) doDownload(ctx context.Context, j job.Job) {
-	it, err := e.backend().Status(ctx, j.RemoteID)
+	it, err := e.backend(j).Status(ctx, j.RemoteID)
 	if err != nil {
 		e.retry(j, err, 40, "client status")
 		return
@@ -339,7 +491,7 @@ func (e *Engine) reSubmitOrFail(ctx context.Context, j job.Job, why string) {
 		e.fail(j, "stalled or errored: "+why)
 		return
 	}
-	_ = e.backend().Remove(ctx, j.RemoteID, true)
+	_ = e.backend(j).Remove(ctx, j.RemoteID, true)
 	_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
 		c.Retries++
 		c.Progress, c.LastProgress = 0, e.Now()
@@ -373,8 +525,12 @@ func wanted(f backend.File) bool {
 }
 
 func (e *Engine) doDownloaded(ctx context.Context, j job.Job) {
-	b := e.backend()
+	b := e.backend(j)
 	staging := e.Cfg.Env.StagingDir(j.ID)
+	if _, remote := b.(backend.Fetcher); remote && len(j.Files) == 0 {
+		e.planPull(ctx, j, b)
+		return
+	}
 	if len(j.Files) == 0 {
 		files, err := b.Files(ctx, j.RemoteID)
 		if err != nil {
@@ -483,7 +639,7 @@ func (e *Engine) doReady(ctx context.Context, j job.Job) {
 	cat, _ := s.Category(j.Category)
 	next := now.Add(time.Duration(s.ReconcileSeconds) * time.Second)
 	if chk := e.arrFor(cat); chk != nil {
-		ok, err := chk.Imported(ctx, j.ID)
+		ok, err := chk.Imported(ctx, j.DownloadID())
 		switch {
 		case err != nil:
 			e.Log.Printf("job %s import check: %v", short(j.ID), err)
@@ -504,7 +660,7 @@ func (e *Engine) doReady(ctx context.Context, j job.Job) {
 
 func (e *Engine) removeBackendItem(ctx context.Context, j job.Job) error {
 	if j.RemoteID != "" {
-		b := e.backend()
+		b := e.backend(j)
 		if it, err := b.Status(ctx, j.RemoteID); err != nil {
 			return err
 		} else if it.Status != backend.Missing {
@@ -520,6 +676,11 @@ func (e *Engine) removeBackendItem(ctx context.Context, j job.Job) error {
 	}
 	if j.SavePath != "" {
 		if err := e.removeTree(j.SavePath, e.Cfg.Get().QBit.SaveDir); err != nil {
+			return err
+		}
+	}
+	if j.NZBPath != "" {
+		if err := os.Remove(j.NZBPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
 	}
@@ -656,4 +817,128 @@ func short(id string) string {
 		return id[:8]
 	}
 	return id
+}
+
+// ------------------------------------------------------------- remote pull
+
+// planPull lists the remote files, keeps the media, and moves the job to Pulling.
+func (e *Engine) planPull(ctx context.Context, j job.Job, b backend.Backend) {
+	files, err := b.Files(ctx, j.RemoteID)
+	if err != nil {
+		e.retry(j, err, 10, "list files")
+		return
+	}
+	var picked []backend.File
+	var total int64
+	for _, f := range files {
+		if wanted(f) {
+			picked = append(picked, f)
+			total += f.Size
+		}
+	}
+	if len(picked) == 0 {
+		e.fail(j, "no media files in the download")
+		return
+	}
+	_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
+		c.PullTotal, c.PullDone, c.LastProgress = total, 0, e.Now()
+		c.Move(job.Pulling, fmt.Sprintf("copying %d file(s) from %s", len(picked), c.Backend), e.Now())
+		return nil
+	})
+}
+
+// doPulling makes sure a background copy is running; it is idempotent, so it
+// also restarts the copy after a restart of the container.
+func (e *Engine) doPulling(ctx context.Context, j job.Job) {
+	if _, loaded := e.pulling.LoadOrStore(j.ID, true); loaded {
+		return
+	}
+	e.wg.Add(1)
+	go func() {
+		defer e.wg.Done()
+		defer e.pulling.Delete(j.ID)
+		select {
+		case e.sem <- struct{}{}:
+			defer func() { <-e.sem }()
+		case <-ctx.Done():
+			return
+		}
+		e.runPull(ctx, j.ID)
+	}()
+}
+
+func (e *Engine) runPull(ctx context.Context, id string) {
+	j, ok := e.Store.Get(id)
+	if !ok || j.State != job.Pulling {
+		return
+	}
+	b := e.backend(j)
+	f, ok := b.(backend.Fetcher)
+	if !ok {
+		e.fail(j, "backend cannot copy files")
+		return
+	}
+	files, err := b.Files(ctx, j.RemoteID)
+	if err != nil {
+		e.retry(j, err, 10, "list files")
+		return
+	}
+	var picked []backend.File
+	for _, rf := range files {
+		if wanted(rf) {
+			picked = append(picked, rf)
+		}
+	}
+	strip := commonTop(picked)
+	staging := e.Cfg.Env.StagingDir(j.ID)
+	var done int64
+	var rel []string
+	var lastSave time.Time
+	for _, rf := range picked {
+		r := filepath.FromSlash(rf.Path)
+		if strip != "" {
+			r = strings.TrimPrefix(r, strip+string(filepath.Separator))
+		}
+		r = filepath.Clean(r)
+		if filepath.IsAbs(r) || strings.HasPrefix(r, "..") {
+			e.fail(j, "unsafe file path from the backend: "+rf.Path)
+			return
+		}
+		dst := filepath.Join(staging, r)
+		if st, err := os.Stat(dst); err == nil && (rf.Size == 0 || st.Size() == rf.Size) {
+			done += st.Size()
+			rel = append(rel, r)
+			continue
+		}
+		base := done
+		var got int64
+		err := f.Fetch(ctx, j.RemoteID, rf, dst, func(n int64) {
+			got += n
+			if now := e.Now(); now.Sub(lastSave) > 2*time.Second {
+				lastSave = now
+				_, _ = e.Store.Update(id, func(c *job.Job) error {
+					c.PullDone, c.LastProgress, c.Updated = base+got, now, now
+					return nil
+				})
+			}
+		})
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			cur, _ := e.Store.Get(id)
+			e.retry(cur, err, 8, "copy from "+j.Backend)
+			return
+		}
+		done += rf.Size
+		rel = append(rel, r)
+	}
+	_, _ = e.Store.Update(id, func(c *job.Job) error {
+		if c.State != job.Pulling {
+			return nil
+		}
+		c.StagingDir, c.Files, c.PullDone = staging, rel, c.PullTotal
+		c.Move(job.Downloaded, "files copied", e.Now())
+		return nil
+	})
 }

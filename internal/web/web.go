@@ -333,6 +333,13 @@ type settingsView struct {
 		HasPassword bool   `json:"hasPassword"`
 		SaveDir     string `json:"saveDir"`
 	} `json:"qbit"`
+	TorBox struct {
+		Token          string `json:"token,omitempty"` // write-only
+		HasToken       bool   `json:"hasToken"`
+		CreatePerHour  int    `json:"createPerHour"`
+		PullersAtOnce  int    `json:"pullersAtOnce"`
+		LinkGapSeconds int    `json:"linkGapSeconds"`
+	} `json:"torbox"`
 	ClientUser       string `json:"clientUser"`
 	StallMinutes     int    `json:"stallMinutes"`
 	ReconcileSeconds int    `json:"reconcileSeconds"`
@@ -348,6 +355,7 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 			HasArrAPIKey: k.ArrAPIKey != "", Transcode: k.Transcode})
 	}
 	v.QBit.URL, v.QBit.Username, v.QBit.HasPassword, v.QBit.SaveDir = c.QBit.URL, c.QBit.Username, c.QBit.Password != "", c.QBit.SaveDir
+	v.TorBox.HasToken, v.TorBox.CreatePerHour, v.TorBox.PullersAtOnce, v.TorBox.LinkGapSeconds = c.TorBox.Token != "", c.TorBox.CreatePerHour, c.TorBox.PullersAtOnce, c.TorBox.LinkGapSeconds
 	v.ClientUser, v.StallMinutes, v.ReconcileSeconds, v.FlagImportHours = c.ClientUser, c.StallMinutes, c.ReconcileSeconds, c.FlagImportHours
 	writeJSON(w, v)
 }
@@ -379,6 +387,18 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.QBit.SaveDir != "" {
 		next.QBit.SaveDir = in.QBit.SaveDir
+	}
+	if in.TorBox.Token != "" {
+		next.TorBox.Token = secret.String(strings.TrimSpace(in.TorBox.Token))
+	}
+	if in.TorBox.CreatePerHour > 0 {
+		next.TorBox.CreatePerHour = in.TorBox.CreatePerHour
+	}
+	if in.TorBox.PullersAtOnce > 0 {
+		next.TorBox.PullersAtOnce = in.TorBox.PullersAtOnce
+	}
+	if in.TorBox.LinkGapSeconds > 0 {
+		next.TorBox.LinkGapSeconds = in.TorBox.LinkGapSeconds
 	}
 	if in.ClientUser != "" {
 		next.ClientUser = in.ClientUser

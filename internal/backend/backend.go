@@ -3,6 +3,7 @@ package backend
 
 import (
 	"context"
+	"errors"
 
 	"github.com/z354prance/undermynd/internal/job"
 )
@@ -23,8 +24,24 @@ type Item struct {
 }
 
 type File struct {
-	Path string // relative to the job's save path
+	ID   string // remote file ID, when the backend serves files over the network
+	Path string // relative to the job's save path, or the remote path
 	Size int64
+}
+
+// ErrBusy means the backend cannot take the call now (limit reached, no free
+// slot, cooling down). It is a reason to wait, never a failure.
+var ErrBusy = errors.New("backend busy")
+
+// Permanent marks an error that retrying will not fix.
+type Permanent struct{ Msg string }
+
+func (p Permanent) Error() string { return p.Msg }
+
+// Fetcher is implemented by backends whose files must be copied to local disk.
+type Fetcher interface {
+	// Fetch copies one remote file to dst, resuming a partial copy, and reports bytes as they arrive.
+	Fetch(ctx context.Context, remoteID string, f File, dst string, progress func(n int64)) error
 }
 
 type Backend interface {

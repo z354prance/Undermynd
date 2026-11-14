@@ -65,7 +65,16 @@ type QBit struct {
 	SaveDir string `json:"saveDir"`
 }
 
+type TorBox struct {
+	Token          secret.String `json:"token"`
+	BaseURL        string        `json:"baseUrl"`
+	CreatePerHour  int           `json:"createPerHour"`
+	PullersAtOnce  int           `json:"pullersAtOnce"`
+	LinkGapSeconds int           `json:"linkGapSeconds"`
+}
+
 type Settings struct {
+	TorBox     TorBox     `json:"torbox"`
 	Categories []Category `json:"categories"`
 	QBit       QBit       `json:"qbit"`
 
@@ -140,6 +149,18 @@ func Defaults(env Env) Settings {
 }
 
 func fill(s *Settings, env Env) {
+	if s.TorBox.BaseURL == "" {
+		s.TorBox.BaseURL = "https://api.torbox.app"
+	}
+	if s.TorBox.CreatePerHour == 0 {
+		s.TorBox.CreatePerHour = 60
+	}
+	if s.TorBox.PullersAtOnce == 0 {
+		s.TorBox.PullersAtOnce = 2
+	}
+	if s.TorBox.LinkGapSeconds == 0 {
+		s.TorBox.LinkGapSeconds = 3
+	}
 	if s.StallMinutes == 0 {
 		s.StallMinutes = 60
 	}

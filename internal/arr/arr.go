@@ -42,7 +42,7 @@ func (c *Client) Imported(ctx context.Context, downloadID string) (bool, error) 
 	q := url.Values{}
 	q.Set("page", "1")
 	q.Set("pageSize", "100")
-	q.Set("downloadId", strings.ToUpper(downloadID))
+	q.Set("downloadId", downloadID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+c.prefix()+"/history?"+q.Encode(), nil)
 	if err != nil {
 		return false, err
