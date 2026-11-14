@@ -17,7 +17,7 @@ One container that owns the whole download-to-library path for Sonarr, Radarr an
 | 2 TorBox | Usenet and torrents (limiter, batched polling, resumable pull, tracked delete) | built and tested against a stand-in; not yet run against real TorBox |
 | 3 Transcode | Folder hand-off to a dedicated Tdarr library, verification gate | folder hand-off built and tested against a simulated Tdarr; not yet run against real Tdarr |
 | 4 Usenet | Fake SABnzbd, TorBox usenet backend, NZBGet fallback | built and tested against stand-ins; not yet run against real TorBox, NZBGet or an arr |
-| 5 RSS | Feeds and rules | not started |
+| 5 RSS | Feeds, regex rules, first-poll baseline, dedupe, magnet/torrent/NZB items | built and tested against a stand-in feed |
 | 6 Hardening | Notifications, API tokens, more admin actions | partly (reconciler, retries and cleanup are in) |
 | 7 Overmynd merge | Requests, access requests, playback | not started |
 

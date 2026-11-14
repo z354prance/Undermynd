@@ -17,6 +17,7 @@ import (
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/pipeline"
 	"github.com/z354prance/undermynd/internal/qbitapi"
+	"github.com/z354prance/undermynd/internal/rss"
 	"github.com/z354prance/undermynd/internal/sabapi"
 	"github.com/z354prance/undermynd/internal/store"
 	"github.com/z354prance/undermynd/internal/web"
@@ -106,6 +107,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	go eng.Run(ctx, env.TickInterval)
+	go rss.New(cfg, eng, logger).Run(ctx)
 
 	servers := []*http.Server{
 		{Addr: env.PublicAddr, Handler: site.Handler(), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second},

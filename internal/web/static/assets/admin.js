@@ -115,6 +115,24 @@
       var tbx=el('div','grid');var tbf={};
       [['token','password',s.torbox.hasToken?'API token (set — leave blank to keep)':'API token'],['createPerHour','number','new downloads per hour (limit)'],['pullersAtOnce','number','files copied down at once'],['linkGapSeconds','number','seconds between download-link requests']].forEach(function(d){var w=el('div');w.appendChild(el('label','',d[2]));var i=el('input');i.type=d[1];i.value=d[0]==='token'?'':(s.torbox[d[0]]||'');i.autocomplete='off';w.appendChild(i);tbx.appendChild(w);tbf[d[0]]=i});body.appendChild(tbx);
 
+      body.appendChild(el('div','sec','── RSS feeds (first poll of a feed only records what is there) '));
+      var feeds=el('div');body.appendChild(feeds);
+      function addFeed(c){var card=el('div','card grid');var f={};
+        [['name','text','name'],['url','text','feed address'],['intervalMinutes','number','check every (minutes)']].forEach(function(d){var w=el('div');w.appendChild(el('label','',d[2]));var i=el('input');i.type=d[1];i.value=c[d[0]]||'';i.autocomplete='off';w.appendChild(i);card.appendChild(w);f[d[0]]=i});
+        var w2=el('div');w2.appendChild(el('label','','enabled'));var t=el('input');t.type='checkbox';t.checked=c.enabled!==false;t.style.width='auto';w2.appendChild(t);f.enabled=t;card.appendChild(w2);
+        var rm=el('button','bad','remove');rm.onclick=function(){card.remove()};card.appendChild(rm);card._f=f;feeds.appendChild(card)}
+      (s.feeds||[]).forEach(addFeed);
+      var addF=el('button','','add feed');addF.onclick=function(){addFeed({intervalMinutes:15})};body.appendChild(addF);
+
+      body.appendChild(el('div','sec','── RSS rules (regular expressions, case-insensitive; first matching rule wins) '));
+      var rules=el('div');body.appendChild(rules);
+      function addRule(c){var card=el('div','card grid');var f={};
+        [['name','text','name'],['feed','text','feed name (blank = all)'],['mustContain','text','must contain'],['mustNotContain','text','must not contain'],['category','text','category']].forEach(function(d){var w=el('div');w.appendChild(el('label','',d[2]));var i=el('input');i.type=d[1];i.value=c[d[0]]||'';i.autocomplete='off';w.appendChild(i);card.appendChild(w);f[d[0]]=i});
+        var w2=el('div');w2.appendChild(el('label','','enabled'));var t=el('input');t.type='checkbox';t.checked=c.enabled!==false;t.style.width='auto';w2.appendChild(t);f.enabled=t;card.appendChild(w2);
+        var rm=el('button','bad','remove');rm.onclick=function(){card.remove()};card.appendChild(rm);card._f=f;rules.appendChild(card)}
+      (s.rules||[]).forEach(addRule);
+      var addR=el('button','','add rule');addR.onclick=function(){addRule({})};body.appendChild(addR);
+
       body.appendChild(el('div','sec','── Tdarr hand-off (categories with transcode on) '));
       var tdx=el('div','grid');var tdf={};
       [['inDir','text','input folder (Tdarr library source)'],['outDir','text','output folder (Tdarr folder-to-folder output)'],['timeoutMinutes','number','give up waiting after (minutes)']].forEach(function(d){var w=el('div');w.appendChild(el('label','',d[2]));var i=el('input');i.type=d[1];i.value=s.tdarr[d[0]]||'';w.appendChild(i);tdx.appendChild(w);tdf[d[0]]=i});body.appendChild(tdx);
@@ -133,6 +151,8 @@
       var save=el('button','go','save settings');var msg=el('div','err');
       save.onclick=function(){msg.className='err';msg.textContent='';
         var body2={categories:[].map.call(cats.children,function(card){var f=card._f;return {name:f.name.value,kind:f.kind.value,arrUrl:f.arrUrl.value,arrApiKey:f.arrApiKey.value,transcode:f.transcode.checked}}),
+          feeds:[].map.call(feeds.children,function(card){var f=card._f;return {name:f.name.value,url:f.url.value,intervalMinutes:+f.intervalMinutes.value,enabled:f.enabled.checked}}),
+          rules:[].map.call(rules.children,function(card){var f=card._f;return {name:f.name.value,feed:f.feed.value,mustContain:f.mustContain.value,mustNotContain:f.mustNotContain.value,category:f.category.value,enabled:f.enabled.checked}}),
           tdarr:{inDir:tdf.inDir.value,outDir:tdf.outDir.value,timeoutMinutes:+tdf.timeoutMinutes.value},
           nzbget:{url:ngf.url.value,username:ngf.username.value,password:ngf.password.value,destRoot:ngf.destRoot.value},
           torbox:{token:tbf.token.value,createPerHour:+tbf.createPerHour.value,pullersAtOnce:+tbf.pullersAtOnce.value,linkGapSeconds:+tbf.linkGapSeconds.value},

@@ -89,7 +89,26 @@ type Tdarr struct {
 	TimeoutMinutes int    `json:"timeoutMinutes"`
 }
 
+type Feed struct {
+	Name            string `json:"name"`
+	URL             string `json:"url"`
+	IntervalMinutes int    `json:"intervalMinutes"`
+	Enabled         bool   `json:"enabled"`
+}
+
+// Rule picks items from feeds by title. Patterns are case-insensitive regular expressions.
+type Rule struct {
+	Name           string `json:"name"`
+	Feed           string `json:"feed"` // feed name, or blank for all feeds
+	MustContain    string `json:"mustContain"`
+	MustNotContain string `json:"mustNotContain"`
+	Category       string `json:"category"`
+	Enabled        bool   `json:"enabled"`
+}
+
 type Settings struct {
+	Feeds      []Feed     `json:"feeds"`
+	Rules      []Rule     `json:"rules"`
 	Tdarr      Tdarr      `json:"tdarr"`
 	NZBGet     NZBGet     `json:"nzbget"`
 	TorBox     TorBox     `json:"torbox"`

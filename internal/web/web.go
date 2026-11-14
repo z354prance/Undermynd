@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -333,6 +334,8 @@ type settingsView struct {
 		HasPassword bool   `json:"hasPassword"`
 		SaveDir     string `json:"saveDir"`
 	} `json:"qbit"`
+	Feeds []config.Feed `json:"feeds"`
+	Rules []config.Rule `json:"rules"`
 	Tdarr struct {
 		InDir          string `json:"inDir"`
 		OutDir         string `json:"outDir"`
@@ -367,6 +370,13 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 			HasArrAPIKey: k.ArrAPIKey != "", Transcode: k.Transcode})
 	}
 	v.QBit.URL, v.QBit.Username, v.QBit.HasPassword, v.QBit.SaveDir = c.QBit.URL, c.QBit.Username, c.QBit.Password != "", c.QBit.SaveDir
+	v.Feeds, v.Rules = c.Feeds, c.Rules
+	if v.Feeds == nil {
+		v.Feeds = []config.Feed{}
+	}
+	if v.Rules == nil {
+		v.Rules = []config.Rule{}
+	}
 	v.Tdarr.InDir, v.Tdarr.OutDir, v.Tdarr.TimeoutMinutes = c.Tdarr.InDir, c.Tdarr.OutDir, c.Tdarr.TimeoutMinutes
 	v.NZBGet.URL, v.NZBGet.Username, v.NZBGet.HasPassword, v.NZBGet.DestRoot = c.NZBGet.URL, c.NZBGet.Username, c.NZBGet.Password != "", c.NZBGet.DestRoot
 	v.TorBox.HasToken, v.TorBox.CreatePerHour, v.TorBox.PullersAtOnce, v.TorBox.LinkGapSeconds = c.TorBox.Token != "", c.TorBox.CreatePerHour, c.TorBox.PullersAtOnce, c.TorBox.LinkGapSeconds
@@ -403,6 +413,31 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		next.QBit.SaveDir = in.QBit.SaveDir
 	}
 	next.NZBGet.URL, next.NZBGet.Username, next.NZBGet.DestRoot = strings.TrimSpace(in.NZBGet.URL), in.NZBGet.Username, strings.TrimSpace(in.NZBGet.DestRoot)
+	next.Feeds, next.Rules = nil, nil
+	for _, f := range in.Feeds {
+		f.Name, f.URL = strings.TrimSpace(f.Name), strings.TrimSpace(f.URL)
+		if f.Name == "" || f.URL == "" {
+			continue
+		}
+		if !strings.HasPrefix(f.URL, "http://") && !strings.HasPrefix(f.URL, "https://") {
+			jsonErr(w, http.StatusBadRequest, "feed "+f.Name+": the address must start with http:// or https://")
+			return
+		}
+		next.Feeds = append(next.Feeds, f)
+	}
+	for _, ru := range in.Rules {
+		ru.Name = strings.TrimSpace(ru.Name)
+		if ru.Name == "" {
+			continue
+		}
+		for _, pat := range []string{ru.MustContain, ru.MustNotContain} {
+			if _, err := regexp.Compile("(?i)" + pat); err != nil {
+				jsonErr(w, http.StatusBadRequest, "rule "+ru.Name+": that pattern is not a valid regular expression")
+				return
+			}
+		}
+		next.Rules = append(next.Rules, ru)
+	}
 	if d := strings.TrimSpace(in.Tdarr.InDir); d != "" {
 		next.Tdarr.InDir = d
 	}

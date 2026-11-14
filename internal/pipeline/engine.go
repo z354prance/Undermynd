@@ -181,6 +181,7 @@ func (e *Engine) arrFor(c config.Category) ImportChecker {
 // ---------------------------------------------------------------- intake
 
 type SubmitRequest struct {
+	Source   string // overrides the arr kind, e.g. "rss"
 	Category string
 	Magnet   string
 	Torrent  []byte
@@ -219,6 +220,9 @@ func (e *Engine) Submit(req SubmitRequest) (job.Job, error) {
 	} else {
 		j.Source = "unknown"
 	}
+	if req.Source != "" {
+		j.Source = req.Source
+	}
 	if len(req.Torrent) > 0 {
 		dir := filepath.Join(e.Cfg.Env.ConfigDir, "torrents")
 		if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -240,6 +244,7 @@ func (e *Engine) Submit(req SubmitRequest) (job.Job, error) {
 }
 
 type SubmitNZBRequest struct {
+	Source   string
 	Category string
 	Name     string
 	NZB      []byte
@@ -302,6 +307,9 @@ func (e *Engine) SubmitNZB(req SubmitNZBRequest) (job.Job, error) {
 		j.Source = c.Kind
 	} else {
 		j.Source = "unknown"
+	}
+	if req.Source != "" {
+		j.Source = req.Source
 	}
 	j.History = []job.Transition{{At: now, To: job.Received, Reason: "grab received from " + j.Source}}
 	if err := e.Store.Put(j); err != nil {
