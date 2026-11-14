@@ -9,16 +9,15 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/z354prance/undermynd/issues</Support>
   <Project>https://github.com/z354prance/undermynd</Project>
-  <Overview>Download and transcode orchestrator for Sonarr, Radarr and Lidarr. Acts as their qBittorrent and SABnzbd download client, downloads through TorBox (or hands off to qBittorrent / NZBGet), sends video through Tdarr, hands the finished file back for import, and cleans up. Includes built-in RSS auto-download and a public status page for your users. The public page is open, the admin page requires sign-in with a second factor, and the machine port is for your arrs only and must never be exposed outside your LAN. Settings are kept in /mnt/user/appdata/undermynd/config.</Overview>
+  <Overview>Download and transcode orchestrator for Sonarr, Radarr and Lidarr. Acts as their qBittorrent and SABnzbd download client, downloads through TorBox (or hands off to qBittorrent / NZBGet), sends video through Tdarr, hands the finished file back for import, and cleans up. Includes built-in RSS auto-download and a public status page for your users. The public pages are open, the admin pages sit behind a password and second factor on the same address, and the machine port is for your arrs only and must never be exposed outside your LAN. Settings are kept in /mnt/user/appdata/undermynd/config.</Overview>
   <Category>MediaApp:Other Downloaders:</Category>
   <Icon>https://raw.githubusercontent.com/z354prance/undermynd/main/unraid/undermynd-icon.png</Icon>
   <WebUI>http://[IP]:[PORT:8080]</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/z354prance/undermynd/main/unraid/undermynd.xml</TemplateURL>
   <ExtraParams/>
   <PostArgs/>
-  <Config Name="Public port" Target="8080" Default="18080" Mode="tcp" Description="Public status page for your users. Safe to publish through your reverse proxy." Type="Port" Display="always" Required="true" Mask="false">18080</Config>
-  <Config Name="Admin port" Target="8081" Default="18081" Mode="tcp" Description="Admin interface. Publish only through your reverse proxy on its own hostname. Requires sign-in and a second factor." Type="Port" Display="always" Required="true" Mask="false">18081</Config>
-  <Config Name="Machine port (LAN only)" Target="8082" Default="18082" Mode="tcp" Description="Download client API used by Sonarr, Radarr and Lidarr (qBittorrent and SABnzbd compatible). Never expose this outside your LAN." Type="Port" Display="always" Required="true" Mask="false">18082</Config>
+  <Config Name="Web port" Target="8080" Default="18080" Mode="tcp" Description="Public status page for your users, and the admin interface under /admin behind a password and second factor. Publish through your reverse proxy." Type="Port" Display="always" Required="true" Mask="false">18080</Config>
+  <Config Name="Machine port (LAN only)" Target="8081" Default="18081" Mode="tcp" Description="Download client API used by Sonarr, Radarr and Lidarr (qBittorrent and SABnzbd compatible). Never expose this outside your LAN." Type="Port" Display="always" Required="true" Mask="false">18081</Config>
   <Config Name="Configuration" Target="/config" Default="/mnt/user/appdata/undermynd/config" Mode="rw" Description="Persistent database, settings and administrator account." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/undermynd/config</Config>
   <Config Name="Data share" Target="/data" Default="/mnt/user/data" Mode="rw" Description="The one shared data folder. Must be the same path, on the same cache-only share, as in Sonarr, Radarr, Lidarr and Tdarr so moves are instant renames." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/data</Config>
   <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User ID the app runs as (Unraid: 99 for nobody)." Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>

@@ -22,9 +22,8 @@ The image is published to `ghcr.io/z354prance/undermynd` on every push to `main`
 
 | Port | Purpose | Exposure |
 |---|---|---|
-| 8080 | Public status page | Reverse proxy, open to users |
-| 8081 | Admin | Reverse proxy on its own hostname, sign-in plus TOTP |
-| 8082 | Download client API for the arrs | LAN only |
+| 8080 | Public status page, and the admin pages under `/admin` behind a password and TOTP | Reverse proxy, open to users |
+| 8081 | Download client API for the arrs | LAN only |
 
 ## Branding
 
