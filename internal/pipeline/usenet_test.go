@@ -9,6 +9,7 @@ import (
 	"log"
 	"mime/multipart"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/job"
 	"github.com/z354prance/undermynd/internal/pipeline"
+	"github.com/z354prance/undermynd/internal/qbitapi"
 	"github.com/z354prance/undermynd/internal/sabapi"
 	"github.com/z354prance/undermynd/internal/secret"
 	"github.com/z354prance/undermynd/internal/store"
@@ -48,6 +50,26 @@ func newFakeTorBox() *fakeTorBox {
 		}
 		return true
 	}
+	mux.HandleFunc("/v1/api/torrents/createtorrent", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(w, r) {
+			return
+		}
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		_ = r.ParseMultipartForm(1 << 20)
+		if r.FormValue("seed") != "3" || (r.FormValue("magnet") == "" && len(r.MultipartForm.File["file"]) == 0) {
+			http.Error(w, "bad create", 400)
+			return
+		}
+		f.creates++
+		id := fmt.Sprint(100 + f.creates)
+		f.items[id] = map[string]any{"id": json.Number(id), "name": r.FormValue("name"), "size": 40, "progress": 0.2,
+			"download_state": "downloading", "download_finished": false, "files": []any{}}
+		fmt.Fprintf(w, `{"success":true,"data":{"torrent_id":%s}}`, id)
+	})
+	mux.HandleFunc("/v1/api/torrents/mylist", func(w http.ResponseWriter, r *http.Request) { mux2(f, w, r, auth) })
+	mux.HandleFunc("/v1/api/torrents/controltorrent", func(w http.ResponseWriter, r *http.Request) { ctl(f, w, r, auth, "torrent_id") })
+	mux.HandleFunc("/v1/api/torrents/requestdl", func(w http.ResponseWriter, r *http.Request) { dl(f, w, r) })
 	mux.HandleFunc("/v1/api/usenet/createusenetdownload", func(w http.ResponseWriter, r *http.Request) {
 		if !auth(w, r) {
 			return
@@ -332,5 +354,81 @@ func TestUsenetTorBoxErrorStateFailsThenArrDeleteCleans(t *testing.T) {
 	j, _ = u.st.Get(id)
 	if j.State != job.Cleaned {
 		t.Fatalf("expected cleaned after the arr removed it, got %s", j.State)
+	}
+}
+
+func mux2(f *fakeTorBox, w http.ResponseWriter, r *http.Request, auth func(http.ResponseWriter, *http.Request) bool) {
+	if !auth(w, r) {
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	list := []map[string]any{}
+	for _, it := range f.items {
+		list = append(list, it)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": list})
+}
+
+func ctl(f *fakeTorBox, w http.ResponseWriter, r *http.Request, auth func(http.ResponseWriter, *http.Request) bool, field string) {
+	if !auth(w, r) {
+		return
+	}
+	var body map[string]any
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	id := fmt.Sprint(body[field])
+	delete(f.items, id)
+	f.deleted = append(f.deleted, id)
+	fmt.Fprint(w, `{"success":true}`)
+}
+
+func dl(f *fakeTorBox, w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	f.linkHits++
+	content := f.data[r.URL.Query().Get("file_id")]
+	f.mu.Unlock()
+	if r.URL.Query().Get("token") != "tbtoken" || r.URL.Query().Get("torrent_id") == "" {
+		http.Error(w, "no", 403)
+		return
+	}
+	http.ServeContent(w, r, "x", time.Time{}, strings.NewReader(content))
+}
+
+func TestTorBoxTorrent(t *testing.T) {
+	u := newURig(t)
+	qapi := qbitapi.New(u.st, u.eng, u.cfg, log.New(os.Stderr, "", 0))
+	srv := httptest.NewServer(qapi.Handler())
+	defer srv.Close()
+	cl := &http.Client{}
+	jar, _ := cookiejar.New(nil)
+	cl.Jar = jar
+	if _, err := cl.PostForm(srv.URL+"/api/v2/auth/login", url.Values{"username": {"undermynd"}, "password": {"clientpw"}}); err != nil {
+		t.Fatal(err)
+	}
+	magnet := "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=Tor.Movie.2024"
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	_ = w.WriteField("urls", magnet)
+	_ = w.WriteField("category", "tv-sonarr")
+	_ = w.Close()
+	resp, err := cl.Post(srv.URL+"/api/v2/torrents/add", w.FormDataContentType(), &buf)
+	if err != nil || resp.StatusCode != 200 {
+		t.Fatalf("add: %v %v", err, resp)
+	}
+	id := "0123456789abcdef0123456789abcdef01234567"
+	u.tick(2)
+	if j, _ := u.st.Get(id); j.Backend != "torbox" || u.tb.creates != 1 {
+		t.Fatalf("expected a TorBox torrent create, got %s creates=%d (%s)", j.Backend, u.tb.creates, j.Reason)
+	}
+	u.tb.finish("101", map[string]string{"Tor.Movie.2024/Tor.Movie.2024.mkv": strings.Repeat("m", 2048)})
+	u.tick(3)
+	j, _ := u.st.Get(id)
+	if j.State != job.Ready || !exists(filepath.Join(j.CompleteDir, "Tor.Movie.2024.mkv")) {
+		t.Fatalf("expected ready with the file, got %s (%s)", j.State, j.Reason)
+	}
+	if len(u.tb.deleted) != 1 {
+		t.Fatal("TorBox torrent must be deleted after the copy")
 	}
 }

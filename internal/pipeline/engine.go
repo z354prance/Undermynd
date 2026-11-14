@@ -49,6 +49,7 @@ type Engine struct {
 	qcache   backend.Backend
 	tkey     string
 	tcache   *backend.TorBox
+	ttcache  *backend.TorBox
 	lim      *backend.Limiter
 
 	pulling sync.Map // job ID -> running
@@ -93,6 +94,9 @@ func (e *Engine) torbox() *backend.TorBox {
 		e.tcache = backend.NewTorBox(s.BaseURL, string(s.Token), e.lim)
 		e.tcache.Now = func() time.Time { return e.Now() }
 		e.tcache.Logf = e.Log.Printf
+		e.ttcache = backend.NewTorBoxTorrents(s.BaseURL, string(s.Token), e.lim)
+		e.ttcache.Now = e.tcache.Now
+		e.ttcache.Logf = e.Log.Printf
 		e.tkey = key
 	}
 	return e.tcache
@@ -126,16 +130,31 @@ func (e *Engine) pick(j job.Job) (backend.Backend, error) {
 		}
 		return nil, backend.Permanent{Msg: "no usenet backend is configured: set a TorBox token or an NZBGet address"}
 	}
+	if tb := e.torboxTorrents(); tb != nil {
+		return tb, nil
+	}
 	return e.qbit(), nil
 }
 
+func (e *Engine) torboxTorrents() *backend.TorBox {
+	if e.torbox() == nil {
+		return nil
+	}
+	e.bmu.Lock()
+	defer e.bmu.Unlock()
+	return e.ttcache
+}
+
 // byName returns the backend a job was already submitted to.
-func (e *Engine) byName(name string) backend.Backend {
+func (e *Engine) byName(name string, j job.Job) backend.Backend {
 	if e.Override != nil {
 		return e.Override
 	}
 	if name == "torbox" {
 		if tb := e.torbox(); tb != nil {
+			if j.Kind != "usenet" {
+				return e.torboxTorrents()
+			}
 			return tb
 		}
 	}
@@ -147,7 +166,7 @@ func (e *Engine) byName(name string) backend.Backend {
 	return e.qbit()
 }
 
-func (e *Engine) backend(j job.Job) backend.Backend { return e.byName(j.Backend) }
+func (e *Engine) backend(j job.Job) backend.Backend { return e.byName(j.Backend, j) }
 
 func (e *Engine) arrFor(c config.Category) ImportChecker {
 	if e.ArrFor != nil {

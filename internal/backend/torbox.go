@@ -22,10 +22,12 @@ import (
 
 // TorBox downloads usenet items on TorBox and copies the finished files down.
 type TorBox struct {
-	BaseURL string
-	Token   string
-	Lim     *Limiter
-	Logf    func(format string, args ...any)
+	// Torrents selects the torrent endpoints instead of the usenet ones.
+	Torrents bool
+	BaseURL  string
+	Token    string
+	Lim      *Limiter
+	Logf     func(format string, args ...any)
 	// ListTTL is how long a list result is reused. TorBox refreshes its own list about every 5 seconds.
 	ListTTL time.Duration
 	Now     func() time.Time
@@ -46,6 +48,27 @@ func NewTorBox(baseURL, token string, lim *Limiter) *TorBox {
 }
 
 func (t *TorBox) Name() string { return "torbox" }
+
+// NewTorBoxTorrents is the same adapter pointed at TorBox's torrent endpoints.
+func NewTorBoxTorrents(baseURL, token string, lim *Limiter) *TorBox {
+	t := NewTorBox(baseURL, token, lim)
+	t.Torrents = true
+	return t
+}
+
+func (t *TorBox) ep(op string) string {
+	if t.Torrents {
+		return "/v1/api/torrents/" + op
+	}
+	return "/v1/api/usenet/" + op
+}
+
+func (t *TorBox) idField() string {
+	if t.Torrents {
+		return "torrent_id"
+	}
+	return "usenet_id"
+}
 
 type tbFile struct {
 	ID        json.Number `json:"id"`
@@ -131,31 +154,60 @@ func (t *TorBox) call(ctx context.Context, c Class, method, path string, q url.V
 // Add sends the stored NZB to TorBox. The post_processing field is left out so
 // TorBox repairs, unpacks and keeps only the wanted files.
 func (t *TorBox) Add(ctx context.Context, j job.Job) (string, string, error) {
-	if j.NZBPath == "" {
-		return "", "", Permanent{"torbox backend only handles NZBs in this build"}
-	}
-	nzb, err := os.ReadFile(j.NZBPath)
-	if err != nil {
-		return "", "", err
-	}
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
-	fw, _ := w.CreateFormFile("file", j.Name+".nzb")
-	_, _ = fw.Write(nzb)
-	_ = w.WriteField("name", j.Name)
+	create := "createusenetdownload"
+	if t.Torrents {
+		create = "createtorrent"
+		_ = w.WriteField("seed", "3") // never seed
+		_ = w.WriteField("allow_zip", "false")
+		switch {
+		case j.Magnet != "":
+			_ = w.WriteField("magnet", j.Magnet)
+		case j.TorrentPath != "":
+			data, err := os.ReadFile(j.TorrentPath)
+			if err != nil {
+				return "", "", err
+			}
+			fw, _ := w.CreateFormFile("file", j.Name+".torrent")
+			_, _ = fw.Write(data)
+		default:
+			return "", "", Permanent{"torrent has neither a magnet nor a file"}
+		}
+		_ = w.WriteField("name", j.Name)
+	} else {
+		if j.NZBPath == "" {
+			return "", "", Permanent{"this job has no NZB"}
+		}
+		nzb, err := os.ReadFile(j.NZBPath)
+		if err != nil {
+			return "", "", err
+		}
+		fw, _ := w.CreateFormFile("file", j.Name+".nzb")
+		_, _ = fw.Write(nzb)
+		_ = w.WriteField("name", j.Name)
+	}
 	_ = w.Close()
-	data, err := t.call(ctx, Create, http.MethodPost, "/v1/api/usenet/createusenetdownload", nil, &buf, w.FormDataContentType())
+	data, err := t.call(ctx, Create, http.MethodPost, t.ep(create), nil, &buf, w.FormDataContentType())
 	if err != nil {
 		return "", "", err
 	}
 	var out struct {
-		ID json.Number `json:"usenetdownload_id"`
+		Usenet  json.Number `json:"usenetdownload_id"`
+		Torrent json.Number `json:"torrent_id"`
 	}
-	if err := json.Unmarshal(data, &out); err != nil || out.ID == "" || out.ID == "0" {
+	if err := json.Unmarshal(data, &out); err != nil {
+		return "", "", fmt.Errorf("torbox create: unreadable response")
+	}
+	id := out.Usenet
+	if t.Torrents {
+		id = out.Torrent
+	}
+	if id == "" || id == "0" {
 		return "", "", fmt.Errorf("torbox create: no download ID in the response")
 	}
 	t.invalidate()
-	return out.ID.String(), "", nil
+	return id.String(), "", nil
 }
 
 func (t *TorBox) invalidate() {
@@ -178,7 +230,7 @@ func (t *TorBox) list(ctx context.Context) (map[string]tbItem, error) {
 	if fresh {
 		q.Set("bypass_cache", "true") // right after a create or delete, ask for live data
 	}
-	data, err := t.call(ctx, API, http.MethodGet, "/v1/api/usenet/mylist", q, nil, "")
+	data, err := t.call(ctx, API, http.MethodGet, t.ep("mylist"), q, nil, "")
 	if err != nil {
 		return nil, err
 	}
@@ -245,8 +297,8 @@ func (t *TorBox) Files(ctx context.Context, id string) ([]File, error) {
 
 // Remove deletes the item and its stored files from the TorBox account.
 func (t *TorBox) Remove(ctx context.Context, id string, _ bool) error {
-	body, _ := json.Marshal(map[string]any{"usenet_id": json.Number(id), "operation": "delete"})
-	_, err := t.call(ctx, API, http.MethodPost, "/v1/api/usenet/controlusenetdownload", nil, bytes.NewReader(body), "application/json")
+	body, _ := json.Marshal(map[string]any{t.idField(): json.Number(id), "operation": "delete"})
+	_, err := t.call(ctx, API, http.MethodPost, t.ep(map[bool]string{true: "controltorrent", false: "controlusenetdownload"}[t.Torrents]), nil, bytes.NewReader(body), "application/json")
 	t.invalidate()
 	return err
 }
@@ -273,8 +325,8 @@ func (t *TorBox) Fetch(ctx context.Context, id string, f File, dst string, progr
 	if err := t.Lim.Acquire(ctx, Link); err != nil {
 		return err
 	}
-	q := url.Values{"token": {t.Token}, "usenet_id": {id}, "file_id": {f.ID}, "redirect": {"true"}}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.BaseURL+"/v1/api/usenet/requestdl?"+q.Encode(), nil)
+	q := url.Values{"token": {t.Token}, t.idField(): {id}, "file_id": {f.ID}, "redirect": {"true"}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.BaseURL+t.ep("requestdl")+"?"+q.Encode(), nil)
 	if err != nil {
 		return err
 	}

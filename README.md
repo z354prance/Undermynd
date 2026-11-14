@@ -14,7 +14,7 @@ One container that owns the whole download-to-library path for Sonarr, Radarr an
 | Phase | Scope | State |
 |---|---|---|
 | 1 Core | Job table and state machine, fake qBittorrent API, local qBittorrent backend, staging, hand-back, import confirmation, cleanup, status page, admin sign-in | **built and tested** |
-| 2 TorBox | Usenet done (limiter, batched polling, resumable pull, tracked delete); torrents next | usenet built, torrents not started |
+| 2 TorBox | Usenet and torrents (limiter, batched polling, resumable pull, tracked delete) | built and tested against a stand-in; not yet run against real TorBox |
 | 3 Transcode | Tdarr adapter, verification gate, in-flight cap | not started (a category with *transcode* on fails the grab with a clear reason) |
 | 4 Usenet | Fake SABnzbd, TorBox usenet backend, NZBGet fallback | built and tested against stand-ins; not yet run against real TorBox, NZBGet or an arr |
 | 5 RSS | Feeds and rules | not started |
