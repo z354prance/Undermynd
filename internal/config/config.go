@@ -81,7 +81,16 @@ type NZBGet struct {
 	DestRoot string `json:"destRoot"`
 }
 
+// Tdarr hands videos to a Tdarr library by folder. Create a library in Tdarr that
+// watches InDir and writes to OutDir (folder to folder); Undermynd does not touch any other library.
+type Tdarr struct {
+	InDir          string `json:"inDir"`
+	OutDir         string `json:"outDir"`
+	TimeoutMinutes int    `json:"timeoutMinutes"`
+}
+
 type Settings struct {
+	Tdarr      Tdarr      `json:"tdarr"`
 	NZBGet     NZBGet     `json:"nzbget"`
 	TorBox     TorBox     `json:"torbox"`
 	Categories []Category `json:"categories"`
@@ -158,6 +167,15 @@ func Defaults(env Env) Settings {
 }
 
 func fill(s *Settings, env Env) {
+	if s.Tdarr.InDir == "" {
+		s.Tdarr.InDir = filepath.Join(env.DataDir, "undermynd", "tdarr", "in")
+	}
+	if s.Tdarr.OutDir == "" {
+		s.Tdarr.OutDir = filepath.Join(env.DataDir, "undermynd", "tdarr", "out")
+	}
+	if s.Tdarr.TimeoutMinutes == 0 {
+		s.Tdarr.TimeoutMinutes = 720
+	}
 	if s.TorBox.BaseURL == "" {
 		s.TorBox.BaseURL = "https://api.torbox.app"
 	}

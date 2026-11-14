@@ -5,7 +5,7 @@
 One container that owns the whole download-to-library path for Sonarr, Radarr and Lidarr.
 
 - Acts as their **qBittorrent** download client, so a grab keeps the same download ID from request to import.
-- Hands the grab to a local qBittorrent (TorBox, NZBGet/SABnzbd, Tdarr and RSS are the next phases), keeps only the media files, moves them atomically into the complete folder, confirms the arr's import, then cleans up everything it created.
+- Hands the grab to a local qBittorrent (TorBox, NZBGet, a fake SABnzbd and a Tdarr hand-off are also built; RSS is next), keeps only the media files, moves them atomically into the complete folder, confirms the arr's import, then cleans up everything it created.
 - A public status page for your users, and a sign-in-protected admin side, in one app on one address.
 - Standard library only. One static binary of about 7 MB, about 7 MB of memory at idle.
 
@@ -15,7 +15,7 @@ One container that owns the whole download-to-library path for Sonarr, Radarr an
 |---|---|---|
 | 1 Core | Job table and state machine, fake qBittorrent API, local qBittorrent backend, staging, hand-back, import confirmation, cleanup, status page, admin sign-in | **built and tested** |
 | 2 TorBox | Usenet and torrents (limiter, batched polling, resumable pull, tracked delete) | built and tested against a stand-in; not yet run against real TorBox |
-| 3 Transcode | Tdarr adapter, verification gate, in-flight cap | not started (a category with *transcode* on fails the grab with a clear reason) |
+| 3 Transcode | Folder hand-off to a dedicated Tdarr library, verification gate | folder hand-off built and tested against a simulated Tdarr; not yet run against real Tdarr |
 | 4 Usenet | Fake SABnzbd, TorBox usenet backend, NZBGet fallback | built and tested against stand-ins; not yet run against real TorBox, NZBGet or an arr |
 | 5 RSS | Feeds and rules | not started |
 | 6 Hardening | Notifications, API tokens, more admin actions | partly (reconciler, retries and cleanup are in) |
@@ -81,3 +81,10 @@ Logo files are in `assets/`; the Unraid icon is `unraid/undermynd-icon.png`.
 Add Undermynd to Sonarr/Radarr/Lidarr as a **SABnzbd** client on the machine port (host 18081 by default).
 The **API key is the client password** (shown once in the log on first run, rotatable in the admin page).
 Usenet goes to TorBox when a token is set, otherwise to NZBGet when its address is set.
+
+## Tdarr hand-off
+
+For categories with transcode on, finished videos go to the Tdarr **input folder** (`/data/undermynd/tdarr/in/<job>` by default) and Undermynd waits for the result in the **output folder** (`.../out/<job>`).
+Create a dedicated Tdarr library that watches the input folder and writes folder-to-folder into the output folder; Undermynd never touches any other library.
+Outputs are accepted when every video has a result of the same name that has stopped growing, passes a size sanity check and has the right container header. Then both folders are cleared and the job moves on.
+If a library is set to skip files that need no work, nothing appears in the output folder, so use "copy" for those files. The wait gives up after the configured timeout.

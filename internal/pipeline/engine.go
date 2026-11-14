@@ -415,8 +415,10 @@ func (e *Engine) step(ctx context.Context, j job.Job) {
 		e.doDownloaded(ctx, j)
 	case job.Pulling:
 		e.doPulling(ctx, j)
-	case job.QueuedTranscode, job.Transcoding, job.Verifying:
-		e.fail(j, "transcode requested but the Tdarr stage is not enabled in this build")
+	case job.QueuedTranscode, job.Transcoding:
+		e.doTranscode(ctx, j)
+	case job.Verifying:
+		e.doVerify(ctx, j)
 	case job.Ready:
 		e.doReady(ctx, j)
 	case job.Imported:
@@ -631,8 +633,7 @@ func (e *Engine) doDownloaded(ctx context.Context, j job.Job) {
 		return
 	}
 	cat, _ := e.Cfg.Get().Category(j.Category)
-	if cat.Transcode {
-		e.fail(j, "transcode requested but the Tdarr stage is not enabled in this build")
+	if cat.Transcode && e.sendToTdarr(j) {
 		return
 	}
 	e.handBack(j)
@@ -772,6 +773,9 @@ func (e *Engine) cleanupFiles(ctx context.Context, j job.Job) error {
 		return err
 	}
 	if err := e.removeTree(env.StagingDir(j.ID), filepath.Join(env.DataDir, "undermynd")); err != nil {
+		return err
+	}
+	if err := e.removeTdarrDirs(j); err != nil {
 		return err
 	}
 	return e.removeBackendItem(ctx, j)

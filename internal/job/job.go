@@ -44,6 +44,8 @@ type Job struct {
 	Progress float64 `json:"progress"` // backend download progress, 0..1
 	Size     int64   `json:"size"`
 
+	TranscodeSig string `json:"transcodeSig,omitempty"` // sizes seen last check, to tell when output stopped growing
+
 	PullDone  int64 `json:"pullDone,omitempty"` // bytes copied from the remote backend to staging
 	PullTotal int64 `json:"pullTotal,omitempty"`
 

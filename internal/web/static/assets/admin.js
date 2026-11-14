@@ -115,6 +115,10 @@
       var tbx=el('div','grid');var tbf={};
       [['token','password',s.torbox.hasToken?'API token (set — leave blank to keep)':'API token'],['createPerHour','number','new downloads per hour (limit)'],['pullersAtOnce','number','files copied down at once'],['linkGapSeconds','number','seconds between download-link requests']].forEach(function(d){var w=el('div');w.appendChild(el('label','',d[2]));var i=el('input');i.type=d[1];i.value=d[0]==='token'?'':(s.torbox[d[0]]||'');i.autocomplete='off';w.appendChild(i);tbx.appendChild(w);tbf[d[0]]=i});body.appendChild(tbx);
 
+      body.appendChild(el('div','sec','── Tdarr hand-off (categories with transcode on) '));
+      var tdx=el('div','grid');var tdf={};
+      [['inDir','text','input folder (Tdarr library source)'],['outDir','text','output folder (Tdarr folder-to-folder output)'],['timeoutMinutes','number','give up waiting after (minutes)']].forEach(function(d){var w=el('div');w.appendChild(el('label','',d[2]));var i=el('input');i.type=d[1];i.value=s.tdarr[d[0]]||'';w.appendChild(i);tdx.appendChild(w);tdf[d[0]]=i});body.appendChild(tdx);
+
       body.appendChild(el('div','sec','── local NZBGet (used for usenet when TorBox is not configured) '));
       var ngx=el('div','grid');var ngf={};
       [['url','text','url (http://nzbget:6789)'],['username','text','username'],['password','password',s.nzbget.hasPassword?'password (set — leave blank to keep)':'password'],['destRoot','text','NZBGet destination folder (same path in both containers)']].forEach(function(d){var w=el('div');w.appendChild(el('label','',d[2]));var i=el('input');i.type=d[1];i.value=d[0]==='password'?'':(s.nzbget[d[0]]||'');i.autocomplete='off';w.appendChild(i);ngx.appendChild(w);ngf[d[0]]=i});body.appendChild(ngx);
@@ -129,6 +133,7 @@
       var save=el('button','go','save settings');var msg=el('div','err');
       save.onclick=function(){msg.className='err';msg.textContent='';
         var body2={categories:[].map.call(cats.children,function(card){var f=card._f;return {name:f.name.value,kind:f.kind.value,arrUrl:f.arrUrl.value,arrApiKey:f.arrApiKey.value,transcode:f.transcode.checked}}),
+          tdarr:{inDir:tdf.inDir.value,outDir:tdf.outDir.value,timeoutMinutes:+tdf.timeoutMinutes.value},
           nzbget:{url:ngf.url.value,username:ngf.username.value,password:ngf.password.value,destRoot:ngf.destRoot.value},
           torbox:{token:tbf.token.value,createPerHour:+tbf.createPerHour.value,pullersAtOnce:+tbf.pullersAtOnce.value,linkGapSeconds:+tbf.linkGapSeconds.value},
           qbit:{url:qf.url.value,username:qf.username.value,password:qf.password.value,saveDir:qf.saveDir.value},

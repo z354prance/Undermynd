@@ -333,6 +333,11 @@ type settingsView struct {
 		HasPassword bool   `json:"hasPassword"`
 		SaveDir     string `json:"saveDir"`
 	} `json:"qbit"`
+	Tdarr struct {
+		InDir          string `json:"inDir"`
+		OutDir         string `json:"outDir"`
+		TimeoutMinutes int    `json:"timeoutMinutes"`
+	} `json:"tdarr"`
 	NZBGet struct {
 		URL         string `json:"url"`
 		Username    string `json:"username"`
@@ -362,6 +367,7 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 			HasArrAPIKey: k.ArrAPIKey != "", Transcode: k.Transcode})
 	}
 	v.QBit.URL, v.QBit.Username, v.QBit.HasPassword, v.QBit.SaveDir = c.QBit.URL, c.QBit.Username, c.QBit.Password != "", c.QBit.SaveDir
+	v.Tdarr.InDir, v.Tdarr.OutDir, v.Tdarr.TimeoutMinutes = c.Tdarr.InDir, c.Tdarr.OutDir, c.Tdarr.TimeoutMinutes
 	v.NZBGet.URL, v.NZBGet.Username, v.NZBGet.HasPassword, v.NZBGet.DestRoot = c.NZBGet.URL, c.NZBGet.Username, c.NZBGet.Password != "", c.NZBGet.DestRoot
 	v.TorBox.HasToken, v.TorBox.CreatePerHour, v.TorBox.PullersAtOnce, v.TorBox.LinkGapSeconds = c.TorBox.Token != "", c.TorBox.CreatePerHour, c.TorBox.PullersAtOnce, c.TorBox.LinkGapSeconds
 	v.ClientUser, v.StallMinutes, v.ReconcileSeconds, v.FlagImportHours = c.ClientUser, c.StallMinutes, c.ReconcileSeconds, c.FlagImportHours
@@ -397,6 +403,15 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		next.QBit.SaveDir = in.QBit.SaveDir
 	}
 	next.NZBGet.URL, next.NZBGet.Username, next.NZBGet.DestRoot = strings.TrimSpace(in.NZBGet.URL), in.NZBGet.Username, strings.TrimSpace(in.NZBGet.DestRoot)
+	if d := strings.TrimSpace(in.Tdarr.InDir); d != "" {
+		next.Tdarr.InDir = d
+	}
+	if d := strings.TrimSpace(in.Tdarr.OutDir); d != "" {
+		next.Tdarr.OutDir = d
+	}
+	if in.Tdarr.TimeoutMinutes > 0 {
+		next.Tdarr.TimeoutMinutes = in.Tdarr.TimeoutMinutes
+	}
 	if in.NZBGet.Password != "" {
 		next.NZBGet.Password = secret.String(in.NZBGet.Password)
 	}
