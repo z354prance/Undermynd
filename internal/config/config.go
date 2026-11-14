@@ -73,7 +73,16 @@ type TorBox struct {
 	LinkGapSeconds int           `json:"linkGapSeconds"`
 }
 
+type NZBGet struct {
+	URL      string        `json:"url"`
+	Username string        `json:"username"`
+	Password secret.String `json:"password"`
+	// DestRoot is NZBGet's destination folder, the same path in both containers.
+	DestRoot string `json:"destRoot"`
+}
+
 type Settings struct {
+	NZBGet     NZBGet     `json:"nzbget"`
 	TorBox     TorBox     `json:"torbox"`
 	Categories []Category `json:"categories"`
 	QBit       QBit       `json:"qbit"`

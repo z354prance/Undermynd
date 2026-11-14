@@ -14,9 +14,9 @@ One container that owns the whole download-to-library path for Sonarr, Radarr an
 | Phase | Scope | State |
 |---|---|---|
 | 1 Core | Job table and state machine, fake qBittorrent API, local qBittorrent backend, staging, hand-back, import confirmation, cleanup, status page, admin sign-in | **built and tested** |
-| 2 TorBox | Adapter, persisted rate limiter, batched polling, verified pull, tracked delete | not started |
+| 2 TorBox | Usenet done (limiter, batched polling, resumable pull, tracked delete); torrents next | usenet built, torrents not started |
 | 3 Transcode | Tdarr adapter, verification gate, in-flight cap | not started (a category with *transcode* on fails the grab with a clear reason) |
-| 4 Usenet | Fake SABnzbd, NZBGet backend | not started |
+| 4 Usenet | Fake SABnzbd, TorBox usenet backend, NZBGet fallback | built and tested against stand-ins; not yet run against real TorBox, NZBGet or an arr |
 | 5 RSS | Feeds and rules | not started |
 | 6 Hardening | Notifications, API tokens, more admin actions | partly (reconciler, retries and cleanup are in) |
 | 7 Overmynd merge | Requests, access requests, playback | not started |
@@ -75,3 +75,9 @@ Behind a reverse proxy set `UNDERMYND_TRUST_PROXY=true` so the real client IP is
 ## Branding
 
 Logo files are in `assets/`; the Unraid icon is `unraid/undermynd-icon.png`.
+
+## Usenet (SABnzbd side)
+
+Add Undermynd to Sonarr/Radarr/Lidarr as a **SABnzbd** client on the machine port (host 18081 by default).
+The **API key is the client password** (shown once in the log on first run, rotatable in the admin page).
+Usenet goes to TorBox when a token is set, otherwise to NZBGet when its address is set.

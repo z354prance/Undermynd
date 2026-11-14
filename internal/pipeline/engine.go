@@ -44,6 +44,8 @@ type Engine struct {
 	submitMu sync.Mutex
 	bmu      sync.Mutex
 	qkey     string
+	ngkey    string
+	ngcache  *backend.NZBGet
 	qcache   backend.Backend
 	tkey     string
 	tcache   *backend.TorBox
@@ -96,6 +98,20 @@ func (e *Engine) torbox() *backend.TorBox {
 	return e.tcache
 }
 
+func (e *Engine) nzbget() *backend.NZBGet {
+	n := e.Cfg.Get().NZBGet
+	if n.URL == "" {
+		return nil
+	}
+	key := n.URL + "|" + n.Username + "|" + string(n.Password)
+	e.bmu.Lock()
+	defer e.bmu.Unlock()
+	if e.ngcache == nil || e.ngkey != key {
+		e.ngcache, e.ngkey = backend.NewNZBGet(n.URL, n.Username, string(n.Password)), key
+	}
+	return e.ngcache
+}
+
 // pick chooses the backend for a new job.
 func (e *Engine) pick(j job.Job) (backend.Backend, error) {
 	if e.Override != nil {
@@ -105,7 +121,10 @@ func (e *Engine) pick(j job.Job) (backend.Backend, error) {
 		if tb := e.torbox(); tb != nil {
 			return tb, nil
 		}
-		return nil, backend.Permanent{Msg: "no usenet backend is configured: set a TorBox token (NZBGet is not built yet)"}
+		if ng := e.nzbget(); ng != nil {
+			return ng, nil
+		}
+		return nil, backend.Permanent{Msg: "no usenet backend is configured: set a TorBox token or an NZBGet address"}
 	}
 	return e.qbit(), nil
 }
@@ -118,6 +137,11 @@ func (e *Engine) byName(name string) backend.Backend {
 	if name == "torbox" {
 		if tb := e.torbox(); tb != nil {
 			return tb
+		}
+	}
+	if name == "nzbget" {
+		if ng := e.nzbget(); ng != nil {
+			return ng
 		}
 	}
 	return e.qbit()
@@ -531,6 +555,15 @@ func (e *Engine) doDownloaded(ctx context.Context, j job.Job) {
 		e.planPull(ctx, j, b)
 		return
 	}
+	if loc, ok := b.(backend.Locator); ok && j.SavePath == "" {
+		dir, err := loc.Location(ctx, j.RemoteID)
+		if err != nil {
+			e.retry(j, err, 10, "locate files")
+			return
+		}
+		_, _ = e.Store.Update(j.ID, func(c *job.Job) error { c.SavePath = dir; return nil })
+		j.SavePath = dir
+	}
 	if len(j.Files) == 0 {
 		files, err := b.Files(ctx, j.RemoteID)
 		if err != nil {
@@ -675,7 +708,11 @@ func (e *Engine) removeBackendItem(ctx context.Context, j job.Job) error {
 		}
 	}
 	if j.SavePath != "" {
-		if err := e.removeTree(j.SavePath, e.Cfg.Get().QBit.SaveDir); err != nil {
+		root := e.Cfg.Get().QBit.SaveDir
+		if j.Backend == "nzbget" {
+			root = e.Cfg.Get().NZBGet.DestRoot
+		}
+		if err := e.removeTree(j.SavePath, root); err != nil {
 			return err
 		}
 	}

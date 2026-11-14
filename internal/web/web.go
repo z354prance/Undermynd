@@ -333,6 +333,13 @@ type settingsView struct {
 		HasPassword bool   `json:"hasPassword"`
 		SaveDir     string `json:"saveDir"`
 	} `json:"qbit"`
+	NZBGet struct {
+		URL         string `json:"url"`
+		Username    string `json:"username"`
+		Password    string `json:"password,omitempty"` // write-only
+		HasPassword bool   `json:"hasPassword"`
+		DestRoot    string `json:"destRoot"`
+	} `json:"nzbget"`
 	TorBox struct {
 		Token          string `json:"token,omitempty"` // write-only
 		HasToken       bool   `json:"hasToken"`
@@ -355,6 +362,7 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 			HasArrAPIKey: k.ArrAPIKey != "", Transcode: k.Transcode})
 	}
 	v.QBit.URL, v.QBit.Username, v.QBit.HasPassword, v.QBit.SaveDir = c.QBit.URL, c.QBit.Username, c.QBit.Password != "", c.QBit.SaveDir
+	v.NZBGet.URL, v.NZBGet.Username, v.NZBGet.HasPassword, v.NZBGet.DestRoot = c.NZBGet.URL, c.NZBGet.Username, c.NZBGet.Password != "", c.NZBGet.DestRoot
 	v.TorBox.HasToken, v.TorBox.CreatePerHour, v.TorBox.PullersAtOnce, v.TorBox.LinkGapSeconds = c.TorBox.Token != "", c.TorBox.CreatePerHour, c.TorBox.PullersAtOnce, c.TorBox.LinkGapSeconds
 	v.ClientUser, v.StallMinutes, v.ReconcileSeconds, v.FlagImportHours = c.ClientUser, c.StallMinutes, c.ReconcileSeconds, c.FlagImportHours
 	writeJSON(w, v)
@@ -387,6 +395,10 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.QBit.SaveDir != "" {
 		next.QBit.SaveDir = in.QBit.SaveDir
+	}
+	next.NZBGet.URL, next.NZBGet.Username, next.NZBGet.DestRoot = strings.TrimSpace(in.NZBGet.URL), in.NZBGet.Username, strings.TrimSpace(in.NZBGet.DestRoot)
+	if in.NZBGet.Password != "" {
+		next.NZBGet.Password = secret.String(in.NZBGet.Password)
 	}
 	if in.TorBox.Token != "" {
 		next.TorBox.Token = secret.String(strings.TrimSpace(in.TorBox.Token))
