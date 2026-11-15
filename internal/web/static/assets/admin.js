@@ -70,7 +70,7 @@
           if(j.flag)n.appendChild(el('div','flag',j.flag));if(j.reason&&j.state!=='cleaned')n.appendChild(el('div','reason',j.reason));r.appendChild(n);
           r.appendChild(el('td','mono',j.source+' / '+j.category));
           var st=el('td','',j.state);if(j.state==='failed')st.style.color='var(--red)';r.appendChild(st);
-          r.appendChild(el('td','',Math.round(j.progress*100)+'%'));r.appendChild(el('td','mono',j.backend||'-'));r.appendChild(el('td','mono',ago(j.created)));
+          var pct=Math.round((j.overall!=null?j.overall:j.progress)*100);var pt=el('td','',pct+'%');if(j.transcodeNode)pt.appendChild(el('div','reason',j.transcodeNode+(j.transcodeWorker?' / '+j.transcodeWorker:'')));r.appendChild(pt);r.appendChild(el('td','mono',j.backend||'-'));r.appendChild(el('td','mono',ago(j.created)));
           var act=el('td');
           if(j.state==='failed'){var rt=el('button','go','retry');rt.onclick=function(){doAction(j.id,'retry')};act.appendChild(rt)}
           if(j.state==='ready'){var mi=el('button','','mark imported');mi.onclick=function(){doAction(j.id,'imported')};act.appendChild(mi)}
@@ -136,11 +136,12 @@
       f.arrUrl=row(g,'arr address',{value:c.arrUrl,ph:'http://10.0.0.5:8989',help:'so Undermynd can confirm the import'});
       f.arrApiKey=row(g,'arr API key',{type:'password',ph:c.hasArrApiKey?'set — leave blank to keep':'',help:'in the arr: Settings → General'});
       f.transcode=row(g,'transcode with Tdarr',{type:'checkbox',value:c.transcode,help:'off for music'});
+      var pw=el('div','fld');pw.appendChild(el('label','','if the transcode fails'));var pf=el('select');[['fail','fail the grab (the arr blocklists and searches again)'],['passthrough','keep the original file']].forEach(function(x){var o=el('option','',x[1]);o.value=x[0];if((c.onTranscodeFail||'fail')===x[0])o.selected=true;pf.appendChild(o)});pw.appendChild(pf);g.appendChild(pw);f.onFail=pf;
       card.appendChild(g);var rm=el('button','bad','remove category');rm.onclick=function(){card.remove()};card.appendChild(rm);card._f=f;cats.appendChild(card)
     }
     S.categories.forEach(add);
     var a=el('button','','+ add category');a.onclick=function(){add({kind:'radarr',transcode:true})};body.appendChild(a);
-    saveBar(body,function(m){save(function(b){b.categories=[].map.call(cats.children,function(c){var f=c._f;return {name:f.name.value,kind:f.kind.value,arrUrl:f.arrUrl.value,arrApiKey:f.arrApiKey.value,transcode:f.transcode.checked}})},m)})
+    saveBar(body,function(m){save(function(b){b.categories=[].map.call(cats.children,function(c){var f=c._f;return {name:f.name.value,kind:f.kind.value,arrUrl:f.arrUrl.value,arrApiKey:f.arrApiKey.value,transcode:f.transcode.checked,onTranscodeFail:f.onFail.value}})},m)})
   }
 
   function clientsPane(body){
@@ -171,19 +172,26 @@
   }
 
   function transcodePane(body){
-    body.appendChild(head('Transcode (Tdarr)','Undermynd hands finished videos to Tdarr through two folders, so it needs no Tdarr address or key.'));
-    var how=el('div','card');how.appendChild(el('h4','','How it works'));
-    ['Videos for categories with transcode on are moved to the input folder.','A Tdarr library you create watches that folder and writes its result to the output folder (folder to folder).','Undermynd waits for the result, checks it, swaps it in, clears both folders and hands the file to the arr.','Your other Tdarr libraries are never touched. Files Tdarr decides need no work must still be copied to the output folder.'].forEach(function(t,i){var d=el('div','step');d.appendChild(el('span','n',String(i+1)));d.appendChild(document.createTextNode(t));how.appendChild(d)});
-    body.appendChild(how);
-    var c=el('div','card');c.appendChild(el('h4','','Folders'));var g=el('div','grid3');
-    var inn=row(g,'input folder (Tdarr library source)',{value:S.tdarr.inDir,help:'as seen from inside Undermynd and Tdarr, the same path'});
-    var out=row(g,'output folder (Tdarr output)',{value:S.tdarr.outDir});
-    var to=row(g,'give up after (minutes)',{type:'number',value:S.tdarr.timeoutMinutes,help:'a job fails if Tdarr produces nothing in this time'});
+    body.appendChild(head('Transcode (Tdarr)','Videos for categories with transcode on are handed to a dedicated Tdarr library. Undermynd watches Tdarr over its API, so it can show progress and notice failures.'));
+    var c0=el('div','card');var h0=el('h4','','Connection ');h0.appendChild(chip(!!S.tdarr.url,S.tdarr.url?'configured':'not set — folder hand-off only'));c0.appendChild(h0);
+    var g0=el('div','grid3');
+    var url=row(g0,'Tdarr address',{value:S.tdarr.url,ph:'http://10.0.0.8:8265',help:'the Tdarr server, port 8265 by default'});
+    var key=row(g0,'API key',{type:'password',ph:S.tdarr.hasApiKey?'set — leave blank to keep':'only if Tdarr has authentication on',help:'Tdarr → Tools → API Keys'});
+    var lib=row(g0,'library ID',{value:S.tdarr.libraryId,help:'the ID of the dedicated Undermynd library (shown in the library’s settings)'});
+    c0.appendChild(g0);var tb=el('button','','test connection');var tm=el('span','msg');tm.style.marginLeft='12px';
+    tb.onclick=function(){tm.className='msg';tm.textContent='testing…';api('POST','/tdarr/test',{url:url.value,apiKey:key.value}).then(function(r){tm.className='msg ok';tm.textContent='connected: '+r.nodes+' node(s), '+r.busyWorkers+' busy worker(s)'}).catch(function(e){tm.className='msg err';tm.textContent=e.message})};
+    c0.appendChild(tb);c0.appendChild(tm);body.appendChild(c0);
+    var c=el('div','card');c.appendChild(el('h4','','Folders and limits'));var g=el('div','grid3');
+    var inn=row(g,'input folder (library source)',{value:S.tdarr.inDir,help:'the same path inside Undermynd and Tdarr'});
+    var out=row(g,'output folder (library output)',{value:S.tdarr.outDir});
+    var mx=row(g,'jobs with Tdarr at once',{type:'number',value:S.tdarr.maxInFlight,help:'others wait their turn; waiting is not a failure'});
+    var st=row(g,'stall timeout (minutes)',{type:'number',value:S.tdarr.stallMinutes,help:'a worker holding a file with no progress this long counts as failed'});
+    var to=row(g,'give up waiting after (minutes)',{type:'number',value:S.tdarr.timeoutMinutes,help:'when Tdarr produces nothing at all'});
     c.appendChild(g);body.appendChild(c);
-    var cc=el('div','card');cc.appendChild(el('h4','','Categories that transcode'));
-    S.categories.forEach(function(k){var d=el('div','kv');d.appendChild(el('span','k',k.name));d.appendChild(chip(k.transcode,k.transcode?'transcode on':'skips Tdarr'));cc.appendChild(d)});
-    cc.appendChild(help('Change this per category on the Arrs & categories tab.'));body.appendChild(cc);
-    saveBar(body,function(m){save(function(b){b.tdarr={inDir:inn.value,outDir:out.value,timeoutMinutes:+to.value}},m)})
+    var cc=el('div','card');cc.appendChild(el('h4','','Per category'));
+    S.categories.forEach(function(k){var d=el('div','kv');d.appendChild(el('span','k',k.name));d.appendChild(chip(k.transcode,k.transcode?'transcode on':'skips Tdarr'));if(k.transcode)d.appendChild(el('span','v','on failure: '+(k.onTranscodeFail==='passthrough'?'keep the original':'fail the grab')));cc.appendChild(d)});
+    cc.appendChild(help('Change transcode and the failure policy on the Arrs & categories tab.'));body.appendChild(cc);
+    saveBar(body,function(m){save(function(b){b.tdarr={url:url.value,apiKey:key.value,libraryId:lib.value,maxInFlight:+mx.value,stallMinutes:+st.value,inDir:inn.value,outDir:out.value,timeoutMinutes:+to.value}},m)})
   }
 
   function rssPane(body){

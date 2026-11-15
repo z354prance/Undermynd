@@ -3,8 +3,10 @@
 package web
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
+	"github.com/z354prance/undermynd/internal/tdarr"
 	"io/fs"
 	"log"
 	"net"
@@ -71,6 +73,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /admin/api/jobs/{id}/{action}", s.guard(s.admin(s.jobAction)))
 	mux.HandleFunc("GET /admin/api/settings", s.admin(s.getSettings))
 	mux.HandleFunc("PUT /admin/api/settings", s.guard(s.admin(s.putSettings)))
+	mux.HandleFunc("POST /admin/api/tdarr/test", s.guard(s.admin(s.tdarrTest)))
 	mux.HandleFunc("POST /admin/api/settings/client-password", s.guard(s.admin(s.newClientPassword)))
 	return secure(mux)
 }
@@ -323,6 +326,7 @@ type categoryView struct {
 	ArrAPIKey    string `json:"arrApiKey,omitempty"` // write-only
 	HasArrAPIKey bool   `json:"hasArrApiKey"`
 	Transcode    bool   `json:"transcode"`
+	OnFail       string `json:"onTranscodeFail"`
 }
 
 type settingsView struct {
@@ -337,6 +341,12 @@ type settingsView struct {
 	Feeds []config.Feed `json:"feeds"`
 	Rules []config.Rule `json:"rules"`
 	Tdarr struct {
+		URL            string `json:"url"`
+		APIKey         string `json:"apiKey,omitempty"` // write-only
+		HasAPIKey      bool   `json:"hasApiKey"`
+		LibraryID      string `json:"libraryId"`
+		MaxInFlight    int    `json:"maxInFlight"`
+		StallMinutes   int    `json:"stallMinutes"`
 		InDir          string `json:"inDir"`
 		OutDir         string `json:"outDir"`
 		TimeoutMinutes int    `json:"timeoutMinutes"`
@@ -367,7 +377,7 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	var v settingsView
 	for _, k := range c.Categories {
 		v.Categories = append(v.Categories, categoryView{Name: k.Name, Kind: k.Kind, ArrURL: k.ArrURL,
-			HasArrAPIKey: k.ArrAPIKey != "", Transcode: k.Transcode})
+			HasArrAPIKey: k.ArrAPIKey != "", Transcode: k.Transcode, OnFail: k.OnTranscodeFail})
 	}
 	v.QBit.URL, v.QBit.Username, v.QBit.HasPassword, v.QBit.SaveDir = c.QBit.URL, c.QBit.Username, c.QBit.Password != "", c.QBit.SaveDir
 	v.Feeds, v.Rules = c.Feeds, c.Rules
@@ -378,6 +388,8 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 		v.Rules = []config.Rule{}
 	}
 	v.Tdarr.InDir, v.Tdarr.OutDir, v.Tdarr.TimeoutMinutes = c.Tdarr.InDir, c.Tdarr.OutDir, c.Tdarr.TimeoutMinutes
+	v.Tdarr.URL, v.Tdarr.HasAPIKey, v.Tdarr.LibraryID = c.Tdarr.URL, c.Tdarr.APIKey != "", c.Tdarr.LibraryID
+	v.Tdarr.MaxInFlight, v.Tdarr.StallMinutes = c.Tdarr.MaxInFlight, c.Tdarr.StallMinutes
 	v.NZBGet.URL, v.NZBGet.Username, v.NZBGet.HasPassword, v.NZBGet.DestRoot = c.NZBGet.URL, c.NZBGet.Username, c.NZBGet.Password != "", c.NZBGet.DestRoot
 	v.TorBox.HasToken, v.TorBox.CreatePerHour, v.TorBox.PullersAtOnce, v.TorBox.LinkGapSeconds = c.TorBox.Token != "", c.TorBox.CreatePerHour, c.TorBox.PullersAtOnce, c.TorBox.LinkGapSeconds
 	v.ClientUser, v.StallMinutes, v.ReconcileSeconds, v.FlagImportHours = c.ClientUser, c.StallMinutes, c.ReconcileSeconds, c.FlagImportHours
@@ -397,7 +409,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		if name == "" {
 			continue
 		}
-		nc := config.Category{Name: name, Kind: c.Kind, ArrURL: strings.TrimSpace(c.ArrURL), Transcode: c.Transcode}
+		nc := config.Category{Name: name, Kind: c.Kind, ArrURL: strings.TrimSpace(c.ArrURL), Transcode: c.Transcode, OnTranscodeFail: c.OnFail}
 		if c.ArrAPIKey != "" {
 			nc.ArrAPIKey = secret.String(c.ArrAPIKey)
 		} else if old, ok := cur.Category(name); ok {
@@ -437,6 +449,16 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		next.Rules = append(next.Rules, ru)
+	}
+	next.Tdarr.URL, next.Tdarr.LibraryID = strings.TrimSpace(in.Tdarr.URL), strings.TrimSpace(in.Tdarr.LibraryID)
+	if in.Tdarr.APIKey != "" {
+		next.Tdarr.APIKey = secret.String(strings.TrimSpace(in.Tdarr.APIKey))
+	}
+	if in.Tdarr.MaxInFlight > 0 {
+		next.Tdarr.MaxInFlight = in.Tdarr.MaxInFlight
+	}
+	if in.Tdarr.StallMinutes > 0 {
+		next.Tdarr.StallMinutes = in.Tdarr.StallMinutes
 	}
 	if d := strings.TrimSpace(in.Tdarr.InDir); d != "" {
 		next.Tdarr.InDir = d
@@ -479,6 +501,34 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.getSettings(w, r)
+}
+
+// tdarrTest checks an address and key (a blank key means the stored one) and reports what it found.
+func (s *Server) tdarrTest(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		URL    string `json:"url"`
+		APIKey string `json:"apiKey"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	key := in.APIKey
+	if key == "" {
+		key = string(s.Cfg.Get().Tdarr.APIKey)
+	}
+	url := strings.TrimSpace(in.URL)
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		jsonErr(w, http.StatusBadRequest, "the address must start with http:// or https://")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	nodes, busy, err := tdarr.New(url, key).Check(ctx)
+	if err != nil {
+		jsonErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, map[string]int{"nodes": nodes, "busyWorkers": busy})
 }
 
 // newClientPassword rotates the password the arrs use and shows it once; it is

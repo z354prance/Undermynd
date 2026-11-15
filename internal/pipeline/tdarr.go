@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/z354prance/undermynd/internal/job"
+	"github.com/z354prance/undermynd/internal/tdarr"
 )
 
 var videoExt = map[string]bool{
@@ -34,6 +35,14 @@ func (e *Engine) sendToTdarr(j job.Job) bool {
 	if len(videos) == 0 {
 		return false
 	}
+	if max := e.Cfg.Get().Tdarr.MaxInFlight; max > 0 && e.tdarrInFlight() >= max {
+		_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
+			c.Reason = fmt.Sprintf("waiting for a free Tdarr slot (limit %d)", max)
+			c.NextRun = e.Now().Add(30 * time.Second)
+			return nil
+		})
+		return true
+	}
 	for _, f := range videos {
 		if err := moveFile(filepath.Join(j.StagingDir, f), filepath.Join(e.tdarrIn(j.ID), f)); err != nil {
 			e.retry(j, err, 6, "move to Tdarr input")
@@ -47,6 +56,13 @@ func (e *Engine) sendToTdarr(j job.Job) bool {
 		return nil
 	})
 	e.Log.Printf("job %s sent to Tdarr", short(j.ID))
+	if cli, lib := e.tdarrClient(), e.Cfg.Get().Tdarr.LibraryID; cli != nil && lib != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if err := cli.Scan(ctx, lib, e.tdarrIn(j.ID)); err != nil {
+			e.Log.Printf("job %s tdarr scan request: %v (the library's folder watcher will still find it)", short(j.ID), err)
+		}
+	}
 	return true
 }
 
@@ -71,13 +87,70 @@ func (e *Engine) findOutput(id, rel string) (string, os.FileInfo) {
 	return "", nil
 }
 
-// doTranscode waits for every video's output to appear and stop growing.
+// tdarrClient returns the API client, or nil when no Tdarr address is set. Without
+// it the folder hand-off still works; the API only adds progress and early failure.
+func (e *Engine) tdarrClient() *tdarr.Client {
+	t := e.Cfg.Get().Tdarr
+	if t.URL == "" {
+		return nil
+	}
+	return tdarr.New(t.URL, string(t.APIKey))
+}
+
+// tdarrInFlight counts the jobs currently with Tdarr.
+func (e *Engine) tdarrInFlight() int {
+	n := 0
+	for _, j := range e.Store.List() {
+		switch j.State {
+		case job.QueuedTranscode, job.Transcoding, job.Verifying:
+			n++
+		}
+	}
+	return n
+}
+
+// transcodeFailed applies the category's failure policy.
+func (e *Engine) transcodeFailed(j job.Job, why string) {
+	cat, _ := e.Cfg.Get().Category(j.Category)
+	if cat.OnTranscodeFail == "passthrough" {
+		if err := e.passthrough(j); err == nil {
+			e.Log.Printf("job %s: %s; handing back the original", short(j.ID), why)
+			return
+		}
+	}
+	e.fail(j, why)
+}
+
+// passthrough puts the untranscoded originals back into staging and hands them back.
+func (e *Engine) passthrough(j job.Job) error {
+	for _, f := range j.Files {
+		if !isVideo(f) {
+			continue
+		}
+		if err := moveFile(filepath.Join(e.tdarrIn(j.ID), f), filepath.Join(j.StagingDir, f)); err != nil {
+			return err
+		}
+	}
+	if err := e.removeTdarrDirs(j); err != nil {
+		return err
+	}
+	_, _ = e.Store.Update(j.ID, func(c *job.Job) error { c.TranscodeSig = ""; c.Reason = "transcode skipped, original kept"; return nil })
+	e.handBack(j)
+	return nil
+}
+
+// doTranscode watches Tdarr (by API when configured, always by folder) until every
+// video's output exists and has stopped growing.
 func (e *Engine) doTranscode(ctx context.Context, j job.Job) {
 	now := e.Now()
 	s := e.Cfg.Get()
 	next := now.Add(time.Duration(s.ReconcileSeconds) * time.Second)
+	cli := e.tdarrClient()
+
 	found, total := 0, 0
 	var sig strings.Builder
+	var rec *tdarr.FileRecord
+	var worker *tdarr.Worker
 	for _, f := range j.Files {
 		if !isVideo(f) {
 			continue
@@ -88,10 +161,70 @@ func (e *Engine) doTranscode(ctx context.Context, j job.Job) {
 			fmt.Fprintf(&sig, "%d,", fi.Size())
 		}
 	}
+	if cli != nil {
+		if ws, err := cli.ActiveWorkers(ctx); err == nil {
+			prefix := filepath.ToSlash(e.tdarrIn(j.ID)) + "/"
+			for i := range ws {
+				if strings.HasPrefix(filepath.ToSlash(ws[i].File), prefix) {
+					worker = &ws[i]
+					break
+				}
+			}
+		} else {
+			e.Log.Printf("job %s tdarr workers: %v", short(j.ID), err)
+		}
+		for _, f := range j.Files {
+			if !isVideo(f) {
+				continue
+			}
+			r, err := cli.Record(ctx, filepath.Join(e.tdarrIn(j.ID), f))
+			if err != nil {
+				e.Log.Printf("job %s tdarr record: %v", short(j.ID), err)
+				break
+			}
+			if r != nil {
+				rec = r
+				if tdarr.Failed(r) {
+					break
+				}
+			}
+		}
+	}
+
+	// A worker holding the file is progress; Tdarr's own status words can say it gave up.
+	if rec != nil && tdarr.Failed(rec) && found < total {
+		e.transcodeFailed(j, "Tdarr reported: "+strings.TrimSpace(rec.Transcode+" "+rec.HealthCheck))
+		return
+	}
+	if worker != nil {
+		moved := worker.Percentage/100 != j.TranscodeProgress
+		_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
+			c.TranscodeProgress, c.TranscodeNode, c.TranscodeWorker = worker.Percentage/100, worker.Node, worker.Worker
+			if moved {
+				c.LastProgress = now
+			}
+			if c.State == job.QueuedTranscode {
+				c.Move(job.Transcoding, fmt.Sprintf("transcoding on %s", worker.Node), now)
+			}
+			c.NextRun = next
+			return nil
+		})
+		if !moved && now.Sub(j.LastProgress) > time.Duration(s.Tdarr.StallMinutes)*time.Minute {
+			e.transcodeFailed(j, fmt.Sprintf("Tdarr made no progress for %d minutes", s.Tdarr.StallMinutes))
+		}
+		return
+	}
+
 	timeout := time.Duration(s.Tdarr.TimeoutMinutes) * time.Minute
 	if found == 0 {
+		// Tdarr decided nothing needed doing and copied nothing: keep the original.
+		if rec != nil && tdarr.NotRequired(rec) && now.Sub(j.StateChanged) > 5*time.Minute {
+			if err := e.passthrough(j); err == nil {
+				return
+			}
+		}
 		if now.Sub(j.StateChanged) > timeout {
-			e.fail(j, fmt.Sprintf("Tdarr produced no output within %d minutes", s.Tdarr.TimeoutMinutes))
+			e.transcodeFailed(j, fmt.Sprintf("Tdarr produced no output within %d minutes", s.Tdarr.TimeoutMinutes))
 			return
 		}
 		_, _ = e.Store.Update(j.ID, func(c *job.Job) error { c.NextRun = next; return nil })
@@ -107,13 +240,14 @@ func (e *Engine) doTranscode(ctx context.Context, j job.Job) {
 	}
 	if found == total && sig.String() == j.TranscodeSig {
 		_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
+			c.TranscodeProgress = 1
 			c.Move(job.Verifying, "Tdarr output complete", now)
 			return nil
 		})
 		return
 	}
 	if now.Sub(j.StateChanged) > timeout {
-		e.fail(j, fmt.Sprintf("Tdarr did not finish within %d minutes", s.Tdarr.TimeoutMinutes))
+		e.transcodeFailed(j, fmt.Sprintf("Tdarr did not finish within %d minutes", s.Tdarr.TimeoutMinutes))
 		return
 	}
 	_, _ = e.Store.Update(j.ID, func(c *job.Job) error { c.TranscodeSig, c.NextRun = sig.String(), next; return nil })

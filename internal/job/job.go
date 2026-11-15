@@ -44,7 +44,10 @@ type Job struct {
 	Progress float64 `json:"progress"` // backend download progress, 0..1
 	Size     int64   `json:"size"`
 
-	TranscodeSig string `json:"transcodeSig,omitempty"` // sizes seen last check, to tell when output stopped growing
+	TranscodeProgress float64 `json:"transcodeProgress,omitempty"` // 0..1 from the Tdarr worker
+	TranscodeNode     string  `json:"transcodeNode,omitempty"`
+	TranscodeWorker   string  `json:"transcodeWorker,omitempty"`
+	TranscodeSig      string  `json:"transcodeSig,omitempty"` // sizes seen last check, to tell when output stopped growing
 
 	PullDone  int64 `json:"pullDone,omitempty"` // bytes copied from the remote backend to staging
 	PullTotal int64 `json:"pullTotal,omitempty"`
@@ -138,7 +141,11 @@ func Overall(j Job) float64 {
 			return 0.8 + 0.1*float64(j.PullDone)/float64(j.PullTotal)
 		}
 		return 0.8
-	case Downloaded, QueuedTranscode, Transcoding, Verifying:
+	case Downloaded, QueuedTranscode:
+		return 0.9
+	case Transcoding:
+		return 0.9 + 0.05*j.TranscodeProgress
+	case Verifying:
 		return 0.95
 	case Ready, Imported, Cleaned:
 		return 1

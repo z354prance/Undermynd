@@ -58,6 +58,8 @@ type Category struct {
 	ArrURL    string        `json:"arrUrl"`
 	ArrAPIKey secret.String `json:"arrApiKey"`
 	Transcode bool          `json:"transcode"`
+	// OnTranscodeFail is "fail" (default: the arr blocklists and searches again) or "passthrough" (hand back the original).
+	OnTranscodeFail string `json:"onTranscodeFail"`
 }
 
 type QBit struct {
@@ -88,9 +90,14 @@ type NZBGet struct {
 // Tdarr hands videos to a Tdarr library by folder. Create a library in Tdarr that
 // watches InDir and writes to OutDir (folder to folder); Undermynd does not touch any other library.
 type Tdarr struct {
-	InDir          string `json:"inDir"`
-	OutDir         string `json:"outDir"`
-	TimeoutMinutes int    `json:"timeoutMinutes"`
+	URL            string        `json:"url"` // optional; with it Undermynd watches Tdarr over its API
+	APIKey         secret.String `json:"apiKey"`
+	LibraryID      string        `json:"libraryId"` // the dedicated Undermynd library
+	MaxInFlight    int           `json:"maxInFlight"`
+	StallMinutes   int           `json:"stallMinutes"`
+	InDir          string        `json:"inDir"`
+	OutDir         string        `json:"outDir"`
+	TimeoutMinutes int           `json:"timeoutMinutes"`
 }
 
 type Feed struct {
@@ -195,6 +202,12 @@ func fill(s *Settings, env Env) {
 	}
 	if s.Tdarr.OutDir == "" {
 		s.Tdarr.OutDir = filepath.Join(env.Work(), "tdarr", "out")
+	}
+	if s.Tdarr.MaxInFlight == 0 {
+		s.Tdarr.MaxInFlight = 6
+	}
+	if s.Tdarr.StallMinutes == 0 {
+		s.Tdarr.StallMinutes = 10
 	}
 	if s.Tdarr.TimeoutMinutes == 0 {
 		s.Tdarr.TimeoutMinutes = 720

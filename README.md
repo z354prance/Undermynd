@@ -84,10 +84,18 @@ Usenet goes to TorBox when a token is set, otherwise to NZBGet when its address 
 
 ## Tdarr hand-off
 
-For categories with transcode on, finished videos go to the Tdarr **input folder** (`/data/undermynd/tdarr/in/<job>` by default) and Undermynd waits for the result in the **output folder** (`.../out/<job>`).
-Create a dedicated Tdarr library that watches the input folder and writes folder-to-folder into the output folder; Undermynd never touches any other library.
-Outputs are accepted when every video has a result of the same name that has stopped growing, passes a size sanity check and has the right container header. Then both folders are cleared and the job moves on.
-If a library is set to skip files that need no work, nothing appears in the output folder, so use "copy" for those files. The wait gives up after the configured timeout.
+For categories with transcode on, finished videos go to the Tdarr **input folder** and Undermynd collects the result from the **output folder**. Create a dedicated Tdarr library that reads the input folder and writes folder-to-folder into the output folder. Undermynd never touches any other library.
+
+With a Tdarr address (and API key, if Tdarr has authentication on) and the library's ID set on the Transcode tab, Undermynd also:
+- asks Tdarr to scan just that job's folder, so timing does not depend on a folder watcher;
+- shows the node, worker and percentage while a worker holds the file (`get-nodes`, and `cruddb` file records, the same calls Overmynd uses);
+- fails the job at once when Tdarr marks the file errored, and treats a worker with no progress for the stall time as failed;
+- keeps at most N jobs with Tdarr at once (default 6); the rest wait, which is not a failure;
+- hands back the original when Tdarr decides a file needs no work.
+
+Per category, a failed transcode either fails the grab (default, so the arr blocklists and searches again) or keeps the original.
+The output is accepted only when it has stopped growing, passes a size check and has a valid container header. The design asked for an ffprobe duration check too, which needs ffprobe in the image and is not built yet.
+Without a Tdarr address everything still works from the folders alone, but failures are only noticed when the timeout runs out.
 
 ## Folder layout
 
