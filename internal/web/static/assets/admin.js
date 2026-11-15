@@ -52,7 +52,7 @@
   function app(){
     logoutBtn.hidden=false;logoutBtn.onclick=function(){api('POST','/logout').then(start)};
     root.replaceChildren();
-    var tabs=el('div','tabs');['jobs','settings'].forEach(function(t){var b=el('button',t===tab?'on':'',t);b.onclick=function(){tab=t;detailId=null;app()};tabs.appendChild(b)});
+    var tabs=el('div','tabs');[['jobs','Jobs'],['arrs','Arrs & categories'],['clients','Download clients'],['transcode','Transcode'],['rss','RSS'],['system','System']].forEach(function(p){var t=p[0];var b=el('button',t===tab?'on':'',p[1]);b.onclick=function(){tab=t;detailId=null;app()};tabs.appendChild(b)});
     root.appendChild(tabs);var body=el('div');root.appendChild(body);
     if(tab==='jobs')jobsView(body);else settingsView(body);
   }
@@ -93,74 +93,137 @@
       var t=el('table');(j.history||[]).slice().reverse().forEach(function(h){var r=el('tr');r.appendChild(el('td','mono',new Date(h.at).toLocaleString()));r.appendChild(el('td','',(h.from||'·')+' → '+h.to));r.appendChild(el('td','reason',h.reason||''));t.appendChild(r)});body.appendChild(t);
     }).catch(fail);
   }
+  // ------------------------------------------------------------ settings
+  var S=null;
+  function clone(o){return JSON.parse(JSON.stringify(o))}
+  // save sends the whole settings object every time, so no tab can wipe another tab's data.
+  // Secrets are never sent back unless typed: a blank secret means "unchanged".
+  function save(mut,msg){
+    var b=clone(S);mut(b);msg.className='msg';msg.textContent='saving…';
+    return api('PUT','/settings',b).then(function(r){S=r;msg.className='msg ok';msg.textContent='saved';setTimeout(function(){if(msg.textContent==='saved')msg.textContent=''},3000)}).catch(function(e){msg.className='msg err';msg.textContent=e.message})
+  }
+  function help(t){return el('p','hint',t)}
+  function head(title,sub){var d=el('div','pane-head');d.appendChild(el('h3','',title));if(sub)d.appendChild(el('p','hint',sub));return d}
+  // one labelled input with help text; returns the input
+  function row(box,label,opts){
+    opts=opts||{};var w=el('div','fld');w.appendChild(el('label','',label));
+    var i=el('input');i.type=opts.type||'text';i.value=opts.value==null?'':opts.value;i.autocomplete='off';if(opts.ph)i.placeholder=opts.ph;if(opts.type==='checkbox'){i.checked=!!opts.value;i.style.width='auto'}
+    w.appendChild(i);if(opts.help)w.appendChild(el('div','fh',opts.help));box.appendChild(w);return i
+  }
+  function chip(on,text){return el('span','chip '+(on?'on':'off'),(on?'● ':'○ ')+text)}
+  function saveBar(body,fn){var bar=el('div','savebar');var b=el('button','go','save');var m=el('span','msg');b.onclick=function(){fn(m)};bar.appendChild(b);bar.appendChild(m);body.appendChild(bar)}
+
   function settingsView(body){
-    api('GET','/settings').then(function(s){
-      body.appendChild(el('div','sec','── download client login for the arrs '));
-      body.appendChild(el('p','hint','In Sonarr, Radarr and Lidarr add a qBittorrent client: host = this machine, port = the LAN-only port (8081 by default), and this login. The password is never shown; generate a new one to see it once.'));
-      var cu=el('div');cu.appendChild(el('span','prompt','username: '));cu.appendChild(document.createTextNode(s.clientUser));body.appendChild(cu);
-      var out=el('pre');var gen=el('button','','generate new password');gen.onclick=function(){if(!confirm('This replaces the current password. The arrs must be updated.'))return;api('POST','/settings/client-password').then(function(r){out.textContent='username: '+r.user+'\npassword: '+r.password+'\n(shown once)'}).catch(fail)};body.appendChild(gen);body.appendChild(out);
+    api('GET','/settings').then(function(s0){S=s0;pane(body)}).catch(fail)
+  }
+  function pane(body){
+    body.replaceChildren();
+    ({arrs:arrsPane,clients:clientsPane,transcode:transcodePane,rss:rssPane,system:systemPane})[tab](body)
+  }
 
-      body.appendChild(el('div','sec','── categories '));
-      body.appendChild(el('p','hint','The category an arr sends decides which arr confirms the import. Leave the API key blank to keep the stored one.'));
-      var cats=el('div','cats');body.appendChild(cats);
-      function addCat(c){var card=el('div','card');card._c=c;var f={};
-        [['name','text','name'],['arrUrl','text','arr url (http://radarr:7878)'],['arrApiKey','password',c.hasArrApiKey?'api key (set — leave blank to keep)':'api key']].forEach(function(d){var w=el('div');w.appendChild(el('label','',d[2]));var i=el('input');i.type=d[1];i.value=d[0]==='arrApiKey'?'':(c[d[0]]||'');i.autocomplete='off';w.appendChild(i);card.appendChild(w);f[d[0]]=i});
-        var w=el('div');w.appendChild(el('label','','kind'));var k=el('select');['radarr','sonarr','lidarr'].forEach(function(x){var o=el('option','',x);o.value=x;if(c.kind===x)o.selected=true;k.appendChild(o)});w.appendChild(k);f.kind=k;card.appendChild(w);
-        var w2=el('div');w2.appendChild(el('label','','transcode with Tdarr'));var t=el('input');t.type='checkbox';t.checked=!!c.transcode;t.style.width='auto';w2.appendChild(t);f.transcode=t;card.appendChild(w2);
-        var rm=el('button','bad','remove');rm.onclick=function(){card.remove()};card.appendChild(rm);card._f=f;cats.appendChild(card)}
-      (s.categories||[]).forEach(addCat);
-      var add=el('button','','add category');add.onclick=function(){addCat({name:'',kind:'radarr'})};body.appendChild(add);
+  function arrsPane(body){
+    body.appendChild(head('Arrs & categories','Each category is a label an arr sends when it grabs something. It decides which arr confirms the import, and which folder the finished download lands in.'));
+    var conn=el('div','card');conn.appendChild(el('h4','','Connect an arr to Undermynd'));
+    var host=location.hostname;
+    conn.appendChild(help('In Sonarr, Radarr or Lidarr: Settings → Download Clients → add. Use SABnzbd for usenet and qBittorrent for torrents.'));
+    [['host',host],['port','8081 (the LAN-only machine port)'],['SABnzbd API key','the client password (see the System tab)'],['qBittorrent login','username '+S.clientUser+' and the client password'],['category','one of the names below, exactly']].forEach(function(p){var d=el('div','kv');d.appendChild(el('span','k',p[0]));d.appendChild(el('span','v',p[1]));conn.appendChild(d)});
+    body.appendChild(conn);
+    var cats=el('div');body.appendChild(cats);
+    function add(c){
+      var card=el('div','card');var f={};var g=el('div','grid3');
+      f.name=row(g,'category name',{value:c.name,help:'what the arr sends, e.g. tv'});
+      var w=el('div','fld');w.appendChild(el('label','','arr type'));var k=el('select');['sonarr','radarr','lidarr'].forEach(function(x){var o=el('option','',x);o.value=x;if(c.kind===x)o.selected=true;k.appendChild(o)});w.appendChild(k);g.appendChild(w);f.kind=k;
+      f.arrUrl=row(g,'arr address',{value:c.arrUrl,ph:'http://10.0.0.5:8989',help:'so Undermynd can confirm the import'});
+      f.arrApiKey=row(g,'arr API key',{type:'password',ph:c.hasArrApiKey?'set — leave blank to keep':'',help:'in the arr: Settings → General'});
+      f.transcode=row(g,'transcode with Tdarr',{type:'checkbox',value:c.transcode,help:'off for music'});
+      card.appendChild(g);var rm=el('button','bad','remove category');rm.onclick=function(){card.remove()};card.appendChild(rm);card._f=f;cats.appendChild(card)
+    }
+    S.categories.forEach(add);
+    var a=el('button','','+ add category');a.onclick=function(){add({kind:'radarr',transcode:true})};body.appendChild(a);
+    saveBar(body,function(m){save(function(b){b.categories=[].map.call(cats.children,function(c){var f=c._f;return {name:f.name.value,kind:f.kind.value,arrUrl:f.arrUrl.value,arrApiKey:f.arrApiKey.value,transcode:f.transcode.checked}})},m)})
+  }
 
-      body.appendChild(el('div','sec','── TorBox (usenet and torrents download here first) '));
-      var tbx=el('div','grid');var tbf={};
-      [['token','password',s.torbox.hasToken?'API token (set — leave blank to keep)':'API token'],['createPerHour','number','new downloads per hour (limit)'],['pullersAtOnce','number','files copied down at once'],['linkGapSeconds','number','seconds between download-link requests']].forEach(function(d){var w=el('div');w.appendChild(el('label','',d[2]));var i=el('input');i.type=d[1];i.value=d[0]==='token'?'':(s.torbox[d[0]]||'');i.autocomplete='off';w.appendChild(i);tbx.appendChild(w);tbf[d[0]]=i});body.appendChild(tbx);
+  function clientsPane(body){
+    body.appendChild(head('Download clients','Undermynd downloads through TorBox when a token is set. Otherwise usenet goes to NZBGet and torrents go to qBittorrent, both optional and local.'));
+    var tb=el('div','card');var h=el('h4','','TorBox ');h.appendChild(chip(S.torbox.hasToken,S.torbox.hasToken?'token set':'no token'));tb.appendChild(h);
+    var g=el('div','grid3');
+    var tok=row(g,'API token',{type:'password',ph:S.torbox.hasToken?'set — leave blank to keep':'paste your token',help:'TorBox → Settings → API'});
+    var cph=row(g,'new downloads per hour',{type:'number',value:S.torbox.createPerHour,help:'TorBox’s limit on creating downloads'});
+    var pa=row(g,'files copied at once',{type:'number',value:S.torbox.pullersAtOnce,help:'how many finished files are pulled down in parallel'});
+    var lg=row(g,'seconds between link requests',{type:'number',value:S.torbox.linkGapSeconds,help:'spaces out requests so TorBox does not throttle'});
+    tb.appendChild(g);body.appendChild(tb);
+    var ng=el('div','card');var h2=el('h4','','NZBGet (usenet fallback) ');h2.appendChild(chip(!!S.nzbget.url,S.nzbget.url?'configured':'not set'));ng.appendChild(h2);
+    var g2=el('div','grid3');
+    var nu=row(g2,'address',{value:S.nzbget.url,ph:'http://10.0.0.6:6789'});var nn=row(g2,'username',{value:S.nzbget.username});
+    var np=row(g2,'password',{type:'password',ph:S.nzbget.hasPassword?'set — leave blank to keep':''});
+    var nd=row(g2,'destination folder',{value:S.nzbget.destRoot,help:'NZBGet’s DestDir, at the same path in both containers'});
+    ng.appendChild(g2);body.appendChild(ng);
+    var qb=el('div','card');var h3=el('h4','','qBittorrent (torrent fallback) ');h3.appendChild(chip(!!S.qbit.url,S.qbit.url?'configured':'not set'));qb.appendChild(h3);
+    var g3=el('div','grid3');
+    var qu=row(g3,'address',{value:S.qbit.url,ph:'http://10.0.0.7:8080'});var qn=row(g3,'username',{value:S.qbit.username});
+    var qp=row(g3,'password',{type:'password',ph:S.qbit.hasPassword?'set — leave blank to keep':''});
+    var qd=row(g3,'save folder',{value:S.qbit.saveDir,help:'same path in both containers'});
+    qb.appendChild(g3);body.appendChild(qb);
+    saveBar(body,function(m){save(function(b){
+      b.torbox={token:tok.value,createPerHour:+cph.value,pullersAtOnce:+pa.value,linkGapSeconds:+lg.value};
+      b.nzbget={url:nu.value,username:nn.value,password:np.value,destRoot:nd.value};
+      b.qbit={url:qu.value,username:qn.value,password:qp.value,saveDir:qd.value}},m).then(function(){pane(body)})})
+  }
 
-      body.appendChild(el('div','sec','── RSS feeds (first poll of a feed only records what is there) '));
-      var feeds=el('div');body.appendChild(feeds);
-      function addFeed(c){var card=el('div','card grid');var f={};
-        [['name','text','name'],['url','text','feed address'],['intervalMinutes','number','check every (minutes)']].forEach(function(d){var w=el('div');w.appendChild(el('label','',d[2]));var i=el('input');i.type=d[1];i.value=c[d[0]]||'';i.autocomplete='off';w.appendChild(i);card.appendChild(w);f[d[0]]=i});
-        var w2=el('div');w2.appendChild(el('label','','enabled'));var t=el('input');t.type='checkbox';t.checked=c.enabled!==false;t.style.width='auto';w2.appendChild(t);f.enabled=t;card.appendChild(w2);
-        var rm=el('button','bad','remove');rm.onclick=function(){card.remove()};card.appendChild(rm);card._f=f;feeds.appendChild(card)}
-      (s.feeds||[]).forEach(addFeed);
-      var addF=el('button','','add feed');addF.onclick=function(){addFeed({intervalMinutes:15})};body.appendChild(addF);
+  function transcodePane(body){
+    body.appendChild(head('Transcode (Tdarr)','Undermynd hands finished videos to Tdarr through two folders, so it needs no Tdarr address or key.'));
+    var how=el('div','card');how.appendChild(el('h4','','How it works'));
+    ['Videos for categories with transcode on are moved to the input folder.','A Tdarr library you create watches that folder and writes its result to the output folder (folder to folder).','Undermynd waits for the result, checks it, swaps it in, clears both folders and hands the file to the arr.','Your other Tdarr libraries are never touched. Files Tdarr decides need no work must still be copied to the output folder.'].forEach(function(t,i){var d=el('div','step');d.appendChild(el('span','n',String(i+1)));d.appendChild(document.createTextNode(t));how.appendChild(d)});
+    body.appendChild(how);
+    var c=el('div','card');c.appendChild(el('h4','','Folders'));var g=el('div','grid3');
+    var inn=row(g,'input folder (Tdarr library source)',{value:S.tdarr.inDir,help:'as seen from inside Undermynd and Tdarr, the same path'});
+    var out=row(g,'output folder (Tdarr output)',{value:S.tdarr.outDir});
+    var to=row(g,'give up after (minutes)',{type:'number',value:S.tdarr.timeoutMinutes,help:'a job fails if Tdarr produces nothing in this time'});
+    c.appendChild(g);body.appendChild(c);
+    var cc=el('div','card');cc.appendChild(el('h4','','Categories that transcode'));
+    S.categories.forEach(function(k){var d=el('div','kv');d.appendChild(el('span','k',k.name));d.appendChild(chip(k.transcode,k.transcode?'transcode on':'skips Tdarr'));cc.appendChild(d)});
+    cc.appendChild(help('Change this per category on the Arrs & categories tab.'));body.appendChild(cc);
+    saveBar(body,function(m){save(function(b){b.tdarr={inDir:inn.value,outDir:out.value,timeoutMinutes:+to.value}},m)})
+  }
 
-      body.appendChild(el('div','sec','── RSS rules (regular expressions, case-insensitive; first matching rule wins) '));
-      var rules=el('div');body.appendChild(rules);
-      function addRule(c){var card=el('div','card grid');var f={};
-        [['name','text','name'],['feed','text','feed name (blank = all)'],['mustContain','text','must contain'],['mustNotContain','text','must not contain'],['category','text','category']].forEach(function(d){var w=el('div');w.appendChild(el('label','',d[2]));var i=el('input');i.type=d[1];i.value=c[d[0]]||'';i.autocomplete='off';w.appendChild(i);card.appendChild(w);f[d[0]]=i});
-        var w2=el('div');w2.appendChild(el('label','','enabled'));var t=el('input');t.type='checkbox';t.checked=c.enabled!==false;t.style.width='auto';w2.appendChild(t);f.enabled=t;card.appendChild(w2);
-        var rm=el('button','bad','remove');rm.onclick=function(){card.remove()};card.appendChild(rm);card._f=f;rules.appendChild(card)}
-      (s.rules||[]).forEach(addRule);
-      var addR=el('button','','add rule');addR.onclick=function(){addRule({})};body.appendChild(addR);
+  function rssPane(body){
+    body.appendChild(head('RSS auto-download','Feeds are checked on a schedule. The first check of a new feed only records what is already there, so nothing old gets downloaded. The first rule that matches an item starts it.'));
+    body.appendChild(el('div','sec','feeds'));
+    var feeds=el('div');body.appendChild(feeds);
+    function addFeed(c){var card=el('div','card');var g=el('div','grid3');var f={};
+      f.name=row(g,'name',{value:c.name});f.url=row(g,'feed address',{value:c.url,help:'the full RSS link, including any key'});
+      f.intervalMinutes=row(g,'check every (minutes)',{type:'number',value:c.intervalMinutes||15});f.enabled=row(g,'enabled',{type:'checkbox',value:c.enabled!==false});
+      card.appendChild(g);var rm=el('button','bad','remove feed');rm.onclick=function(){card.remove()};card.appendChild(rm);card._f=f;feeds.appendChild(card)}
+    S.feeds.forEach(addFeed);var af=el('button','','+ add feed');af.onclick=function(){addFeed({enabled:true,intervalMinutes:15})};body.appendChild(af);
+    body.appendChild(el('div','sec','rules'));
+    body.appendChild(help('Patterns are regular expressions and ignore case. Example: must contain  S\\d+E\\d+.*1080p   must not contain  cam|hdts'));
+    var rules=el('div');body.appendChild(rules);
+    function addRule(c){var card=el('div','card');var g=el('div','grid3');var f={};
+      f.name=row(g,'rule name',{value:c.name});f.feed=row(g,'only this feed',{value:c.feed,help:'blank = every feed'});
+      f.category=row(g,'category',{value:c.category,help:'one of your categories'});
+      f.mustContain=row(g,'must contain',{value:c.mustContain});f.mustNotContain=row(g,'must not contain',{value:c.mustNotContain});
+      f.enabled=row(g,'enabled',{type:'checkbox',value:c.enabled!==false});
+      card.appendChild(g);var rm=el('button','bad','remove rule');rm.onclick=function(){card.remove()};card.appendChild(rm);card._f=f;rules.appendChild(card)}
+    S.rules.forEach(addRule);var ar=el('button','','+ add rule');ar.onclick=function(){addRule({enabled:true})};body.appendChild(ar);
+    saveBar(body,function(m){save(function(b){
+      b.feeds=[].map.call(feeds.children,function(c){var f=c._f;return {name:f.name.value,url:f.url.value,intervalMinutes:+f.intervalMinutes.value,enabled:f.enabled.checked}});
+      b.rules=[].map.call(rules.children,function(c){var f=c._f;return {name:f.name.value,feed:f.feed.value,mustContain:f.mustContain.value,mustNotContain:f.mustNotContain.value,category:f.category.value,enabled:f.enabled.checked}})},m)})
+  }
 
-      body.appendChild(el('div','sec','── Tdarr hand-off (categories with transcode on) '));
-      var tdx=el('div','grid');var tdf={};
-      [['inDir','text','input folder (Tdarr library source)'],['outDir','text','output folder (Tdarr folder-to-folder output)'],['timeoutMinutes','number','give up waiting after (minutes)']].forEach(function(d){var w=el('div');w.appendChild(el('label','',d[2]));var i=el('input');i.type=d[1];i.value=s.tdarr[d[0]]||'';w.appendChild(i);tdx.appendChild(w);tdf[d[0]]=i});body.appendChild(tdx);
-
-      body.appendChild(el('div','sec','── local NZBGet (used for usenet when TorBox is not configured) '));
-      var ngx=el('div','grid');var ngf={};
-      [['url','text','url (http://nzbget:6789)'],['username','text','username'],['password','password',s.nzbget.hasPassword?'password (set — leave blank to keep)':'password'],['destRoot','text','NZBGet destination folder (same path in both containers)']].forEach(function(d){var w=el('div');w.appendChild(el('label','',d[2]));var i=el('input');i.type=d[1];i.value=d[0]==='password'?'':(s.nzbget[d[0]]||'');i.autocomplete='off';w.appendChild(i);ngx.appendChild(w);ngf[d[0]]=i});body.appendChild(ngx);
-
-      body.appendChild(el('div','sec','── local qBittorrent (used when TorBox is not configured) '));
-      var q=el('div','grid');var qf={};
-      [['url','text','url (http://qbittorrent:8080)'],['username','text','username'],['password','password',s.qbit.hasPassword?'password (set — leave blank to keep)':'password'],['saveDir','text','save folder (same path in both containers)']].forEach(function(d){var w=el('div');w.appendChild(el('label','',d[2]));var i=el('input');i.type=d[1];i.value=d[0]==='password'?'':(s.qbit[d[0]]||'');i.autocomplete='off';w.appendChild(i);q.appendChild(w);qf[d[0]]=i});body.appendChild(q);
-
-      body.appendChild(el('div','sec','── timing '));
-      var tm=el('div','grid');var tf={};[['stallMinutes','no-progress timeout (minutes)'],['reconcileSeconds','import check interval (seconds)'],['flagImportHours','flag a ready job after (hours)']].forEach(function(d){var w=el('div');w.appendChild(el('label','',d[1]));var i=el('input');i.type='number';i.value=s[d[0]];w.appendChild(i);tm.appendChild(w);tf[d[0]]=i});body.appendChild(tm);
-
-      var save=el('button','go','save settings');var msg=el('div','err');
-      save.onclick=function(){msg.className='err';msg.textContent='';
-        var body2={categories:[].map.call(cats.children,function(card){var f=card._f;return {name:f.name.value,kind:f.kind.value,arrUrl:f.arrUrl.value,arrApiKey:f.arrApiKey.value,transcode:f.transcode.checked}}),
-          feeds:[].map.call(feeds.children,function(card){var f=card._f;return {name:f.name.value,url:f.url.value,intervalMinutes:+f.intervalMinutes.value,enabled:f.enabled.checked}}),
-          rules:[].map.call(rules.children,function(card){var f=card._f;return {name:f.name.value,feed:f.feed.value,mustContain:f.mustContain.value,mustNotContain:f.mustNotContain.value,category:f.category.value,enabled:f.enabled.checked}}),
-          tdarr:{inDir:tdf.inDir.value,outDir:tdf.outDir.value,timeoutMinutes:+tdf.timeoutMinutes.value},
-          nzbget:{url:ngf.url.value,username:ngf.username.value,password:ngf.password.value,destRoot:ngf.destRoot.value},
-          torbox:{token:tbf.token.value,createPerHour:+tbf.createPerHour.value,pullersAtOnce:+tbf.pullersAtOnce.value,linkGapSeconds:+tbf.linkGapSeconds.value},
-          qbit:{url:qf.url.value,username:qf.username.value,password:qf.password.value,saveDir:qf.saveDir.value},
-          stallMinutes:+tf.stallMinutes.value,reconcileSeconds:+tf.reconcileSeconds.value,flagImportHours:+tf.flagImportHours.value};
-        api('PUT','/settings',body2).then(function(){msg.className='ok';msg.textContent='saved'}).catch(function(e){msg.textContent=e.message})};
-      body.appendChild(el('div'));body.appendChild(save);body.appendChild(msg);
-    }).catch(fail);
+  function systemPane(body){
+    body.appendChild(head('System','The login the arrs use, and timing.'));
+    var c=el('div','card');c.appendChild(el('h4','','Client login for the arrs'));
+    c.appendChild(help('Used as the qBittorrent login, and the password is also the SABnzbd API key. It is never shown again; generate a new one to see it once.'));
+    var u=el('div','kv');u.appendChild(el('span','k','username'));u.appendChild(el('span','v',S.clientUser));c.appendChild(u);
+    var out=el('pre');var gen=el('button','','generate new password');
+    gen.onclick=function(){if(!confirm('This replaces the current password. The arrs must be updated.'))return;api('POST','/settings/client-password').then(function(r){out.textContent='username: '+r.user+'\npassword: '+r.password+'\n(shown once)'}).catch(fail)};
+    c.appendChild(gen);c.appendChild(out);body.appendChild(c);
+    var t=el('div','card');t.appendChild(el('h4','','Timing'));var g=el('div','grid3');
+    var st=row(g,'no-progress timeout (minutes)',{type:'number',value:S.stallMinutes,help:'a download with no progress this long is retried'});
+    var rc=row(g,'import check interval (seconds)',{type:'number',value:S.reconcileSeconds,help:'how often the arr is asked whether it imported'});
+    var fl=row(g,'flag a ready job after (hours)',{type:'number',value:S.flagImportHours,help:'a job the arr has not imported for this long is flagged'});
+    t.appendChild(g);body.appendChild(t);
+    saveBar(body,function(m){save(function(b){b.stallMinutes=+st.value;b.reconcileSeconds=+rc.value;b.flagImportHours=+fl.value},m)})
   }
   start();
 })();
