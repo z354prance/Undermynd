@@ -281,23 +281,33 @@ func (t *TorBox) lookup(ctx context.Context, id string) (tbItem, bool, error) {
 	return it, true, nil
 }
 
-func (t *TorBox) Status(ctx context.Context, id string) (Item, error) {
+// find returns one item with live data. The account list is capped (and an account
+// with many old items can push a new one past the cap or serve it stale), so the
+// item is asked for by ID first; the list is only the fallback.
+func (t *TorBox) find(ctx context.Context, id string) (tbItem, bool, error) {
+	if one, found, err := t.lookup(ctx, id); err == nil && found {
+		return one, true, nil
+	} else if err != nil && errors.Is(err, ErrBusy) {
+		return tbItem{}, false, err
+	}
 	m, err := t.list(ctx)
 	if err != nil {
-		return Item{}, err
+		return tbItem{}, false, err
 	}
 	it, ok := m[id]
 	if !ok {
-		// The list can be capped or stale; ask for this one item before calling it gone.
-		one, found, err := t.lookup(ctx, id)
-		if err != nil {
-			return Item{}, err
-		}
-		if !found {
-			t.Logf("torbox: item %s is not in the account (%d items listed)", id, len(m))
-			return Item{Status: Missing}, nil
-		}
-		it = one
+		t.Logf("torbox: item %s is not in the account (%d items listed)", id, len(m))
+	}
+	return it, ok, nil
+}
+
+func (t *TorBox) Status(ctx context.Context, id string) (Item, error) {
+	it, ok, err := t.find(ctx, id)
+	if err != nil {
+		return Item{}, err
+	}
+	if !ok {
+		return Item{Status: Missing}, nil
 	}
 	st := strings.ToLower(it.DownloadState)
 	t.mu.Lock()
@@ -323,20 +333,12 @@ func (t *TorBox) Status(ctx context.Context, id string) (Item, error) {
 }
 
 func (t *TorBox) Files(ctx context.Context, id string) ([]File, error) {
-	m, err := t.list(ctx)
+	it, ok, err := t.find(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	it, ok := m[id]
 	if !ok {
-		one, found, err := t.lookup(ctx, id)
-		if err != nil {
-			return nil, err
-		}
-		if !found {
-			return nil, errors.New("torbox: item not in the list")
-		}
-		it = one
+		return nil, errors.New("torbox: item not in the list")
 	}
 	out := make([]File, 0, len(it.Files))
 	for _, f := range it.Files {

@@ -69,3 +69,24 @@ func TestEmptyAccountListIsNotAnError(t *testing.T) {
 		t.Fatalf("remove on an empty account: %v", err)
 	}
 }
+
+// The list can show an item as still downloading after it finished; the item
+// asked for by ID is the live one and wins.
+func TestStatusPrefersTheLiveItemOverAStaleList(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/api/usenet/mylist", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("id") == "" {
+			_, _ = w.Write([]byte(`{"success":true,"data":[{"id":7,"progress":0.36,"download_state":"downloading","download_finished":false,"files":[]}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"success":true,"data":{"id":7,"progress":1,"download_state":"cached","download_finished":true,"files":[{"id":1,"name":"a.mkv","size":5}]}}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	lim := backend.NewLimiter(filepath.Join(t.TempDir(), "l.json"), 60, time.Millisecond)
+	lim.APIGap = 0
+	tb := backend.NewTorBox(srv.URL, "tok", lim)
+	if it, err := tb.Status(context.Background(), "7"); err != nil || it.Status != backend.Complete {
+		t.Fatalf("the live item should win over a stale list: %+v %v", it, err)
+	}
+}
