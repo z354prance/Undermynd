@@ -2,6 +2,7 @@ package web
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/z354prance/undermynd/internal/job"
 	"github.com/z354prance/undermynd/internal/storage"
@@ -137,6 +138,12 @@ func (s *Server) dashboardRecords() ([]v1Download, []v1Process, []v1Lifecycle) {
 			l.Stage = "downloading"
 			addDownload("downloading", j.Size, j.Size-int64(j.Progress*float64(j.Size)), pct(j.Progress))
 		case job.Pulling, job.Downloaded:
+			if j.State == job.Downloaded && strings.Contains(j.Reason, "Tdarr slot") {
+				// Copied and verified; it is only queued for a free transcode slot.
+				l.Stage = "processing"
+				addProcess(v1Process{Source: "undermynd", State: "queued", Stage: "transcode"})
+				break
+			}
 			l.Stage = "downloading"
 			total, done := j.PullTotal, j.PullDone
 			if j.State == job.Downloaded || total == 0 {
