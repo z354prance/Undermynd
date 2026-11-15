@@ -254,3 +254,6 @@ a.nav-item { text-decoration:none; color:inherit; display:inline-flex; align-ite
  #recentlyAddedList .now-playing-details, #recentlyAddedList .recent-episodes, #recentlyAddedList .recent-poster-card > .item-meta:last-child { grid-column:2; }
  #recentlyAddedList .recent-poster-card > .item-meta:last-child { grid-row:3; }
 }
+/* Keep six poster rows inside the panel: fixed row height, no stretching. */
+#dashboardView #recentlyAddedList { grid-template-columns:minmax(0,1fr); grid-auto-rows:50px; align-content:start; gap:0; padding:8px 12px; overflow:hidden; }
+#recentlyAddedList .recent-poster-card .item-title { min-height:0; }
