@@ -16,6 +16,7 @@ import (
 	"github.com/z354prance/undermynd/internal/auth"
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/pipeline"
+	"github.com/z354prance/undermynd/internal/progress"
 	"github.com/z354prance/undermynd/internal/qbitapi"
 	"github.com/z354prance/undermynd/internal/rss"
 	"github.com/z354prance/undermynd/internal/sabapi"
@@ -111,6 +112,9 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	go eng.Run(ctx, env.TickInterval)
+	pt := progress.New(cfg, st, logger)
+	site.Progress = pt
+	go pt.Run(ctx)
 	rp := rss.New(cfg, eng, logger)
 	site.RSS = rp
 	go rp.Run(ctx)

@@ -25,6 +25,7 @@ import (
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/job"
 	"github.com/z354prance/undermynd/internal/pipeline"
+	"github.com/z354prance/undermynd/internal/progress"
 	"github.com/z354prance/undermynd/internal/rss"
 	"github.com/z354prance/undermynd/internal/secret"
 	"github.com/z354prance/undermynd/internal/store"
@@ -39,12 +40,13 @@ const (
 )
 
 type Server struct {
-	Store  *store.Store
-	Engine *pipeline.Engine
-	Cfg    *config.Config
-	Auth   *auth.Auth
-	Log    *log.Logger
-	RSS    interface {
+	Store    *store.Store
+	Engine   *pipeline.Engine
+	Cfg      *config.Config
+	Auth     *auth.Auth
+	Log      *log.Logger
+	Progress interface{ Snapshot() progress.Snapshot }
+	RSS      interface {
 		Status() []rss.FeedStatus
 		CheckNow(context.Context)
 	}
@@ -65,6 +67,8 @@ func (s *Server) Handler() http.Handler {
 	// ---- public: no sign-in, reads only the public view
 	mux.HandleFunc("GET /{$}", s.page("public.html"))
 	mux.HandleFunc("GET /api/public/jobs", s.publicJobs)
+	mux.HandleFunc("GET /api/public/library", s.publicLibrary)
+	mux.HandleFunc("GET /admin/api/library", s.admin(s.adminLibrary))
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
 	mux.Handle("GET /assets/", files)
 
@@ -214,6 +218,43 @@ func (s *Server) publicJobs(w http.ResponseWriter, r *http.Request) {
 		out = append(out, publicJob{Title: j.Name, Group: job.Group(j.State), Progress: job.Overall(j)})
 	}
 	writeJSON(w, out)
+}
+
+type publicMissing struct {
+	Kind   string     `json:"kind"`
+	Title  string     `json:"title"`
+	Detail string     `json:"detail,omitempty"`
+	Date   *time.Time `json:"date,omitempty"`
+}
+
+// publicLibrary is season progress and what the arrs still want: titles and counts
+// only. No errors, categories, addresses or IDs.
+func (s *Server) publicLibrary(w http.ResponseWriter, r *http.Request) {
+	out := struct {
+		Seasons   []progress.Season `json:"seasons"`
+		Missing   []publicMissing   `json:"missing"`
+		UpdatedAt time.Time         `json:"updatedAt"`
+	}{Seasons: []progress.Season{}, Missing: []publicMissing{}}
+	if s.Progress != nil {
+		snap := s.Progress.Snapshot()
+		out.Seasons, out.UpdatedAt = snap.Seasons, snap.UpdatedAt
+		for i, m := range snap.Missing {
+			if i >= 200 {
+				break
+			}
+			out.Missing = append(out.Missing, publicMissing{Kind: m.Kind, Title: m.Title, Detail: m.Detail, Date: m.Date})
+		}
+	}
+	writeJSON(w, out)
+}
+
+// adminLibrary is the same view with the errors the refresh hit, so a broken arr is visible.
+func (s *Server) adminLibrary(w http.ResponseWriter, r *http.Request) {
+	if s.Progress == nil {
+		writeJSON(w, progress.Snapshot{Seasons: []progress.Season{}, Missing: []progress.Missing{}, Errors: []string{}})
+		return
+	}
+	writeJSON(w, s.Progress.Snapshot())
 }
 
 // ----------------------------------------------------------------- admin

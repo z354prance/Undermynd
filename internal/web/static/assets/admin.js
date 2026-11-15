@@ -275,6 +275,8 @@
 
   function systemPane(body){
     body.appendChild(head('System','What the pipeline is doing right now, the login the arrs use, and timing.'));
+    var libErr=el('div');body.appendChild(libErr);
+    api('GET','/library').then(function(d){if(d.errors&&d.errors.length){var c=el('div','card');c.appendChild(el('h4','','Library status problems'));d.errors.slice(0,10).forEach(function(e){c.appendChild(el('div','msg err',e))});libErr.appendChild(c)}}).catch(function(){});
     var live=el('div');body.appendChild(live);
     function bytes(n){if(!n)return '0 B';var u=['B','KB','MB','GB','TB'],i=0;while(n>=1024&&i<4){n/=1024;i++}return n.toFixed(i?1:0)+' '+u[i]}
     function drawSystem(){api('GET','/system').then(function(d){

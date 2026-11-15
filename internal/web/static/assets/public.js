@@ -18,5 +18,19 @@
     });
   }
   function load(){fetch('/api/public/jobs').then(function(r){return r.json()}).then(render).catch(function(){})}
-  load();setInterval(load,4000);
+  var seasons=document.getElementById('seasons'),missing=document.getElementById('missing');
+  function renderLib(d){
+    seasons.replaceChildren();missing.replaceChildren();
+    if(!d.seasons.length)seasons.appendChild(el('div','empty','no shows in progress'));
+    d.seasons.forEach(function(s){
+      var r=el('div','row');r.appendChild(el('div','name',s.show+' — season '+s.season));
+      r.appendChild(el('div','tag',s.imported+'/'+s.total));
+      var b=el('div','bar'),i=el('i');i.style.width=Math.round(100*s.imported/Math.max(s.total,1))+'%';b.appendChild(i);r.appendChild(b);seasons.appendChild(r)});
+    if(!d.missing.length)missing.appendChild(el('div','empty','nothing missing'));
+    d.missing.forEach(function(m){
+      var r=el('div','row');r.appendChild(el('div','name',m.title+(m.detail?'  '+m.detail:'')));
+      r.appendChild(el('div','tag',m.date?new Date(m.date).toLocaleDateString():m.kind));missing.appendChild(r)});
+  }
+  function loadLib(){fetch('/api/public/library').then(function(r){return r.json()}).then(renderLib).catch(function(){})}
+  load();setInterval(load,4000);loadLib();setInterval(loadLib,60000);
 })();
