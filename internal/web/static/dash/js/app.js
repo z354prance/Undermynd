@@ -2063,7 +2063,7 @@ async function refreshRequestStatus() {
     const status = await getJSON("/api/v1/media-request/status");
     mediaRequestsEnabled = status.enabled;
     $("mediaSearchButton").disabled = !status.enabled;
-    mediaRequestIdleMessage = status.enabled ? "" : "Requests are not enabled. An administrator can configure Seerr in the admin page.";
+    mediaRequestIdleMessage = status.enabled ? "Search for a movie or TV show. New requests may need an administrator's approval." : "Requests are not enabled. An administrator can configure Seerr in the admin page.";
     $("mediaRequestMessage").textContent = mediaRequestIdleMessage;
   } catch {
     mediaRequestsEnabled = false;
@@ -2114,6 +2114,7 @@ $("mediaSearchClear").addEventListener("click", () => {
   selectedMediaRequest = null;
   $("mediaSearchQuery").value = "";
   $("mediaSearchResults").replaceChildren();
+  $("mediaFilter").hidden = true;
   $("mediaRequestMessage").textContent = mediaRequestIdleMessage;
   $("mediaSearchButton").disabled = !mediaRequestsEnabled;
   $("mediaSearchClear").hidden = true;
@@ -2124,8 +2125,9 @@ $("mediaSearchForm").addEventListener("submit", async event => {
   const generation = ++searchGeneration;
   $("mediaSearchClear").hidden = false;
   $("mediaSearchButton").disabled = true;
-  $("mediaRequestMessage").textContent = "Searching Seerr…";
-  $("mediaSearchResults").replaceChildren();
+  $("mediaRequestMessage").textContent = "Searching…";
+  $("mediaFilter").hidden = true;
+  $("mediaSearchResults").innerHTML = '<div class="request-skeleton"></div>'.repeat(3);
   try {
     const response = await serviceAPIRequest(`/api/v1/media-request/search?query=${encodeURIComponent($("mediaSearchQuery").value.trim())}`);
     if (generation !== searchGeneration) return;
@@ -2139,12 +2141,21 @@ $("mediaSearchForm").addEventListener("submit", async event => {
       const label = {2:"Pending approval",3:"Processing",4:"Partly available",5:"Available"}[status] || "";
       const year = (item.releaseDate || item.firstAirDate || "").slice(0,4);
       const poster = /^\/[A-Za-z0-9_.-]+$/.test(item.posterPath || "") ? `https://image.tmdb.org/t/p/w185${item.posterPath}` : "";
-      return `<article class="request-result${existing ? " is-existing" : ""}"><div class="request-art">${poster ? `<img class="request-poster" src="${escapeHTML(poster)}" alt="" loading="lazy">` : `<span class="request-art-empty">${item.mediaType === "tv" ? "TV" : "FILM"}</span>`}</div><div class="request-result-content"><h3 title="${escapeHTML(title)}">${escapeHTML(title)}</h3><p class="request-meta"><span class="request-kind">${item.mediaType === "tv" ? "TV show" : "Movie"}</span>${year ? ` · ${escapeHTML(year)}` : ""}${label ? ` <span class="request-status status-${status}">${label}</span>` : ""}</p><p class="request-overview">${escapeHTML(item.overview || "No description available.")}</p><button class="service-primary-button" type="button" data-request-index="${index}" ${existing ? "disabled" : ""}>${existing ? label : "Request"}</button></div></article>`;
+      return `<article class="request-result${existing ? " is-existing" : ""}" data-type="${item.mediaType}"><div class="request-art">${poster ? `<img class="request-poster" src="${escapeHTML(poster)}" alt="" loading="lazy">` : `<span class="request-art-empty">${item.mediaType === "tv" ? "TV" : "FILM"}</span>`}</div><div class="request-result-content"><h3 title="${escapeHTML(title)}">${escapeHTML(title)}</h3><p class="request-meta"><span class="request-kind">${item.mediaType === "tv" ? "TV show" : "Movie"}</span>${year ? ` · ${escapeHTML(year)}` : ""}${label ? ` <span class="request-status status-${status}">${label}</span>` : ""}</p><p class="request-overview">${escapeHTML(item.overview || "No description available.")}</p><button class="service-primary-button" type="button" data-request-index="${index}" ${existing ? "disabled" : ""}>${existing ? label : "Request"}</button></div></article>`;
     }).join("");
     if (!mediaSearchResults.length) $("mediaSearchResults").innerHTML = '<p class="empty-state">No movies or TV shows found. Try another title.</p>';
-    $("mediaRequestMessage").textContent = mediaSearchResults.length ? `${mediaSearchResults.length} results. Select a title to confirm your request.` : "No movies or TV shows found. Try another title.";
+    $("mediaRequestMessage").textContent = mediaSearchResults.length ? `${mediaSearchResults.length} results. Pick a title to request it.` : "No movies or TV shows found. Try another title.";
+    const counts = {all:mediaSearchResults.length, movie:mediaSearchResults.filter(r => r.mediaType === "movie").length, tv:mediaSearchResults.filter(r => r.mediaType === "tv").length};
+    for (const b of $("mediaFilter").querySelectorAll("button")) { b.querySelector("span").textContent = `(${counts[b.dataset.filter]})`; b.classList.toggle("on", b.dataset.filter === "all"); }
+    $("mediaFilter").hidden = counts.movie === 0 || counts.tv === 0;
   } catch (error) { if (generation === searchGeneration) $("mediaRequestMessage").textContent = error.message; }
   finally { if (generation === searchGeneration) $("mediaSearchButton").disabled = !mediaRequestsEnabled; }
+});
+$("mediaFilter").addEventListener("click", event => {
+  const b = event.target.closest("button[data-filter]");
+  if (!b) return;
+  for (const x of $("mediaFilter").querySelectorAll("button")) x.classList.toggle("on", x === b);
+  for (const card of $("mediaSearchResults").querySelectorAll(".request-result")) card.hidden = b.dataset.filter !== "all" && card.dataset.type !== b.dataset.filter;
 });
 $("mediaSearchResults").addEventListener("click", event => {
   const button = event.target.closest("[data-request-index]");

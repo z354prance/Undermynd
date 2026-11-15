@@ -275,3 +275,23 @@ a.nav-item { text-decoration:none; color:inherit; display:inline-flex; align-ite
 #searchResultsPanel .request-result-content { flex:1; }
 #searchResultsPanel .request-result .service-primary-button:disabled { opacity:.7; cursor:default; }
 #mediaRequestMessage { min-height:1.4em; }
+
+/* Request box layout: roomier panel, quieter focus ring, filter chips, loading rows. */
+#searchResultsPanel { width:min(760px,calc(100vw - 32px)); padding:20px 24px 12px; }
+#searchResultsPanel header { padding-bottom:12px; border-bottom:1px solid var(--border); margin-bottom:6px; }
+#searchResultsPanel .request-panel { padding:0; }
+#searchResultsPanel .media-search-form { padding:14px 0 6px; align-items:flex-end; gap:10px; flex-wrap:nowrap; }
+#searchResultsPanel .media-search-form .service-form-field { flex:1 1 auto; min-width:0; }
+#searchResultsPanel .media-search-form input { font-size:15px; padding:11px 14px; outline:0; box-shadow:none; border:1px solid var(--border); border-radius:2px; background:#141614; }
+#searchResultsPanel .media-search-form input:focus { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+#searchResultsPanel .media-search-form button { white-space:nowrap; margin-bottom:2px; }
+#searchResultsPanel .request-message { padding:2px 0 10px; color:var(--muted); font-size:12px; }
+.request-filter { display:flex; gap:6px; padding:0 0 10px; }
+.request-filter[hidden] { display:none; }
+.request-filter button { background:transparent; border:1px solid var(--border); border-radius:2px; color:var(--muted); font:inherit; font-size:11px; padding:3px 10px; cursor:pointer; }
+.request-filter button.on { color:var(--accent); border-color:var(--accent); }
+.request-filter button span { opacity:.7; }
+.request-result[hidden] { display:none !important; }
+.request-skeleton { height:96px; margin:0 4px 8px; border-left:2px solid var(--border); background:linear-gradient(90deg,#141614,#1b1e1b,#141614); background-size:200% 100%; animation:req-shimmer 1.2s linear infinite; }
+@keyframes req-shimmer { to { background-position:-200% 0; } }
+@media(max-width:540px) { #searchResultsPanel .media-search-form { flex-wrap:wrap; } #searchResultsPanel .media-search-form button { width:100%; } }
