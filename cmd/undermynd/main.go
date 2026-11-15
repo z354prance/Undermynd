@@ -125,6 +125,8 @@ func main() {
 	pt := progress.New(cfg, st, logger)
 	site.Progress = pt
 	site.Storage = storage.New(os.Getenv("UNDERMYND_STORAGE_ROOT"))
+	site.Storage.Persist(filepath.Join(env.ConfigDir, "storage-scan.json"))
+	go site.Storage.Run(ctx, func() time.Duration { return time.Duration(cfg.Get().StorageScanMinutes) * time.Minute })
 	go pt.Run(ctx)
 	rp := rss.New(cfg, eng, logger)
 	site.RSS = rp

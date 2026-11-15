@@ -1,0 +1,156 @@
+/* Redesign: htop-terminal base, wire progress, prompt links, capsule storage.
+   Loaded after terminal.css so it wins where the two overlap. */
+:root {
+  --show-accent:#409cff; --movie-accent:#d4af37; --music-accent:#3fb950; --manual-accent:#acb4c0;
+  --teal:#45bba9; --gold:#d4ad79; --grey:#c9cdc6; --dimprompt:#5a5c5a;
+  --r-red:#f27b89; --r-orange:#edb26b; --r-yellow:#e5d875; --r-green:#6dcc9d; --r-blue:#70b9ed; --r-purple:#ad92ec; --r-pink:#dd91cd;
+  --rainbow:linear-gradient(90deg,#f27b89 0,#edb26b 20%,#e5d875 36%,#6dcc9d 52%,#70b9ed 70%,#ad92ec 86%,#dd91cd 100%);
+  --hairline:#30322f;
+}
+.pipeline-card.media-music, .now-playing-card.media-music { --media-accent:var(--music-accent); }
+
+/* ---------- prompt-style links ---------- */
+body :is(.service-primary-button,.service-secondary-button,.service-close-button,.prompt) {
+  background:transparent; border-color:transparent; box-shadow:none; color:var(--grey);
+  padding:4px 0; font:inherit; font-size:13px; font-weight:400; cursor:pointer; white-space:nowrap;
+}
+body :is(.service-primary-button,.service-secondary-button,.service-close-button,.prompt)::before { content:"\276F " / ""; color:var(--dimprompt); }
+body :is(.service-primary-button,.service-secondary-button,.service-close-button,.prompt)::after { content:none; }
+body :is(.service-primary-button,.service-secondary-button,.service-close-button,.prompt):hover { background:transparent; color:#fff; border-color:transparent; }
+body :is(.service-primary-button,.service-secondary-button,.service-close-button,.prompt):hover::before { color:#fff; }
+body :is(.service-primary-button,.prompt-main) { color:var(--teal); }
+body :is(.service-primary-button,.prompt-main):hover { color:#7fe0cf; }
+body :is(.service-primary-button,.prompt-main):disabled { opacity:.5; }
+body .prompt-small { font-size:11px; }
+body .request-dialog-actions, body .card-details-dialog header { gap:18px; }
+
+/* ---------- top bar ---------- */
+body #pageHeader.dashboard-topbar { display:flex; justify-content:space-between; align-items:stretch; gap:16px; border-bottom:0; padding:6px 0 10px; }
+body #pageHeader .topbar-heading { display:none; }
+body .dashboard-brand { flex-direction:row; align-items:center; gap:10px; }
+body .dashboard-brand img { width:30px; height:30px; display:block; }
+body .dashboard-brand h1 { display:block; margin:0; font-size:14px; font-weight:500; letter-spacing:0; padding:0; color:var(--teal); }
+body .dashboard-brand::after { content:none; }
+body .dashboard-brand .brand-sub { color:var(--dimprompt); }
+body #pageHeader .topbar-meta { display:flex; flex-direction:row; align-items:stretch; gap:14px; justify-self:auto; }
+.bar-rows { display:flex; flex-direction:column; align-items:flex-end; justify-content:center; gap:4px; min-width:0; }
+.req-wrap { display:inline-flex; align-items:center; gap:8px; }
+#pageHeader .header-actions { justify-content:flex-end; }
+body #pageHeader #openMediaRequest { font-size:14px; font-weight:400; padding:2px 0; color:var(--teal); }
+body #pageHeader #openMediaRequest:hover { color:#7fe0cf; text-decoration:none; background:transparent; }
+body #pageHeader :is(#openDonate,#requestAccessButton) { color:var(--grey); font-size:11px; font-weight:400; padding:2px 0; }
+body #pageHeader :is(#openDonate,#requestAccessButton):hover { color:#fff; text-decoration:none; }
+body #pageHeader :is(#openDonate,#requestAccessButton)::before { content:"\276F " / ""; color:var(--dimprompt); }
+body #pageHeader .storage-summary:not([hidden]) + * { }
+.approval-pill { background:var(--r-yellow); color:#14130a; border:0; border-radius:9px; font:inherit; font-size:11px; font-weight:700; line-height:16px; min-width:18px; padding:0 6px; cursor:pointer; text-align:center; }
+.approval-pill[hidden] { display:none; }
+.approval-pill:hover { background:#f2e68a; }
+#pageHeader .header-status { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:4px 18px; }
+#pageHeader .header-links { display:inline-flex; gap:16px; align-items:center; }
+#pageHeader .header-links button { padding:2px 0; }
+#pageHeader .header-links button[hidden] { display:none; }
+#pageHeader .header-links button::before { content:"\276F " / ""; }
+.admin-gear { display:flex; align-items:center; padding:0 2px 0 14px; border-left:1px solid var(--hairline); color:var(--gold); text-decoration:none; }
+.admin-gear:hover { color:#f3d4a7; }
+.admin-gear svg { display:block; }
+body a:not(.admin-gear):not(.nav-item) { color:var(--gold); }
+
+/* ---------- storage capsule ---------- */
+#pageHeader .storage-summary { flex:0 1 auto; }
+.storage-trigger { display:flex; align-items:center; gap:10px; padding:2px 0; background:transparent; border:0; color:var(--muted); font:11px/16px inherit; font-family:inherit; cursor:pointer; }
+.storage-trigger .cap-label { color:var(--dimprompt); }
+.storage-trigger .cap-free-text { color:var(--teal); white-space:nowrap; }
+.cap-bar { display:flex; gap:2px; width:200px; height:10px; border-radius:5px; overflow:hidden; }
+.cap-seg { min-width:3px; border-radius:2px; }
+.cap-movies { background:var(--movie-accent); } .cap-tv { background:var(--show-accent); } .cap-music { background:var(--music-accent); }
+.cap-other { background:#4a4d4a; }
+.cap-free { background:repeating-linear-gradient(135deg,#2a2c2a 0 3px,#1c1e1c 3px 6px); }
+.cap-seg:first-child { border-radius:5px 2px 2px 5px; } .cap-seg:last-child { border-radius:2px 5px 5px 2px; }
+.storage-trigger:hover .cap-label { color:var(--grey); }
+
+/* ---------- now playing ---------- */
+#playbackList { display:grid; grid-template-columns:minmax(0,1fr); gap:0; }
+#playbackList .now-playing-card { height:auto; min-height:0; padding:10px 8px 10px 10px; grid-template-columns:46px minmax(0,1fr); grid-template-rows:auto auto; column-gap:12px; row-gap:6px; }
+#playbackList .now-playing-details { grid-template-rows:auto auto auto; row-gap:3px; min-width:0; }
+#playbackList .progress-track { grid-column:2; grid-row:2; height:auto; overflow:visible; }
+#playbackList .progress-track[aria-valuenow]::after { content:none; }
+#playbackList .item-title, #playbackList .item-meta { overflow:hidden; white-space:nowrap; min-width:0; }
+#playbackList .item-meta { display:block; }
+#playbackList .item-meta > span { display:inline; }
+#playbackList .item-meta > span + span { margin-left:10px; color:var(--dimprompt); }
+.mq, .mq-box { display:inline-block; max-width:100%; }
+#playbackList .item-title, #playbackList .mq-box { container-type:inline-size; display:block; }
+#playbackList .mq { display:inline-block; white-space:nowrap; animation:mq 9s ease-in-out infinite alternate; }
+@keyframes mq { 0%,15% { transform:translateX(0); } 85%,100% { transform:translateX(min(0px,calc(100cqw - 100%))); } }
+@media (prefers-reduced-motion:reduce) { #playbackList .mq { animation:none; } }
+#dashboardView .playback-extra summary, #dashboardView .pipeline-extra summary, #dashboardView .recent-episodes summary, #dashboardView .season-breakdown summary { list-style:none; color:var(--gold); cursor:pointer; }
+#dashboardView details > summary::-webkit-details-marker { display:none; }
+#dashboardView .playback-extra summary::before { content:"\276F "; color:var(--dimprompt); }
+#dashboardView .pipeline-extra summary::before { content:"\276F "; color:var(--dimprompt); }
+#dashboardView .playback-extra summary:hover::before, #dashboardView .pipeline-extra summary:hover::before { color:#fff; }
+
+/* ---------- media in progress: two-column wire cards ---------- */
+#pipelineList { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+#pipelineList .pipeline-card { display:flex; flex-direction:column; gap:8px; height:auto; min-height:0; padding:10px 12px; border:1px solid var(--border); border-left:2px solid var(--media-accent, var(--manual-accent)); border-radius:2px; background:var(--panel-soft); }
+#pipelineList .pipeline-card:hover { background:#161815; }
+#pipelineList .pipeline-card .progress-art { display:none; }
+#pipelineList .pipeline-card-heading { display:flex; flex-direction:row; align-items:flex-start; justify-content:space-between; gap:10px; min-height:0; height:auto; }
+#pipelineList .pipeline-card-heading > div { width:auto; flex:1; min-width:0; }
+#pipelineList .media-card-type { display:none; }
+#pipelineList h3 { height:auto; min-height:0; max-height:none; margin:0; font-size:13px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#pipelineList .pipeline-stage { flex:none; height:auto; padding:0 7px; border:1px solid var(--border); border-radius:9px; font-size:10px; line-height:16px; color:var(--muted); background:transparent; white-space:nowrap; }
+#pipelineList .pipeline-stage.st-run { color:var(--r-blue); border-color:#2f4d63; }
+#pipelineList .pipeline-stage.st-wait { color:var(--r-purple); border-color:#4a3f66; }
+#pipelineList .pipeline-stage.st-stall { color:var(--r-yellow); border-color:#5c5a30; }
+#pipelineList .pipeline-stage.st-fail { color:var(--r-red); border-color:#6a3038; }
+#pipelineList .pipeline-stage.st-done { color:var(--r-green); border-color:#2f5a44; }
+#pipelineList .pipeline-progress, #seriesOverviewList .pipeline-progress { grid-column:auto; height:auto; overflow:visible; mask-image:none; background:transparent; }
+#pipelineList .pipeline-detail { display:flex; justify-content:space-between; gap:10px; margin:0; height:auto; max-height:none; color:var(--muted); font-size:11px; }
+#pipelineList .pipeline-detail > span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#pipelineList .pipeline-detail.is-problem { color:var(--r-red); }
+#pipelineList .pipeline-detail.is-problem.p-stall { color:var(--r-yellow); }
+#pipelineList .pipeline-pct { flex:none; color:var(--grey); }
+#pipelineList .pipeline-extra { grid-column:auto; margin:0; font-size:11px; }
+@media (max-width:760px) { #pipelineList { grid-template-columns:minmax(0,1fr); } }
+
+/* ---------- series overview: season cells ---------- */
+#seriesOverviewList .pipeline-card { display:flex; flex-direction:column; gap:8px; padding:10px 12px; height:auto; cursor:pointer; border:1px solid var(--border); border-left:2px solid var(--media-accent, var(--show-accent)); border-radius:2px; background:var(--panel-soft); }
+#seriesOverviewList .pipeline-card:hover { background:#161815; }
+#seriesOverviewList .progress-art, #seriesOverviewList .media-card-type { display:none; }
+#seriesOverviewList .pipeline-card-heading { min-height:0; justify-content:flex-start; text-align:left; }
+#seriesOverviewList .pipeline-card-heading > div { text-align:left; width:100%; }
+#seriesOverviewList .item-meta { text-align:left; }
+#seriesOverviewList h3 { margin:0; font-size:13px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.season-cells { display:flex; flex-wrap:wrap; gap:4px; }
+.sc { position:relative; width:22px; height:26px; border:1px solid #3a3d3a; border-radius:2px; overflow:hidden; background:#101210; display:block; }
+.sc .sc-fill { position:absolute; left:0; right:0; bottom:0; background:linear-gradient(0deg,#f27b89,#edb26b 20%,#e5d875 36%,#6dcc9d 52%,#70b9ed 70%,#ad92ec 86%,#dd91cd); background-size:100% 26px; background-position:bottom; background-repeat:no-repeat; }
+.sc.done { border-color:var(--r-green); } .sc.done .sc-fill { background:var(--r-green); }
+.sc .sc-n { position:relative; display:block; text-align:center; line-height:24px; font-size:10px; color:#e5e8e2; text-shadow:0 0 3px #000; }
+.sc.none .sc-n { color:var(--dimprompt); text-shadow:none; }
+#seriesOverviewList .season-breakdown { display:none; }
+#cardDetailsDialog .show-season-list { max-height:none; overflow:visible; margin:0; }
+#cardDetailsDialog .show-season-list > div { display:grid; grid-template-columns:1fr auto auto; gap:12px; padding:4px 0; }
+#cardDetailsDialog .ss.ok { color:var(--r-green); } #cardDetailsDialog .ss.part { color:var(--r-yellow); } #cardDetailsDialog .ss.none { color:var(--dimprompt); }
+
+/* ---------- recently added / misc ---------- */
+#dashboardView .panel-header { background:#161715; }
+.dashboard-footer { display:none; }
+@media (max-width:640px) {
+  body #pageHeader.dashboard-topbar { flex-wrap:wrap; }
+  body #pageHeader .topbar-meta { width:100%; justify-content:space-between; }
+  .bar-rows { align-items:flex-start; flex:1; }
+  #pageHeader .header-status { justify-content:flex-start; }
+  .cap-bar { width:130px; }
+}
+
+/* fixes after first render */
+body #pageHeader #pendingApprovals { background:var(--r-yellow); color:#14130a; font-size:11px; font-weight:700; }
+body #pageHeader #pendingApprovals::before, body #pageHeader #pendingApprovals::after { content:none; }
+#seriesOverviewList .pipeline-card-heading, #seriesOverviewList .pipeline-card-heading * { text-align:left; }
+#seriesOverviewList .pipeline-card-heading > div { align-items:flex-start; }
+@media (max-width:540px) {
+  #dashboardView #recentlyAddedList { grid-auto-rows:72px; }
+  #recentlyAddedList .recent-poster-card { height:70px; }
+}
+#seriesOverviewList .pipeline-card, #pipelineList .pipeline-card { align-items:stretch; justify-content:flex-start; }
+.season-cells { justify-content:flex-start; }

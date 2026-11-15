@@ -601,6 +601,8 @@ type settingsView struct {
 	StallMinutes     int    `json:"stallMinutes"`
 	ReconcileSeconds int    `json:"reconcileSeconds"`
 	FlagImportHours  int    `json:"flagImportHours"`
+
+	StorageScanMinutes int `json:"storageScanMinutes"`
 }
 
 // getSettings never includes a secret value, only whether one is set.
@@ -632,6 +634,7 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	v.NZBGet.URL, v.NZBGet.Username, v.NZBGet.HasPassword, v.NZBGet.DestRoot = c.NZBGet.URL, c.NZBGet.Username, c.NZBGet.Password != "", c.NZBGet.DestRoot
 	v.TorBox.HasToken, v.TorBox.CreatePerHour, v.TorBox.PullersAtOnce, v.TorBox.LinkGapSeconds = c.TorBox.Token != "", c.TorBox.CreatePerHour, c.TorBox.PullersAtOnce, c.TorBox.LinkGapSeconds
 	v.ClientUser, v.StallMinutes, v.ReconcileSeconds, v.FlagImportHours = c.ClientUser, c.StallMinutes, c.ReconcileSeconds, c.FlagImportHours
+	v.StorageScanMinutes = c.StorageScanMinutes
 	writeJSON(w, v)
 }
 
@@ -799,6 +802,9 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.FlagImportHours > 0 {
 		next.FlagImportHours = in.FlagImportHours
+	}
+	if in.StorageScanMinutes > 0 {
+		next.StorageScanMinutes = in.StorageScanMinutes
 	}
 	if err := s.Cfg.Set(next); err != nil {
 		jsonErr(w, http.StatusInternalServerError, "could not save settings")

@@ -65,6 +65,20 @@
   var jobFilter={q:'',group:'all',source:'all'},lastRows=[],paused=false,es=null,tabBtns={};
   function stopLive(){clearInterval(timer);if(es){es.close();es=null}}
   function attentionCount(rows){return rows.filter(function(r){return r.attention&&r.state!=='cleaned'}).length}
+  var WSTAGES=['Requested','Found','Download','Convert','Ready'];
+  function jobWire(j){
+    var m={received:[0,'wait'],submitted:[1,'wait'],downloading:[2,'run'],pulling:[2,'run'],downloaded:[3,'wait'],queued_transcode:[3,'wait'],transcoding:[3,'run'],verifying:[3,'run'],ready:[4,'wait'],imported:[5,'done'],cleaned:[5,'done'],failed:[2,'fail']}[j.state]||[1,'wait'];
+    var cur=m[0],mode=m[1],pct=Math.max(0,Math.min(100,Math.round((j.progress||0)*100)));
+    if(mode==='run'&&pct===0)mode='wait';
+    var w=el('div','wire w-'+mode);
+    WSTAGES.forEach(function(name,i){
+      var st=el('div','st '+(cur>i?'done':cur===i?'cur':'todo'));var wr=el('div','wr');wr.appendChild(el('i','nd'));
+      if(i<WSTAGES.length-1){
+        var ln=el('b','ln'+(cur>i?'':cur===i?' act':' todo'));
+        if(cur===i){var p=(mode==='run'||mode==='fail')?pct:0;ln.style.setProperty('--p',p+'%');var f=el('s','fill');f.style.width=p+'%';f.style.backgroundSize=(p>0?Math.round(10000/p):100)+'% 100%';ln.appendChild(f);if(mode==='run'&&p>0){var d=el('u','dot');d.style.left=p+'%';ln.appendChild(d)}ln.appendChild(el('em','rest'))}
+        wr.appendChild(ln)}
+      st.appendChild(wr);st.appendChild(el('span','lb',name));w.appendChild(st)});
+    return w}
   function jobsView(body){
     var bar=el('div','toolbar');var q=el('input');q.placeholder='search title';q.value=jobFilter.q;q.oninput=function(){jobFilter.q=q.value;drawRows()};bar.appendChild(q);
     var gs=el('select');[['all','all states'],['attention','needs attention'],['queued','queued'],['downloading','downloading'],['processing','processing'],['finishing','finishing'],['failed','failed'],['done','done']].forEach(function(x){var o=el('option','',x[1]);o.value=x[0];if(jobFilter.group===x[0])o.selected=true;gs.appendChild(o)});gs.onchange=function(){jobFilter.group=gs.value;drawRows()};bar.appendChild(gs);
@@ -92,7 +106,7 @@
         if(j.flag)n.appendChild(el('div','flag',j.flag));if(j.reason&&j.state!=='cleaned')n.appendChild(el('div','reason',j.reason));r.appendChild(n);
         r.appendChild(el('td','mono',j.source+' / '+j.category));
         var st=el('td');st.appendChild(el('span','pill '+j.state,j.state));r.appendChild(st);
-        var pct=Math.round(j.progress*100);var pt=el('td');var bar2=el('div','bar');var fill=el('i');fill.style.width=pct+'%';bar2.appendChild(fill);pt.appendChild(bar2);pt.appendChild(el('span','reason',pct+'%'+(j.transcodeNode?' · '+j.transcodeNode+(j.transcodeWorker?' / '+j.transcodeWorker:''):'')));r.appendChild(pt);
+        var pct=Math.round(j.progress*100);var pt=el('td');pt.appendChild(jobWire(j));pt.appendChild(el('span','reason',pct+'%'+(j.transcodeNode?' · '+j.transcodeNode+(j.transcodeWorker?' / '+j.transcodeWorker:''):'')));r.appendChild(pt);
         r.appendChild(el('td','mono',j.backend||'-'));r.appendChild(el('td','mono',ago(j.created)));
         var act=el('td','acts');
         if(j.state==='failed'){var rt=el('button','go','retry');rt.onclick=function(){doAction(j.id,'retry')};act.appendChild(rt);var cl=el('button','','clean up now');cl.onclick=function(){doAction(j.id,'cleanup')};act.appendChild(cl)}
@@ -424,8 +438,9 @@
     var st=row(g,'no-progress timeout (minutes)',{type:'number',value:S.stallMinutes,help:'a download with no progress this long is retried'});
     var rc=row(g,'import check interval (seconds)',{type:'number',value:S.reconcileSeconds,help:'how often the arr is asked whether it imported'});
     var fl=row(g,'flag a ready job after (hours)',{type:'number',value:S.flagImportHours,help:'a job the arr has not imported for this long is flagged'});
+    var sc=row(g,'storage scan interval (minutes)',{type:'number',value:S.storageScanMinutes,help:'how often library sizes are measured in the background; the last result is saved and shown right away after a restart'});
     t.appendChild(g);body.appendChild(t);
-    saveBar(body,function(m){save(function(b){b.stallMinutes=+st.value;b.reconcileSeconds=+rc.value;b.flagImportHours=+fl.value},m)})
+    saveBar(body,function(m){save(function(b){b.stallMinutes=+st.value;b.reconcileSeconds=+rc.value;b.flagImportHours=+fl.value;b.storageScanMinutes=+sc.value},m)})
   }
   start();
 })();

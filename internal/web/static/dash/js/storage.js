@@ -48,11 +48,30 @@
       const known = Number.isFinite(data.total_bytes) && data.total_bytes > 0 && Number.isFinite(data.free_bytes);
       const free = known ? Math.max(0, Math.min(100, 100*data.free_bytes/data.total_bytes)) : null;
       if (known) {
-        const filled = Math.round((100-free)/100*16);
-        const fill = document.createElement("span");
-        fill.className = "ascii-filled";
-        fill.textContent = "|".repeat(filled);
-        button.replaceChildren(document.createTextNode("storage ["), fill, document.createTextNode(`${".".repeat(16-filled)}] ${free.toFixed(1)}% free`));
+        const total = data.total_bytes, used = Math.max(0, total - data.free_bytes);
+        const groups = {movies:0, tv:0, music:0};
+        let libraries = 0;
+        for (const c of data.categories || []) {
+          const n = Number(c.bytes) || 0, name = String(c.name).toLowerCase();
+          const key = name === "movies" ? "movies" : name === "music" ? "music" : (name === "tv" || name === "anime") ? "tv" : "";
+          if (key) { groups[key] += n; libraries += n; }
+        }
+        const other = Math.max(0, used - libraries);
+        const bar = document.createElement("span");
+        bar.className = "cap-bar";
+        const add = (cls, bytes, label) => {
+          if (!(bytes > 0)) return;
+          const seg = document.createElement("span");
+          seg.className = "cap-seg " + cls;
+          seg.style.flexGrow = String(bytes);
+          seg.title = `${label}: ${size(bytes)}`;
+          bar.append(seg);
+        };
+        add("cap-movies", groups.movies, "Movies"); add("cap-tv", groups.tv, "TV"); add("cap-music", groups.music, "Music");
+        add("cap-other", other, "Other"); add("cap-free", data.free_bytes, "Free");
+        const left = document.createElement("span"); left.className = "cap-label"; left.textContent = "storage";
+        const right = document.createElement("span"); right.className = "cap-free-text"; right.textContent = `${free.toFixed(1)}% free`;
+        button.replaceChildren(left, bar, right);
         button.setAttribute("aria-label", `Storage: ${free.toFixed(1)} percent remaining. Show category sizes.`);
       } else {
         button.textContent = data.scanning ? "storage: scanning..." : "storage: unavailable";

@@ -27,7 +27,7 @@
       const pending = [...new Map(data.requests.filter(item => item.source === 'seerr' && item.status === 'pending').map(item => [item.id, item])).values()];
       button.hidden = pending.length === 0;
       const message = `${pending.length} awaiting approval`;
-      button.textContent = message;
+      button.textContent = String(pending.length); button.setAttribute('aria-label', message); button.title = message;
       if (previous !== message) { status.textContent = pending.length ? message : 'No requests awaiting approval'; previous = message; }
       if (busy) return;
       list.replaceChildren();
@@ -48,7 +48,7 @@
               await serviceAPIRequest(`/api/v1/requests/${encodeURIComponent(item.source_service_id)}/${encodeURIComponent(item.source_id)}/${action}`, {method:'POST'});
               entry.remove();
               const count = list.children.length;
-              button.textContent = `${count} awaiting approval`; button.hidden = count === 0;
+              button.textContent = String(count); button.title = `${count} awaiting approval`; button.hidden = count === 0;
               status.textContent = `${item.title || 'Request'} ${action === 'approve' ? 'approved' : 'denied'}`;
               if (!count) popup.hidePopover();
             } catch (error) { feedback.textContent = ` ${error.message}`; }
@@ -63,7 +63,7 @@
       position();
     } catch (_) {
       button.hidden = false;
-      button.textContent = 'Approval status unavailable';
+      button.textContent = '!'; button.title = 'Approval status unavailable'; button.setAttribute('aria-label', 'Approval status unavailable');
       list.replaceChildren();
       const entry = document.createElement('li');
       entry.textContent = 'Could not refresh requests. Check Seerr; retrying automatically.';

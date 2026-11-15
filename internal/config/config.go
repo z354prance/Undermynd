@@ -193,6 +193,9 @@ type Settings struct {
 	StallMinutes     int `json:"stallMinutes"`
 	ReconcileSeconds int `json:"reconcileSeconds"`
 	FlagImportHours  int `json:"flagImportHours"`
+
+	// StorageScanMinutes is how often the library sizes are measured in the background.
+	StorageScanMinutes int `json:"storageScanMinutes"`
 }
 
 func (s Settings) Category(name string) (Category, bool) {
@@ -292,6 +295,9 @@ func fill(s *Settings, env Env) {
 	}
 	if s.FlagImportHours == 0 {
 		s.FlagImportHours = 6
+	}
+	if s.StorageScanMinutes == 0 {
+		s.StorageScanMinutes = 30
 	}
 	if s.QBit.SaveDir == "" {
 		s.QBit.SaveDir = filepath.Join(env.Work(), "client")

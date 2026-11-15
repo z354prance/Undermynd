@@ -139,12 +139,13 @@ function pipelineProgress(item) {
 function mediaCardType(item) {
   if (["series", "episode"].includes(item.kind)) return "show";
   if (item.kind === "movie") return "movie";
+  if (["album", "artist", "track", "music"].includes(item.kind)) return "music";
   return "manual";
 }
 function mediaCardBadge(item) {
   const type = mediaCardType(item);
-  const paths = {show:'<rect x="3" y="5" width="18" height="13" rx="2"/><path d="M8 22h8M12 18v4M8 1l4 4 4-4"/>',movie:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4"/>',manual:'<path d="M12 3v4m0 10v4M3 12h4m10 0h4M6 6l3 3m6 6 3 3M6 18l3-3m6-6 3-3"/><circle cx="12" cy="12" r="5"/>'};
-  return `<span class="media-card-type"><svg viewBox="0 0 24 24" aria-hidden="true">${paths[type]}</svg>${type === "show" ? "Show" : type === "movie" ? "Movie" : "Manual / other"}</span>`;
+  const paths = {show:'<rect x="3" y="5" width="18" height="13" rx="2"/><path d="M8 22h8M12 18v4M8 1l4 4 4-4"/>',movie:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4"/>',music:'<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',manual:'<path d="M12 3v4m0 10v4M3 12h4m10 0h4M6 6l3 3m6 6 3 3M6 18l3-3m6-6 3-3"/><circle cx="12" cy="12" r="5"/>'};
+  return `<span class="media-card-type"><svg viewBox="0 0 24 24" aria-hidden="true">${paths[type]}</svg>${type === "show" ? "Show" : type === "movie" ? "Movie" : type === "music" ? "Music" : "Manual / other"}</span>`;
 }
 function progressPoster(item) {
  const type=mediaCardType(item);
@@ -167,31 +168,67 @@ function asciiMeter(percent) {
   return `<span class="ascii-meter" aria-hidden="true">[<span class="ascii-filled">${"|".repeat(filled)}</span><span class="ascii-empty">${".".repeat(20-filled)}</span>]</span>`;
 }
 
+
+const WIRE_STAGES = ["Requested", "Found", "Download", "Convert", "Ready"];
+function wireState(item, progress) {
+  const cur = {requested:0, wanted:1, downloading:2, downloaded:2, processing:3, importing:4, available:5, playing:5}[item.stage] ?? 1;
+  const problems = (progress.problems || []).join(" ");
+  let mode = "run";
+  if (cur >= 5) mode = "done";
+  else if (/fail|error/i.test(problems)) mode = "fail";
+  else if (/stall/i.test(problems)) mode = "stall";
+  else if (cur <= 1 || cur === 4 || progress.paused || progress.percent === null) mode = "wait";
+  const percent = progress.percent === null ? 0 : Math.max(0, Math.min(100, progress.percent));
+  return {cur, mode, percent};
+}
+function wireMarkup(item, progress) {
+  const {cur, mode, percent} = wireState(item, progress);
+  const cells = WIRE_STAGES.map((name, i) => {
+    const kind = cur > i ? "done" : cur === i ? "cur" : "todo";
+    let line = "";
+    if (i < WIRE_STAGES.length - 1) {
+      if (cur > i) line = '<b class="ln"></b>';
+      else if (cur === i) {
+        const p = mode === "run" || mode === "stall" || mode === "fail" ? percent : 0;
+        const stretch = p > 0 ? Math.round(10000 / p) : 100;
+        line = `<b class="ln act" style="--p:${p.toFixed(1)}%"><s class="fill" style="width:${p.toFixed(1)}%;background-size:${stretch}% 100%"></s>${mode === "run" && p > 0 ? `<u class="dot" style="left:${p.toFixed(1)}%"></u>` : ""}<em class="rest"></em></b>`;
+      } else line = '<b class="ln todo"></b>';
+    }
+    return `<div class="st ${kind}"><div class="wr"><i class="nd"></i>${line}</div><span class="lb">${name}</span></div>`;
+  }).join("");
+  return `<div class="wire w-${mode}" aria-hidden="true">${cells}</div>`;
+}
+function wirePercentText(item, progress) {
+  const {mode, percent} = wireState(item, progress);
+  return mode === "done" ? "Ready to watch" : progress.percent === null ? progress.label : `${Math.round(percent)}%`;
+}
+// One-line version for playback: green start node, hollow end node, the same rainbow fill.
+function playWire(percent) {
+  const known = percent !== null && Number.isFinite(Number(percent));
+  const p = known ? Math.max(0, Math.min(100, Number(percent))) : 0;
+  const stretch = p > 0 ? Math.round(10000 / p) : 100;
+  return `<div class="wire wire-play${known ? "" : " unknown"}" aria-hidden="true"><i class="nd done"></i><b class="ln act" style="--p:${p.toFixed(1)}%"><s class="fill" style="width:${p.toFixed(1)}%;background-size:${stretch}% 100%"></s>${known && p > 0 ? `<u class="dot" style="left:${p.toFixed(1)}%"></u>` : ""}<em class="rest"></em></b><i class="nd end"></i><span class="pct">${known ? Math.round(p) + "%" : "—"}</span></div>`;
+}
+
 function pipelineCardMarkup(item) {
   const progress = pipelineProgress(item);
   const title = cleanMediaTitle(item);
   const waiting = progress.percent === null;
-  const steps = [
-    ["requested", "Requested"], ["downloading", "Download"],
-    ["processing", "Process"], ["available", "Ready"],
-  ];
-  const current = { wanted: "requested", downloaded: "downloading", importing: "processing", playing: "available" }[item.stage] || item.stage;
+  const {mode} = wireState(item, progress);
+  const pill = mode === "fail" ? "failed" : mode === "stall" ? "stalled" : mode === "wait" ? "in line" : mode === "done" ? "ready" : progress.label.toLowerCase();
+  const problem = progress.problems.length ? progress.problems.map(pretty).join(" · ") : "";
+  const sentence = problem || [progress.detail, progress.serviceNames.join(", ")].filter(Boolean).join(" · ");
   return `
     <div class="pipeline-card-heading">
       <div>${mediaCardBadge(item)}<h3 title="${escapeHTML(title)}">${escapeHTML(title)}</h3><p class="item-meta">${escapeHTML(mediaLabel(item))}</p></div>
-      <span class="pipeline-stage">${escapeHTML(progress.label)}</span>
+      <span class="pipeline-stage st-${mode}" title="${escapeHTML(progress.label)}">${escapeHTML(pill)}</span>
     </div>
-    <div class="pipeline-progress-label"><span>${waiting ? "Awaiting progress" : "Current stage"}</span><strong>${waiting ? "—" : `${Math.round(progress.percent)}%`}</strong></div>
-    <div class="pipeline-progress${waiting ? " unmeasured" : ""}${progress.problems.length || progress.paused ? " paused" : ""}" role="progressbar" aria-label="${escapeHTML(title)}: ${escapeHTML(progress.label)}" aria-valuemin="0" aria-valuemax="100" ${waiting ? 'aria-valuetext="Progress not reported"' : `aria-valuenow="${Math.round(progress.percent)}"`}>
-      ${asciiMeter(waiting ? null : progress.percent)}
-    </div>
-    <p class="pipeline-detail" title="${escapeHTML([progress.detail, ...progress.serviceNames].join(" - "))}"><span>${escapeHTML(progress.detail)}</span>${progress.serviceNames.length ? `<span class="pipeline-source">${escapeHTML(progress.serviceNames.join(", "))}</span>` : ""}</p>
+    <div class="pipeline-progress${waiting ? " unmeasured" : ""}${progress.problems.length || progress.paused ? " paused" : ""}" role="progressbar" aria-label="${escapeHTML(title)}: ${escapeHTML(progress.label)}" aria-valuemin="0" aria-valuemax="100" ${waiting ? 'aria-valuetext="Progress not reported"' : `aria-valuenow="${Math.round(progress.percent)}"`}>${wireMarkup(item, progress)}</div>
+    <p class="pipeline-detail${problem ? " is-problem p-" + mode : ""}" title="${escapeHTML(sentence)}"><span>${escapeHTML(sentence)}</span>${waiting ? "" : `<span class="pipeline-pct">${wirePercentText(item, progress)}</span>`}</p>
     <details class="pipeline-extra"><summary>Details</summary><dl class="playback-facts">${[
       ["Title", item.title || title], ["Stage", progress.label], ["Progress", waiting ? "Not reported" : `${Math.round(progress.percent)}%`],
       ["Transfer / processing", progress.detail], ["Source", progress.serviceNames.join(", ")], ["Attention", progress.problems.map(pretty).join(", ")]
     ].filter(([,value]) => value).map(([label,value]) => `<div><dt>${label}</dt><dd>${escapeHTML(value)}</dd></div>`).join("")}</dl></details>
-    <ol class="pipeline-steps" aria-label="Workflow stages">${steps.map(([stage, name]) => `<li${stage === current ? ' aria-current="step"' : ""}>${name}</li>`).join("")}</ol>
-    ${progress.problems.length ? `<p class="pipeline-problem">${escapeHTML(progress.problems.map(pretty).join(" · "))}</p>` : ""}
   `;
 }
 
@@ -249,12 +286,22 @@ function showProgressCards(seasons) {
   }
   return [...shows.values()].map(show => ({...show,stage:show.total > 0 && show.imported === show.total ? "available" : "processing"})).sort((a,b)=>a.title.localeCompare(b.title)||a.id.localeCompare(b.id));
 }
+function seasonCell(s) {
+  const total = Number(s.total) || 0, imported = Math.min(total, Math.max(0, Number(s.imported) || 0));
+  const pct = total > 0 ? 100 * imported / total : 0;
+  const cls = total > 0 && imported >= total ? "done" : imported > 0 ? "part" : "none";
+  return `<span class="sc ${cls}" title="Season ${Number(s.season_number)}: ${imported} / ${total}"><span class="sc-fill" style="height:${pct.toFixed(0)}%"></span><span class="sc-n">${Number(s.season_number)}</span></span>`;
+}
 function showProgressMarkup(show) {
-  const percent = show.total > 0 ? Math.max(0,Math.min(100,100*show.imported/show.total)) : 0;
-  return `<div class="pipeline-card-heading"><div>${mediaCardBadge(show)}<h3 title="${escapeHTML(show.title)}">${escapeHTML(show.title)}</h3><p class="item-meta">Series import progress · Sonarr</p></div></div>
-    <details class="season-breakdown" data-show="${escapeHTML(show.id)}"><summary>Season breakdown</summary><div class="show-season-list" tabindex="0" aria-label="Season import counts">${[...show.seasons].sort((a,b)=>a.season_number-b.season_number).map(s=>`<div><span>Season ${Number(s.season_number)}</span><span>${Number(s.imported)} / ${Number(s.total)} imported</span></div>`).join("")}</div></details>
-    <div class="pipeline-progress-label"><span>${show.imported} / ${show.total} imported</span><strong>${Math.round(percent)}%</strong></div>
-    <div class="pipeline-progress" role="progressbar" aria-label="${escapeHTML(show.title)} import progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(percent)}">${asciiMeter(percent)}</div>`;
+  const seasons = [...show.seasons].sort((a,b)=>a.season_number-b.season_number);
+  const rows = seasons.map(s => {
+    const total = Number(s.total) || 0, imported = Math.min(total, Math.max(0, Number(s.imported) || 0));
+    const state = total > 0 && imported >= total ? "complete" : imported > 0 ? `${total - imported} to go` : "not started";
+    return `<div><span>Season ${Number(s.season_number)}</span><span>${imported} / ${total}</span><span class="ss ${imported >= total && total > 0 ? "ok" : imported > 0 ? "part" : "none"}">${state}</span></div>`;
+  }).join("");
+  return `<div class="pipeline-card-heading"><div>${mediaCardBadge(show)}<h3 title="${escapeHTML(show.title)}">${escapeHTML(show.title)}</h3><p class="item-meta">${show.imported} / ${show.total} imported</p></div></div>
+    <div class="season-cells" role="img" aria-label="${escapeHTML(show.title)}: ${show.imported} of ${show.total} monitored episodes imported">${seasons.map(seasonCell).join("")}</div>
+    <details class="season-breakdown" data-show="${escapeHTML(show.id)}"><summary>Season breakdown</summary><div class="show-season-list" tabindex="0" aria-label="Season import counts">${rows}</div></details>`;
 }
 // Only retire an ARR queue mirror for the same release in this lifecycle.
 // Keep real downloader records, other releases, and queued/failed Tdarr jobs visible.
@@ -372,9 +419,9 @@ function renderPlayback() {
         <article class="now-playing-card media-${mediaCardType({kind:session.media_type})}" data-detail-key="playback:${escapeHTML(`${session.source_service_id}:${session.id}`)}">
           ${playbackPoster(session)}
           <div class="now-playing-details">
-            <div class="item-title">${escapeHTML(title)}</div>
+            <div class="item-title"><span class="mq">${escapeHTML(title)}</span></div>
             <div class="item-meta">
-              <span>${escapeHTML(subtitleParts.join(" · "))}</span>
+              <span class="mq-box"><span class="mq">${escapeHTML(subtitleParts.join(" · "))}</span></span>
               <span>${escapeHTML(pretty(session.state || "playing"))}</span>
             </div>
             <details class="playback-extra" data-session="${escapeHTML(`${session.source_service_id}:${session.id}`)}" ${expanded.has(`${session.source_service_id}:${session.id}`) ? "open" : ""}><summary>Details</summary><dl class="playback-facts">${[
@@ -387,7 +434,7 @@ function renderPlayback() {
             <div class="playback-time">${escapeHTML(formatPlaybackTime(progress))} / ${duration > 0 ? escapeHTML(formatPlaybackTime(duration)) : "Live / unknown"}</div>
           </div>
             <div class="progress-track" role="progressbar" aria-label="Playback progress" ${duration > 0 ? `aria-valuenow="${Math.round(percent)}" aria-valuemin="0" aria-valuemax="100"` : 'aria-valuetext="Progress unavailable"'}>
-              ${asciiMeter(duration > 0 ? percent : null)}
+              ${playWire(duration > 0 ? percent : null)}
             </div>
         </article>
       `;
@@ -2262,6 +2309,15 @@ function positionCardDetails() {
   const a = anchor.getBoundingClientRect();
   if (a.bottom < 0 || a.top > innerHeight) { dialog.close(); return; }
   const width = dialog.getBoundingClientRect().width;
+  if (anchor.closest("#seriesOverviewList")) {
+    const room = Math.max(120, Math.min(innerHeight - 24, 440));
+    dialog.style.maxHeight = `${room}px`;
+    const h = dialog.getBoundingClientRect().height;
+    const right = a.right + 10 + width <= innerWidth - 12;
+    dialog.style.left = `${right ? a.right + 10 : Math.max(12, a.left - width - 10)}px`;
+    dialog.style.top = `${Math.max(12, Math.min(a.top, innerHeight - h - 12))}px`;
+    return;
+  }
   const above = a.top - 12;
   const below = innerHeight - a.bottom - 12;
   const preferredHeight = Math.min(dialog.scrollHeight + 2, 440);

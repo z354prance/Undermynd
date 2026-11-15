@@ -2,6 +2,7 @@ package web_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"github.com/z354prance/undermynd/internal/storage"
 	"io"
@@ -196,7 +197,7 @@ func TestLoginFailureDoesNotSayWhich(t *testing.T) {
 
 func TestPagesServe(t *testing.T) {
 	e := newEnv(t)
-	for _, p := range []string{"/", "/admin", "/assets/app.css", "/assets/admin.js", "/dash/js/app.js", "/dash/css/app.css", "/dash/css/terminal.css", "/assets/favicon.svg", "/assets/logo.svg", "/health", "/api/v1/activity", "/api/v1/recently-added", "/api/v1/playback", "/api/v1/auth/status", "/api/v1/media-request/status"} {
+	for _, p := range []string{"/", "/admin", "/assets/app.css", "/assets/admin.js", "/dash/js/app.js", "/dash/css/app.css", "/dash/css/terminal.css", "/dash/css/redesign.css", "/dash/css/wire.css", "/assets/favicon.svg", "/assets/logo.svg", "/health", "/api/v1/activity", "/api/v1/recently-added", "/api/v1/playback", "/api/v1/auth/status", "/api/v1/media-request/status"} {
 		if code, _ := e.do("GET", p, nil, false); code != 200 {
 			t.Fatalf("%s: %d", p, code)
 		}
@@ -370,6 +371,7 @@ func TestStorageEndpointReadsTheMediaRoot(t *testing.T) {
 	l := log.New(io.Discard, "", 0)
 	srv := web.New(st, pipeline.New(st, cfg, l), cfg, au, l)
 	srv.Storage = storage.New(root)
+	go srv.Storage.Run(context.Background(), func() time.Duration { return time.Hour })
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 	get := func() map[string]any {
@@ -382,11 +384,10 @@ func TestStorageEndpointReadsTheMediaRoot(t *testing.T) {
 		_ = json.NewDecoder(resp.Body).Decode(&m)
 		return m
 	}
-	get() // starts the scan
 	var m map[string]any
 	for i := 0; i < 50; i++ {
 		time.Sleep(100 * time.Millisecond)
-		if m = get(); m["scanning"] == false {
+		if m = get(); m["scanning"] == false && m["total_bytes"] != nil {
 			break
 		}
 	}
