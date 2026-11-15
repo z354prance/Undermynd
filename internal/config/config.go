@@ -118,13 +118,14 @@ type Rule struct {
 }
 
 type Settings struct {
-	Feeds      []Feed     `json:"feeds"`
-	Rules      []Rule     `json:"rules"`
-	Tdarr      Tdarr      `json:"tdarr"`
-	NZBGet     NZBGet     `json:"nzbget"`
-	TorBox     TorBox     `json:"torbox"`
-	Categories []Category `json:"categories"`
-	QBit       QBit       `json:"qbit"`
+	IntakePaused bool       `json:"intakePaused"` // new grabs are accepted but held until resumed
+	Feeds        []Feed     `json:"feeds"`
+	Rules        []Rule     `json:"rules"`
+	Tdarr        Tdarr      `json:"tdarr"`
+	NZBGet       NZBGet     `json:"nzbget"`
+	TorBox       TorBox     `json:"torbox"`
+	Categories   []Category `json:"categories"`
+	QBit         QBit       `json:"qbit"`
 
 	// Login the arrs use against the fake client API.
 	ClientUser     string        `json:"clientUser"`

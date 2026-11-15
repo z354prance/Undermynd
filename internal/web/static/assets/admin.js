@@ -8,7 +8,7 @@
   function field(form,label,type,name,ph){form.appendChild(el('label','',label));var i=el('input');i.type=type||'text';i.name=name;if(ph)i.placeholder=ph;i.autocomplete=type==='password'?'current-password':'off';form.appendChild(i);return i}
   function prompt(cmd){var d=el('div');d.appendChild(el('span','prompt','~/undermynd '));var b=el('b','','❯');b.style.color='var(--teal)';b.style.fontWeight='400';d.appendChild(b);d.appendChild(el('span','cmd',' '+cmd));return d}
   function start(){
-    clearInterval(timer);logoutBtn.hidden=true;
+    stopLive();logoutBtn.hidden=true;
     api('GET','/session').then(function(s){
       if(s.signedIn)return app();
       if(s.needsSetup)return setup();
@@ -52,39 +52,67 @@
   function app(){
     logoutBtn.hidden=false;logoutBtn.onclick=function(){api('POST','/logout').then(start)};
     root.replaceChildren();
-    var tabs=el('div','tabs');[['jobs','Jobs'],['arrs','Arrs & categories'],['clients','Download clients'],['transcode','Transcode'],['rss','RSS'],['system','System']].forEach(function(p){var t=p[0];var b=el('button',t===tab?'on':'',p[1]);b.onclick=function(){tab=t;detailId=null;app()};tabs.appendChild(b)});
+    var tabs=el('div','tabs');[['jobs','Jobs'],['arrs','Arrs & categories'],['clients','Download clients'],['transcode','Transcode'],['rss','RSS'],['system','System']].forEach(function(p){var t=p[0];var b=el('button',t===tab?'on':'',p[1]);tabBtns[t]=b;b.onclick=function(){stopLive();tab=t;detailId=null;app()};tabs.appendChild(b)});
     root.appendChild(tabs);var body=el('div');root.appendChild(body);
     if(tab==='jobs')jobsView(body);else settingsView(body);
   }
   function fail(e){if(e.status===401){start()}else{var d=el('div','err',e.message);root.appendChild(d)}}
   function ago(t){var s=Math.max(0,(Date.now()-new Date(t))/1000);if(s<90)return Math.round(s)+'s';if(s<5400)return Math.round(s/60)+'m';if(s<172800)return Math.round(s/3600)+'h';return Math.round(s/86400)+'d'}
+  var jobFilter={q:'',group:'all',source:'all'},lastRows=[],paused=false,es=null,tabBtns={};
+  function stopLive(){clearInterval(timer);if(es){es.close();es=null}}
+  function attentionCount(rows){return rows.filter(function(r){return r.attention&&r.state!=='cleaned'}).length}
   function jobsView(body){
-    function draw(){
-      api('GET','/jobs').then(function(list){
-        if(tab!=='jobs'||detailId)return;
-        body.replaceChildren();
-        if(!list.length){body.appendChild(el('div','empty','no jobs yet'));return}
-        var t=el('table');var h=el('tr');['name','source','state','%','backend','age',''].forEach(function(x){h.appendChild(el('th','',x))});t.appendChild(h);
-        list.forEach(function(j){
-          var r=el('tr');var n=el('td');var a=el('button','link',j.name);a.onclick=function(){detailId=j.id;detail(body,j.id)};n.appendChild(a);
-          if(j.flag)n.appendChild(el('div','flag',j.flag));if(j.reason&&j.state!=='cleaned')n.appendChild(el('div','reason',j.reason));r.appendChild(n);
-          r.appendChild(el('td','mono',j.source+' / '+j.category));
-          var st=el('td','',j.state);if(j.state==='failed')st.style.color='var(--red)';r.appendChild(st);
-          var pct=Math.round((j.overall!=null?j.overall:j.progress)*100);var pt=el('td','',pct+'%');if(j.transcodeNode)pt.appendChild(el('div','reason',j.transcodeNode+(j.transcodeWorker?' / '+j.transcodeWorker:'')));r.appendChild(pt);r.appendChild(el('td','mono',j.backend||'-'));r.appendChild(el('td','mono',ago(j.created)));
-          var act=el('td');
-          if(j.state==='failed'){var rt=el('button','go','retry');rt.onclick=function(){doAction(j.id,'retry')};act.appendChild(rt)}
-          if(j.state==='ready'){var mi=el('button','','mark imported');mi.onclick=function(){doAction(j.id,'imported')};act.appendChild(mi)}
-          if(j.state!=='cleaned'){var cc=el('button','bad','cancel');cc.onclick=function(){if(confirm('Cancel and clean up this job?'))doAction(j.id,'cancel')};act.appendChild(document.createTextNode(' '));act.appendChild(cc)}
-          r.appendChild(act);t.appendChild(r);
-        });
-        body.appendChild(t);
-      }).catch(fail);
+    var bar=el('div','toolbar');var q=el('input');q.placeholder='search title';q.value=jobFilter.q;q.oninput=function(){jobFilter.q=q.value;drawRows()};bar.appendChild(q);
+    var gs=el('select');[['all','all states'],['attention','needs attention'],['queued','queued'],['downloading','downloading'],['processing','processing'],['finishing','finishing'],['failed','failed'],['done','done']].forEach(function(x){var o=el('option','',x[1]);o.value=x[0];if(jobFilter.group===x[0])o.selected=true;gs.appendChild(o)});gs.onchange=function(){jobFilter.group=gs.value;drawRows()};bar.appendChild(gs);
+    var ss=el('select');[['all','all sources'],['sonarr','sonarr'],['radarr','radarr'],['lidarr','lidarr'],['rss','rss']].forEach(function(x){var o=el('option','',x[1]);o.value=x[0];if(jobFilter.source===x[0])o.selected=true;ss.appendChild(o)});ss.onchange=function(){jobFilter.source=ss.value;drawRows()};bar.appendChild(ss);
+    bar.appendChild(el('span','sp'));
+    var pb=el('button','','');function pauseLabel(){pb.textContent=paused?'resume intake':'pause intake';pb.className=paused?'go':''}
+    pb.onclick=function(){api('POST','/intake',{paused:!paused}).then(function(r){paused=r.paused;pauseLabel();banner()}).catch(fail)};pauseLabel();bar.appendChild(pb);
+    body.appendChild(bar);var note=el('div','notice');body.appendChild(note);var host=el('div');body.appendChild(host);
+    function banner(){note.textContent=paused?'Intake is paused: new grabs are accepted but held until you resume.':'';note.style.display=paused?'block':'none';pauseLabel()}
+    function match(r){
+      if(jobFilter.q&&r.name.toLowerCase().indexOf(jobFilter.q.toLowerCase())<0)return false;
+      if(jobFilter.source!=='all'&&r.source!==jobFilter.source)return false;
+      if(jobFilter.group==='attention')return r.attention&&r.state!=='cleaned';
+      if(jobFilter.group!=='all')return r.group===jobFilter.group;
+      return r.state!=='cleaned'||jobFilter.group==='done';
     }
-    draw();timer=setInterval(draw,3000);
+    function drawRows(){
+      if(tab!=='jobs'||detailId)return;
+      var list=lastRows.filter(match);host.replaceChildren();
+      var ac=attentionCount(lastRows);if(tabBtns.jobs)tabBtns.jobs.textContent=ac?'Jobs ('+ac+' need attention)':'Jobs';
+      if(!list.length){host.appendChild(el('div','empty',lastRows.length?'nothing matches these filters':'no jobs yet'));return}
+      var t=el('table');var h=el('tr');['name','source','state','progress','backend','age',''].forEach(function(x){h.appendChild(el('th','',x))});t.appendChild(h);
+      list.forEach(function(j){
+        var r=el('tr');var n=el('td');var a=el('button','link',j.name);a.onclick=function(){detailId=j.id;detail(body,j.id)};n.appendChild(a);
+        if(j.flag)n.appendChild(el('div','flag',j.flag));if(j.reason&&j.state!=='cleaned')n.appendChild(el('div','reason',j.reason));r.appendChild(n);
+        r.appendChild(el('td','mono',j.source+' / '+j.category));
+        var st=el('td','',j.state);if(j.state==='failed')st.style.color='var(--red)';r.appendChild(st);
+        var pct=Math.round(j.progress*100);var pt=el('td');var bar2=el('div','bar');var fill=el('i');fill.style.width=pct+'%';bar2.appendChild(fill);pt.appendChild(bar2);pt.appendChild(el('span','reason',pct+'%'+(j.transcodeNode?' · '+j.transcodeNode+(j.transcodeWorker?' / '+j.transcodeWorker:''):'')));r.appendChild(pt);
+        r.appendChild(el('td','mono',j.backend||'-'));r.appendChild(el('td','mono',ago(j.created)));
+        var act=el('td','acts');
+        if(j.state==='failed'){var rt=el('button','go','retry');rt.onclick=function(){doAction(j.id,'retry')};act.appendChild(rt);var cl=el('button','','clean up now');cl.onclick=function(){doAction(j.id,'cleanup')};act.appendChild(cl)}
+        if(j.state==='ready'){var mi=el('button','','mark imported');mi.onclick=function(){doAction(j.id,'imported')};act.appendChild(mi)}
+        if(j.state==='imported'){var cn=el('button','','clean up now');cn.onclick=function(){doAction(j.id,'cleanup')};act.appendChild(cn)}
+        if(j.state!=='cleaned'&&j.state!=='failed'&&j.state!=='imported'){var ff=el('button','','fail it');ff.title='report a failed download so the arr blocklists this release';ff.onclick=function(){if(confirm('Fail this job? The arr will treat the download as failed and may search again.'))doAction(j.id,'fail')};act.appendChild(ff)}
+        if(j.state!=='cleaned'){var cc=el('button','bad','cancel');cc.onclick=function(){if(confirm('Cancel and clean up this job?'))doAction(j.id,'cancel')};act.appendChild(cc)}
+        r.appendChild(act);t.appendChild(r);
+      });
+      host.appendChild(t);
+    }
+    function take(d){lastRows=d.jobs||[];paused=!!d.paused;banner();drawRows()}
+    // live stream; falls back to polling if the stream is unavailable
+    function poll(){api('GET','/jobs').then(function(rows){lastRows=rows;drawRows()}).catch(fail)}
+    if(window.EventSource){
+      es=new EventSource('/admin/api/events');
+      es.addEventListener('jobs',function(e){try{take(JSON.parse(e.data))}catch(x){}});
+      es.onerror=function(){if(es&&es.readyState===2){es.close();es=null;poll();timer=setInterval(poll,3000)}};
+    }else{poll();timer=setInterval(poll,3000)}
+    banner();drawRows();
   }
   function doAction(id,a){api('POST','/jobs/'+encodeURIComponent(id)+'/'+a).then(function(){app()}).catch(fail)}
   function detail(body,id){
-    clearInterval(timer);body.replaceChildren();
+    stopLive();body.replaceChildren();
     var back=el('button','link','← all jobs');back.onclick=function(){detailId=null;app()};body.appendChild(back);
     api('GET','/jobs/'+encodeURIComponent(id)).then(function(j){
       body.appendChild(el('h3','',j.name));
@@ -219,7 +247,26 @@
   }
 
   function systemPane(body){
-    body.appendChild(head('System','The login the arrs use, and timing.'));
+    body.appendChild(head('System','What the pipeline is doing right now, the login the arrs use, and timing.'));
+    var live=el('div');body.appendChild(live);
+    function bytes(n){if(!n)return '0 B';var u=['B','KB','MB','GB','TB'],i=0;while(n>=1024&&i<4){n/=1024;i++}return n.toFixed(i?1:0)+' '+u[i]}
+    function drawSystem(){api('GET','/system').then(function(d){
+      live.replaceChildren();var g=el('div','grid3');
+      var c1=el('div','card');c1.appendChild(el('h4','','Intake'));var k=el('div','kv');k.appendChild(el('span','k','state'));k.appendChild(chip(!d.paused,d.paused?'paused':'running'));c1.appendChild(k);
+      ['queued','downloading','processing','finishing','failed'].forEach(function(x){var r=el('div','kv');r.appendChild(el('span','k',x));r.appendChild(el('span','v',String(d.counts[x]||0)));c1.appendChild(r)});g.appendChild(c1);
+      var c2=el('div','card');c2.appendChild(el('h4','','TorBox'));
+      if(!d.torbox.configured){c2.appendChild(help('No token set.'))}else{
+        var r1=el('div','kv');r1.appendChild(el('span','k','new downloads this hour'));r1.appendChild(el('span','v',d.torbox.used+' of '+d.torbox.limit));c2.appendChild(r1);
+        var br=el('div','bar');var bf=el('i');bf.style.width=Math.min(100,d.torbox.limit?d.torbox.used*100/d.torbox.limit:0)+'%';br.appendChild(bf);c2.appendChild(br);
+        if(d.torbox.backoffUntil){var r2=el('div','kv');r2.appendChild(el('span','k','backing off until'));r2.appendChild(el('span','v flag',new Date(d.torbox.backoffUntil).toLocaleTimeString()));c2.appendChild(r2)}}
+      g.appendChild(c2);
+      var c3=el('div','card');c3.appendChild(el('h4','','Tdarr'));var t1=el('div','kv');t1.appendChild(el('span','k','jobs with Tdarr'));t1.appendChild(el('span','v',d.tdarr.inFlight+' of '+d.tdarr.max));c3.appendChild(t1);
+      var t2=el('div','kv');t2.appendChild(el('span','k','watched over the API'));t2.appendChild(chip(d.tdarr.api,d.tdarr.api?'yes':'no — folders only'));c3.appendChild(t2);g.appendChild(c3);
+      [['Work folder',d.work],['Complete folder',d.complete]].forEach(function(p){var c=el('div','card');c.appendChild(el('h4','',p[0]));var a=el('div','kv');a.appendChild(el('span','k','path'));a.appendChild(el('span','v',p[1].path));c.appendChild(a);
+        var b=el('div','kv');b.appendChild(el('span','k','used by Undermynd'));b.appendChild(el('span','v',bytes(p[1].usedByUs)+(p[1].partial?' (partial count)':'')));c.appendChild(b);
+        if(p[1].totalBytes){var f=el('div','kv');f.appendChild(el('span','k','free on this disk'));f.appendChild(el('span','v',bytes(p[1].freeBytes)+' of '+bytes(p[1].totalBytes)));c.appendChild(f)}g.appendChild(c)});
+      live.appendChild(g)}).catch(fail)}
+    drawSystem();timer=setInterval(function(){if(tab==='system')drawSystem()},5000);
     var c=el('div','card');c.appendChild(el('h4','','Client login for the arrs'));
     c.appendChild(help('Used as the qBittorrent login, and the password is also the SABnzbd API key. It is never shown again; generate a new one to see it once.'));
     var u=el('div','kv');u.appendChild(el('span','k','username'));u.appendChild(el('span','v',S.clientUser));c.appendChild(u);

@@ -365,6 +365,35 @@ func (e *Engine) Cancel(id string) error {
 	return err
 }
 
+// FailJob fails a job on purpose, so the arr sees a failed download and blocklists the release.
+func (e *Engine) FailJob(id string) error {
+	_, err := e.Store.Update(id, func(j *job.Job) error {
+		switch j.State {
+		case job.Failed, job.Cleaned:
+			return errors.New("the job has already ended")
+		}
+		j.Move(job.Failed, "failed by admin", e.Now())
+		return nil
+	})
+	return err
+}
+
+// CleanupNow makes a job that is finished (or failed) run its cleanup on the next pass.
+func (e *Engine) CleanupNow(id string) error {
+	_, err := e.Store.Update(id, func(j *job.Job) error {
+		switch j.State {
+		case job.Imported:
+			j.NextRun = time.Time{}
+		case job.Failed:
+			j.FailCleaned, j.NextRun = false, time.Time{}
+		default:
+			return errors.New("cleanup runs only for imported or failed jobs")
+		}
+		return nil
+	})
+	return err
+}
+
 func (e *Engine) MarkImported(id string) error {
 	_, err := e.Store.Update(id, func(j *job.Job) error {
 		if j.State != job.Ready {
@@ -480,6 +509,14 @@ func (e *Engine) fail(j job.Job, reason string) {
 }
 
 func (e *Engine) doSubmit(ctx context.Context, j job.Job) {
+	if e.Cfg.Get().IntakePaused {
+		_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
+			c.Reason = "intake is paused"
+			c.NextRun = e.Now().Add(15 * time.Second)
+			return nil
+		})
+		return
+	}
 	b, err := e.pick(j)
 	if err != nil {
 		e.retry(j, err, 4, "choose backend")

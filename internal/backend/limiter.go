@@ -143,3 +143,11 @@ func (l *Limiter) Used() int {
 	}
 	return n
 }
+
+// Status reports the create budget, for the admin System view.
+func (l *Limiter) Status() (used, limit int, backoffUntil time.Time) {
+	used = l.Used()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return used, l.CreatePerHr, l.backoffUntil
+}

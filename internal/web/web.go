@@ -6,6 +6,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"fmt"
 	"github.com/z354prance/undermynd/internal/tdarr"
 	"io/fs"
 	"log"
@@ -73,6 +74,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /admin/api/jobs/{id}/{action}", s.guard(s.admin(s.jobAction)))
 	mux.HandleFunc("GET /admin/api/settings", s.admin(s.getSettings))
 	mux.HandleFunc("PUT /admin/api/settings", s.guard(s.admin(s.putSettings)))
+	mux.HandleFunc("GET /admin/api/events", s.admin(s.events))
+	mux.HandleFunc("GET /admin/api/system", s.admin(s.system))
+	mux.HandleFunc("POST /admin/api/intake", s.guard(s.admin(s.setIntake)))
 	mux.HandleFunc("POST /admin/api/tdarr/test", s.guard(s.admin(s.tdarrTest)))
 	mux.HandleFunc("POST /admin/api/settings/client-password", s.guard(s.admin(s.newClientPassword)))
 	return secure(mux)
@@ -264,25 +268,98 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true})
 }
 
-func (s *Server) jobs(w http.ResponseWriter, r *http.Request) {
-	type row struct {
-		ID       string    `json:"id"`
-		Name     string    `json:"name"`
-		Source   string    `json:"source"`
-		Category string    `json:"category"`
-		State    job.State `json:"state"`
-		Reason   string    `json:"reason"`
-		Flag     string    `json:"flag"`
-		Progress float64   `json:"progress"`
-		Backend  string    `json:"backend"`
-		Created  time.Time `json:"created"`
-		Changed  time.Time `json:"changed"`
-	}
-	out := []row{}
+type jobRow struct {
+	ID       string    `json:"id"`
+	Name     string    `json:"name"`
+	Source   string    `json:"source"`
+	Category string    `json:"category"`
+	State    job.State `json:"state"`
+	Group    string    `json:"group"`
+	Reason   string    `json:"reason"`
+	Flag     string    `json:"flag"`
+	Attn     bool      `json:"attention"`
+	Progress float64   `json:"progress"`
+	Backend  string    `json:"backend"`
+	Node     string    `json:"transcodeNode,omitempty"`
+	Worker   string    `json:"transcodeWorker,omitempty"`
+	Created  time.Time `json:"created"`
+	Changed  time.Time `json:"changed"`
+}
+
+func (s *Server) jobRows() []jobRow {
+	out := []jobRow{}
 	for _, j := range s.Store.List() {
-		out = append(out, row{j.ID, j.Name, j.Source, j.Category, j.State, j.Reason, j.Flag, job.Overall(j), j.Backend, j.Created, j.StateChanged})
+		out = append(out, jobRow{ID: j.ID, Name: j.Name, Source: j.Source, Category: j.Category, State: j.State, Group: job.Group(j.State),
+			Reason: j.Reason, Flag: j.Flag, Attn: j.State == job.Failed || j.Flag != "", Progress: job.Overall(j), Backend: j.Backend,
+			Node: j.TranscodeNode, Worker: j.TranscodeWorker, Created: j.Created, Changed: j.StateChanged})
 	}
-	writeJSON(w, out)
+	return out
+}
+
+func (s *Server) jobs(w http.ResponseWriter, r *http.Request) { writeJSON(w, s.jobRows()) }
+
+// events streams the job list whenever it changes, so progress moves without refreshing.
+func (s *Server) events(w http.ResponseWriter, r *http.Request) {
+	fl, ok := w.(http.Flusher)
+	if !ok {
+		jsonErr(w, http.StatusInternalServerError, "streaming is not supported")
+		return
+	}
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Accel-Buffering", "no")
+	var last string
+	send := func() bool {
+		b, _ := json.Marshal(map[string]any{"jobs": s.jobRows(), "paused": s.Cfg.Get().IntakePaused})
+		if string(b) != last {
+			last = string(b)
+			if _, err := fmt.Fprintf(w, "event: jobs\ndata: %s\n\n", b); err != nil {
+				return false
+			}
+		} else if _, err := fmt.Fprint(w, ": keep-alive\n\n"); err != nil {
+			return false
+		}
+		fl.Flush()
+		return true
+	}
+	if !send() {
+		return
+	}
+	t := time.NewTicker(2 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-t.C:
+			if !s.signedIn(r) { // the session ended while the stream was open
+				return
+			}
+			if !send() {
+				return
+			}
+		}
+	}
+}
+
+func (s *Server) system(w http.ResponseWriter, r *http.Request) { writeJSON(w, s.Engine.System()) }
+
+func (s *Server) setIntake(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Paused bool `json:"paused"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	cur := s.Cfg.Get()
+	cur.IntakePaused = in.Paused
+	if err := s.Cfg.Set(cur); err != nil {
+		jsonErr(w, http.StatusInternalServerError, "could not save")
+		return
+	}
+	s.Log.Printf("admin: intake paused=%v", in.Paused)
+	writeJSON(w, map[string]bool{"paused": in.Paused})
 }
 
 func (s *Server) jobDetail(w http.ResponseWriter, r *http.Request) {
@@ -305,6 +382,10 @@ func (s *Server) jobAction(w http.ResponseWriter, r *http.Request) {
 		err = s.Engine.Cancel(id)
 	case "imported":
 		err = s.Engine.MarkImported(id)
+	case "fail":
+		err = s.Engine.FailJob(id)
+	case "cleanup":
+		err = s.Engine.CleanupNow(id)
 	default:
 		jsonErr(w, http.StatusNotFound, "unknown action")
 		return

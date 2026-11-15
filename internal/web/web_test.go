@@ -201,3 +201,54 @@ func TestPagesServe(t *testing.T) {
 		}
 	}
 }
+
+func TestLiveStreamAndNewAdminRoutesNeedSignIn(t *testing.T) {
+	e := newEnv(t)
+	for _, p := range []string{"/admin/api/events", "/admin/api/system"} {
+		if code, _ := e.do("GET", p, nil, false); code != 401 {
+			t.Fatalf("%s must need a session, got %d", p, code)
+		}
+	}
+	if code, _ := e.do("POST", "/admin/api/intake", map[string]bool{"paused": true}, true); code != 401 {
+		t.Fatalf("intake must need a session, got %d", code)
+	}
+	if code, _ := e.do("POST", "/admin/api/tdarr/test", map[string]string{"url": "http://x"}, true); code != 401 {
+		t.Fatalf("tdarr test must need a session, got %d", code)
+	}
+	e.signIn()
+	_ = e.st.Put(job.Job{ID: "abc", Name: "Stream.Me", Source: "radarr", Category: "radarr", State: job.Downloading, Progress: 0.5,
+		Created: time.Now(), StateChanged: time.Now()})
+	req, _ := http.NewRequest("GET", e.srv.URL+"/admin/api/events", nil)
+	resp, err := e.cl.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
+		t.Fatalf("expected an event stream, got %q", ct)
+	}
+	buf := make([]byte, 4096)
+	n, _ := resp.Body.Read(buf)
+	got := string(buf[:n])
+	if !strings.Contains(got, "event: jobs") || !strings.Contains(got, "Stream.Me") {
+		t.Fatalf("the first event should carry the job list, got %q", got)
+	}
+	if strings.Contains(got, "TOP-SECRET") {
+		t.Fatal("the stream must never carry secrets")
+	}
+}
+
+func TestPauseIntakeAndSystem(t *testing.T) {
+	e := newEnv(t)
+	e.signIn()
+	if code, b := e.do("POST", "/admin/api/intake", map[string]bool{"paused": true}, true); code != 200 {
+		t.Fatalf("pause: %d %s", code, b)
+	}
+	if !e.cfg.Get().IntakePaused {
+		t.Fatal("pause must be saved")
+	}
+	code, b := e.do("GET", "/admin/api/system", nil, false)
+	if code != 200 || !strings.Contains(string(b), `"paused":true`) {
+		t.Fatalf("system should report paused: %d %s", code, b)
+	}
+}

@@ -48,3 +48,7 @@ pre{margin:6px 0;white-space:pre-wrap;word-break:break-all;color:var(--yellow)}
 .msg{color:var(--dim)}.msg.ok{color:var(--teal)}.msg.err{color:var(--red)}
 .sec{text-transform:lowercase}
 .card button.bad{margin-top:10px}
+
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 10px}.toolbar .sp{flex:1}.toolbar input{min-width:200px}
+.notice{display:none;border:1px solid var(--yellow);color:var(--yellow);border-radius:6px;padding:8px 12px;margin:0 0 10px}
+td .bar{margin-bottom:3px;min-width:90px}td.acts{white-space:nowrap}td.acts button{margin:0 0 4px 4px;font-size:11px;padding:3px 7px}
