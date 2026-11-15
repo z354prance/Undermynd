@@ -673,9 +673,11 @@ func (e *Engine) doDownloaded(ctx context.Context, j job.Job) {
 		j.StagingDir, j.Files = staging, rel
 	}
 	// The local copy is verified: remove the client item and everything it left.
+	// The files are safe in staging, so a client that is slow to confirm the delete
+	// must not hold the job up or fail it; the final cleanup removes the item and
+	// retries until it is confirmed gone.
 	if err := e.removeBackendItem(ctx, j); err != nil {
-		e.retry(j, err, 10, "remove client item")
-		return
+		e.Log.Printf("job %s: client item not confirmed removed yet (%v); continuing, cleanup will retry", short(j.ID), err)
 	}
 	cat, _ := e.Cfg.Get().Category(j.Category)
 	if cat.Transcode && e.sendToTdarr(j) {
@@ -765,9 +767,23 @@ func (e *Engine) removeBackendItem(ctx context.Context, j job.Job) error {
 			if err := b.Remove(ctx, j.RemoteID, true); err != nil {
 				return err
 			}
-			if it, err := b.Status(ctx, j.RemoteID); err != nil {
-				return err
-			} else if it.Status != backend.Missing {
+			// Some clients take a few seconds to drop a deleted item from their list.
+			gone := false
+			for i := 0; i < 4 && !gone; i++ {
+				if i > 0 {
+					select {
+					case <-ctx.Done():
+						return ctx.Err()
+					case <-time.After(2 * time.Second):
+					}
+				}
+				st, err := b.Status(ctx, j.RemoteID)
+				if err != nil {
+					return err
+				}
+				gone = st.Status == backend.Missing
+			}
+			if !gone {
 				return errors.New("the client still lists the item")
 			}
 		}

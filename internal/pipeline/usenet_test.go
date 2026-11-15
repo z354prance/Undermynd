@@ -38,6 +38,7 @@ type fakeTorBox struct {
 	busy     bool
 	deleted  []string
 	linkHits int
+	stuck    bool // deletes are accepted but the item stays listed
 }
 
 func newFakeTorBox() *fakeTorBox {
@@ -114,7 +115,9 @@ func newFakeTorBox() *fakeTorBox {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		delete(f.items, body.ID.String())
+		if !f.stuck {
+			delete(f.items, body.ID.String())
+		}
 		f.deleted = append(f.deleted, body.ID.String())
 		fmt.Fprint(w, `{"success":true}`)
 	})
@@ -430,5 +433,22 @@ func TestTorBoxTorrent(t *testing.T) {
 	}
 	if len(u.tb.deleted) != 1 {
 		t.Fatal("TorBox torrent must be deleted after the copy")
+	}
+}
+
+// A client that is slow to drop a deleted item must not hold up a job whose
+// files are already safe locally; cleanup finishes the job once it is gone.
+func TestSlowClientDeleteDoesNotBlockTheJob(t *testing.T) {
+	u := newURig(t)
+	id := u.addNZB("Slow.S01E01.1080p")
+	u.tick(2)
+	u.tb.mu.Lock()
+	u.tb.stuck = true
+	u.tb.mu.Unlock()
+	u.tb.finish("101", map[string]string{"Slow.S01E01.1080p/Slow.S01E01.1080p.mkv": strings.Repeat("v", 3000)})
+	u.tick(3)
+	j, _ := u.st.Get(id)
+	if j.State != job.Ready {
+		t.Fatalf("a pulled job must go on to ready while the delete is unconfirmed, got %s (%s)", j.State, j.Reason)
 	}
 }
