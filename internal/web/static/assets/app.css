@@ -115,3 +115,8 @@ body.wide td,body.wide th{padding-right:14px}
 }
 body.wide .card:not(.folded) .grid3{grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0 14px}
 body.wide .card:not(.folded) .fld label{margin-top:6px}
+body.wide table{table-layout:auto}
+body.wide td:first-child{overflow-wrap:anywhere;min-width:0}
+body.wide td.acts{white-space:normal;min-width:150px}
+body.wide td.acts button{margin:0 4px 4px 0}
+.main{overflow-x:auto}
