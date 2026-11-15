@@ -52,7 +52,7 @@
   function app(){
     logoutBtn.hidden=false;logoutBtn.onclick=function(){api('POST','/logout').then(start)};
     root.replaceChildren();
-    var tabs=el('div','tabs');[['jobs','Jobs'],['arrs','Arrs & categories'],['clients','Download clients'],['transcode','Transcode'],['rss','RSS'],['system','System']].forEach(function(p){var t=p[0];var b=el('button',t===tab?'on':'',p[1]);tabBtns[t]=b;b.onclick=function(){stopLive();tab=t;detailId=null;app()};tabs.appendChild(b)});
+    var tabs=el('div','tabs');[['jobs','Jobs'],['arrs','Arrs & categories'],['clients','Download clients'],['transcode','Transcode'],['playback','Playback'],['rss','RSS'],['system','System']].forEach(function(p){var t=p[0];var b=el('button',t===tab?'on':'',p[1]);tabBtns[t]=b;b.onclick=function(){stopLive();tab=t;detailId=null;app()};tabs.appendChild(b)});
     root.appendChild(tabs);var body=el('div');root.appendChild(body);
     if(tab==='jobs')jobsView(body);else settingsView(body);
   }
@@ -146,7 +146,7 @@
   }
   function pane(body){
     body.replaceChildren();
-    ({arrs:arrsPane,clients:clientsPane,transcode:transcodePane,rss:rssPane,system:systemPane})[tab](body)
+    ({arrs:arrsPane,clients:clientsPane,transcode:transcodePane,playback:playbackPane,rss:rssPane,system:systemPane})[tab](body)
   }
 
   function arrsPane(body){
@@ -227,6 +227,26 @@
     S.categories.forEach(function(k){var d=el('div','kv');d.appendChild(el('span','k',k.name));d.appendChild(chip(k.transcode,k.transcode?'transcode on':'skips Tdarr'));if(k.transcode)d.appendChild(el('span','v','on failure: '+(k.onTranscodeFail==='passthrough'?'keep the original':'fail the grab')));cc.appendChild(d)});
     cc.appendChild(help('Change transcode and the failure policy on the Arrs & categories tab.'));body.appendChild(cc);
     saveBar(body,function(m){save(function(b){b.tdarr={url:url.value,apiKey:key.value,libraryId:lib.value,maxInFlight:+mx.value,stallMinutes:+st.value,inDir:inn.value,outDir:out.value,timeoutMinutes:+to.value}},m)})
+  }
+
+  function playbackPane(body){
+    var P=S.playback||{};
+    body.appendChild(head('Playback (Tracearr and Emby)','Feeds the public page: Now Playing and Recently Added come from Tracearr. Emby is only used to hide whole libraries from Now Playing.'));
+    var c=el('div','card');var h=el('h4','','Tracearr ');h.appendChild(chip(!!P.tracearrUrl&&P.hasTracearrKey,P.tracearrUrl&&P.hasTracearrKey?'configured':'not set'));c.appendChild(h);
+    var g=el('div','grid3');
+    var tu=row(g,'Tracearr address',{value:P.tracearrUrl,ph:'http://10.0.0.8:3000'});
+    var tk=row(g,'Public API key',{type:'password',ph:P.hasTracearrKey?'set — leave blank to keep':'Tracearr → Settings → Public API',help:'read-only access to streams and recently added'});
+    c.appendChild(g);body.appendChild(c);
+    var c2=el('div','card');var h2=el('h4','','Hidden libraries ');h2.appendChild(chip(!!P.hiddenLibraries,P.hiddenLibraries?'hiding '+P.hiddenLibraries:'none hidden'));c2.appendChild(h2);
+    var g2=el('div','grid3');
+    var eu=row(g2,'Emby address',{value:P.embyUrl,ph:'http://10.0.0.8:8096'});
+    var ek=row(g2,'Emby API key',{type:'password',ph:P.hasEmbyKey?'set — leave blank to keep':'Emby → Dashboard → API Keys'});
+    var hl=row(g2,'hidden library IDs',{value:P.hiddenLibraries,ph:'9',help:'comma-separated Emby library IDs; streams from these never appear on the public page. A stream that cannot be placed in a library is withheld.'});
+    c2.appendChild(g2);
+    var tb=el('button','','test connections');var tm=el('span','msg');tm.style.marginLeft='12px';
+    tb.onclick=function(){tm.className='msg';tm.textContent='testing…';api('POST','/playback/test',{tracearrUrl:tu.value,tracearrKey:tk.value,embyUrl:eu.value,embyKey:ek.value}).then(function(r){tm.className='msg ok';tm.textContent=[r.tracearr?'Tracearr ok':'',r.emby?'Emby ok: '+r.emby:''].filter(Boolean).join(' · ')||'nothing to test'}).catch(function(e){tm.className='msg err';tm.textContent=e.message})};
+    c2.appendChild(tb);c2.appendChild(tm);body.appendChild(c2);
+    saveBar(body,function(m){save(function(b){b.playback={tracearrUrl:tu.value,tracearrKey:tk.value,embyUrl:eu.value,embyKey:ek.value,hiddenLibraries:hl.value}},m).then(function(){pane(body)})})
   }
 
   function rssPane(body){

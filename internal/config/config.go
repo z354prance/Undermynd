@@ -103,6 +103,16 @@ type Tdarr struct {
 	TimeoutMinutes int           `json:"timeoutMinutes"`
 }
 
+// Playback feeds the public Now Playing and Recently Added from Tracearr; Emby is
+// only used to hide whole libraries from Now Playing.
+type Playback struct {
+	TracearrURL     string        `json:"tracearrUrl"`
+	TracearrKey     secret.String `json:"tracearrKey"`
+	EmbyURL         string        `json:"embyUrl"`
+	EmbyKey         secret.String `json:"embyKey"`
+	HiddenLibraries string        `json:"hiddenLibraries"` // comma-separated Emby library IDs
+}
+
 type Feed struct {
 	Name            string `json:"name"`
 	URL             string `json:"url"`
@@ -134,6 +144,7 @@ type Settings struct {
 	Feeds        []Feed     `json:"feeds"`
 	Rules        []Rule     `json:"rules"`
 	Tdarr        Tdarr      `json:"tdarr"`
+	Playback     Playback   `json:"playback"`
 	NZBGet       NZBGet     `json:"nzbget"`
 	TorBox       TorBox     `json:"torbox"`
 	Categories   []Category `json:"categories"`

@@ -24,10 +24,8 @@ func (s *Server) dashboardRoutes(mux *http.ServeMux, files http.Handler) {
 	})
 	mux.HandleFunc("GET /api/v1/recently-added", s.v1Recent)
 	mux.HandleFunc("GET /api/v1/storage", s.v1Storage)
-	// Not built yet: answered as "off" so the page hides the matching controls.
-	mux.HandleFunc("GET /api/v1/playback", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, map[string]any{"sessions": []any{}, "errors": []string{}})
-	})
+	mux.HandleFunc("GET /api/v1/playback", s.v1Playback)
+	mux.HandleFunc("GET /api/v1/playback/poster", s.v1Poster)
 	mux.HandleFunc("GET /api/v1/missing", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"items": []any{}, "errors": []string{}})
 	})
@@ -203,28 +201,6 @@ func itoa(n int) string {
 		b = append([]byte{'-'}, b...)
 	}
 	return string(b)
-}
-
-func (s *Server) v1Recent(w http.ResponseWriter, r *http.Request) {
-	items := []map[string]any{}
-	if s.Progress != nil {
-		for i, x := range s.Progress.Snapshot().Recent {
-			it := map[string]any{"id": "recent:" + itoa(i) + ":" + x.Title, "title": x.Title, "added_at": x.Date}
-			switch x.Kind {
-			case "episode":
-				it["kind"], it["show_title"], it["episodes"] = "series", x.Title, x.Episodes
-			case "movie":
-				it["kind"] = "movie"
-				if x.Year != 0 {
-					it["year"] = x.Year
-				}
-			default:
-				it["kind"] = x.Kind
-			}
-			items = append(items, it)
-		}
-	}
-	writeJSON(w, map[string]any{"items": items, "errors": []string{}, "configured": true})
 }
 
 // v1Storage serves the cached library sizes and the free space of the media

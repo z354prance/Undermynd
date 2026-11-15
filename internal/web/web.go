@@ -106,6 +106,7 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, map[string]bool{"ok": true})
 	})))
 	mux.HandleFunc("POST /admin/api/library/sweep", s.guard(s.admin(s.librarySweep)))
+	mux.HandleFunc("POST /admin/api/playback/test", s.guard(s.admin(s.playbackTest)))
 	mux.HandleFunc("POST /admin/api/tdarr/test", s.guard(s.admin(s.tdarrTest)))
 	mux.HandleFunc("POST /admin/api/settings/client-password", s.guard(s.admin(s.newClientPassword)))
 	return secure(mux)
@@ -535,6 +536,15 @@ type settingsView struct {
 		OutDir         string `json:"outDir"`
 		TimeoutMinutes int    `json:"timeoutMinutes"`
 	} `json:"tdarr"`
+	Playback struct {
+		TracearrURL     string `json:"tracearrUrl"`
+		TracearrKey     string `json:"tracearrKey,omitempty"` // write-only
+		HasTracearrKey  bool   `json:"hasTracearrKey"`
+		EmbyURL         string `json:"embyUrl"`
+		EmbyKey         string `json:"embyKey,omitempty"` // write-only
+		HasEmbyKey      bool   `json:"hasEmbyKey"`
+		HiddenLibraries string `json:"hiddenLibraries"`
+	} `json:"playback"`
 	NZBGet struct {
 		URL         string `json:"url"`
 		Username    string `json:"username"`
@@ -577,6 +587,8 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	v.Tdarr.InDir, v.Tdarr.OutDir, v.Tdarr.TimeoutMinutes = c.Tdarr.InDir, c.Tdarr.OutDir, c.Tdarr.TimeoutMinutes
 	v.Tdarr.URL, v.Tdarr.HasAPIKey, v.Tdarr.LibraryID = c.Tdarr.URL, c.Tdarr.APIKey != "", c.Tdarr.LibraryID
 	v.Tdarr.MaxInFlight, v.Tdarr.StallMinutes = c.Tdarr.MaxInFlight, c.Tdarr.StallMinutes
+	v.Playback.TracearrURL, v.Playback.HasTracearrKey = c.Playback.TracearrURL, c.Playback.TracearrKey != ""
+	v.Playback.EmbyURL, v.Playback.HasEmbyKey, v.Playback.HiddenLibraries = c.Playback.EmbyURL, c.Playback.EmbyKey != "", c.Playback.HiddenLibraries
 	v.NZBGet.URL, v.NZBGet.Username, v.NZBGet.HasPassword, v.NZBGet.DestRoot = c.NZBGet.URL, c.NZBGet.Username, c.NZBGet.Password != "", c.NZBGet.DestRoot
 	v.TorBox.HasToken, v.TorBox.CreatePerHour, v.TorBox.PullersAtOnce, v.TorBox.LinkGapSeconds = c.TorBox.Token != "", c.TorBox.CreatePerHour, c.TorBox.PullersAtOnce, c.TorBox.LinkGapSeconds
 	v.ClientUser, v.StallMinutes, v.ReconcileSeconds, v.FlagImportHours = c.ClientUser, c.StallMinutes, c.ReconcileSeconds, c.FlagImportHours
@@ -681,6 +693,14 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		next.Rules = append(next.Rules, ru)
 	}
+	next.Playback.TracearrURL, next.Playback.EmbyURL = strings.TrimSpace(in.Playback.TracearrURL), strings.TrimSpace(in.Playback.EmbyURL)
+	if in.Playback.TracearrKey != "" {
+		next.Playback.TracearrKey = secret.String(strings.TrimSpace(in.Playback.TracearrKey))
+	}
+	if in.Playback.EmbyKey != "" {
+		next.Playback.EmbyKey = secret.String(strings.TrimSpace(in.Playback.EmbyKey))
+	}
+	next.Playback.HiddenLibraries = strings.TrimSpace(in.Playback.HiddenLibraries)
 	next.Tdarr.URL, next.Tdarr.LibraryID = strings.TrimSpace(in.Tdarr.URL), strings.TrimSpace(in.Tdarr.LibraryID)
 	if in.Tdarr.APIKey != "" {
 		next.Tdarr.APIKey = secret.String(strings.TrimSpace(in.Tdarr.APIKey))

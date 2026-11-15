@@ -409,3 +409,57 @@ func TestStorageEndpointReadsTheMediaRoot(t *testing.T) {
 		}
 	}
 }
+
+// Now Playing hides a whole library, withholds streams it cannot place, and never leaks keys;
+// Recently Added comes from Tracearr and posters only load through a signed link.
+func TestPlaybackFromTracearr(t *testing.T) {
+	tr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer TRKEY" && !strings.HasPrefix(r.URL.Path, "/api/v1/images/") {
+			http.Error(w, "no", 401)
+			return
+		}
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/streams"):
+			io.WriteString(w, `{"data":[
+{"id":"1","server_type":"emby","library_id":"9","media_title":"Hidden"},
+{"id":"2","server_type":"emby","library_id":"3","media_title":"Shown","rating_key":"55","poster_url":"/api/v1/images/proxy?server=s&url=%2FItems%2F55%2FImages%2FPrimary"},
+{"id":"3","server_type":"emby","media_title":"Unplaceable"}]}`)
+		case strings.HasSuffix(r.URL.Path, "/recently-added"):
+			io.WriteString(w, `{"data":[{"id":"a","media_id":"m1","server_id":"s","server_type":"emby","rating_key":"7","title":"Film","year":2020,"added_at":"2026-01-02T00:00:00Z"}],"meta":{}}`)
+		case r.URL.Path == "/api/v1/images/proxy":
+			w.Header().Set("Content-Type", "image/png")
+			w.Write([]byte("\x89PNG\r\n\x1a\n0000000000000000"))
+		default:
+			io.WriteString(w, `{}`)
+		}
+	}))
+	defer tr.Close()
+	e := newEnv(t)
+	s := e.cfg.Get()
+	s.Playback.TracearrURL, s.Playback.TracearrKey, s.Playback.HiddenLibraries = tr.URL, "TRKEY", "9"
+	_ = e.cfg.Set(s)
+
+	_, b := e.do("GET", "/api/v1/playback", nil, false)
+	if strings.Contains(string(b), "Hidden") || strings.Contains(string(b), "Unplaceable") || !strings.Contains(string(b), "Shown") || strings.Contains(string(b), "TRKEY") {
+		t.Fatalf("playback filter wrong: %s", b)
+	}
+	var pb struct {
+		Sessions []struct {
+			PosterURL string `json:"poster_url"`
+		} `json:"sessions"`
+	}
+	_ = json.Unmarshal(b, &pb)
+	if len(pb.Sessions) != 1 || !strings.HasPrefix(pb.Sessions[0].PosterURL, "/api/v1/playback/poster?") {
+		t.Fatalf("poster not signed: %s", b)
+	}
+	if code, _ := e.do("GET", pb.Sessions[0].PosterURL, nil, false); code != 200 {
+		t.Fatalf("signed poster = %d", code)
+	}
+	if code, _ := e.do("GET", "/api/v1/playback/poster?path=%2Fapi%2Fv1%2Fimages%2Fproxy&signature=bad", nil, false); code != 404 {
+		t.Fatalf("unsigned poster = %d", code)
+	}
+	_, b = e.do("GET", "/api/v1/recently-added", nil, false)
+	if !strings.Contains(string(b), `"Film"`) || !strings.Contains(string(b), "playback/poster") {
+		t.Fatalf("recently added: %s", b)
+	}
+}
