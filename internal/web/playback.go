@@ -39,7 +39,7 @@ func signedPoster(path string) string {
 	return "/api/v1/playback/poster?" + url.Values{"path": {path}, "signature": {posterSignature(path)}}.Encode()
 }
 
-var coverPath = regexp.MustCompile(`^/MediaCover/[1-9][0-9]*/poster\.jpg$`)
+var coverPath = regexp.MustCompile(`^/MediaCover/([1-9][0-9]*/poster|Albums/[1-9][0-9]*/cover)\.jpg$`)
 
 func coverSignature(arr, path string) string {
 	h := hmac.New(sha256.New, posterKey)
@@ -126,7 +126,7 @@ func (s *Server) v1Poster(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, c := range s.Cfg.Get().Categories {
-			if c.Name == arrName && c.ArrURL != "" && (c.Kind == "sonarr" || c.Kind == "radarr") {
+			if c.Name == arrName && c.ArrURL != "" && (c.Kind == "sonarr" || c.Kind == "radarr" || c.Kind == "lidarr") {
 				s.serveImage(w, r, strings.TrimRight(c.ArrURL, "/")+path, string(c.ArrAPIKey))
 				return
 			}

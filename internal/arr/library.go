@@ -207,6 +207,7 @@ func (c *Client) RecentImports(ctx context.Context) ([]Import, error) {
 			EventType string    `json:"eventType"`
 			SeriesID  int64     `json:"seriesId"`
 			MovieID   int64     `json:"movieId"`
+			AlbumID   int64     `json:"albumId"`
 			Date      time.Time `json:"date"`
 			Series    struct {
 				Title string `json:"title"`
@@ -251,7 +252,7 @@ func (c *Client) RecentImports(ctx context.Context) ([]Import, error) {
 			if x.Album.Title != "" {
 				t += " — " + x.Album.Title
 			}
-			out = append(out, Import{Kind: "album", Title: t, Date: x.Date})
+			out = append(out, Import{Kind: "album", Title: t, Date: x.Date, Poster: albumCover(x.AlbumID)})
 		}
 	}
 	return out, nil
@@ -262,4 +263,11 @@ func cover(id int64) string {
 		return ""
 	}
 	return fmt.Sprintf("/MediaCover/%d/poster.jpg", id)
+}
+
+func albumCover(id int64) string {
+	if id <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("/MediaCover/Albums/%d/cover.jpg", id)
 }
