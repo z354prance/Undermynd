@@ -114,7 +114,7 @@
     }else{poll();timer=setInterval(poll,3000)}
     banner();drawRows();
   }
-  function doAction(id,a){api('POST','/jobs/'+encodeURIComponent(id)+'/'+a).then(function(){app()}).catch(fail)}
+  function doAction(id,a){api('POST','/jobs/'+encodeURIComponent(id)+'/'+a).then(function(){app()}).catch(function(e){if(e.status===401)fail(e);else{alert(e.message);app()}})}
   function detail(body,id){
     stopLive();body.replaceChildren();
     var back=el('button','link','← all jobs');back.onclick=function(){detailId=null;app()};body.appendChild(back);

@@ -493,6 +493,7 @@ func (s *Server) jobAction(w http.ResponseWriter, r *http.Request) {
 	case "fail":
 		err = s.Engine.FailJob(id)
 	case "cleanup":
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(120 * time.Second))
 		err = s.Engine.CleanupNow(id)
 	default:
 		jsonErr(w, http.StatusNotFound, "unknown action")

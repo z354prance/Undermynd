@@ -380,16 +380,27 @@ func (e *Engine) FailJob(id string) error {
 	return err
 }
 
-// CleanupNow makes a job that is finished (or failed) run its cleanup on the next pass.
+// CleanupNow runs a finished or failed job's cleanup right now and reports what
+// went wrong, so the admin button shows a result instead of silently queueing it.
 func (e *Engine) CleanupNow(id string) error {
-	_, err := e.Store.Update(id, func(j *job.Job) error {
-		switch j.State {
-		case job.Imported:
-			j.NextRun = time.Time{}
+	j, ok := e.Store.Get(id)
+	if !ok {
+		return errors.New("no such job")
+	}
+	if j.State != job.Imported && j.State != job.Failed {
+		return errors.New("cleanup runs only for imported or failed jobs")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	if err := e.cleanupFiles(ctx, j); err != nil {
+		return fmt.Errorf("cleanup did not finish: %w", err)
+	}
+	_, err := e.Store.Update(id, func(c *job.Job) error {
+		switch c.State {
 		case job.Failed:
-			j.FailCleaned, j.NextRun = false, time.Time{}
-		default:
-			return errors.New("cleanup runs only for imported or failed jobs")
+			c.FailCleaned, c.Attempts, c.NextRun = true, 0, time.Time{}
+		case job.Imported:
+			c.Move(job.Cleaned, "cleaned up by admin; staging, complete and client items confirmed gone", e.Now())
 		}
 		return nil
 	})
@@ -827,7 +838,7 @@ func (e *Engine) removeBackendItem(ctx context.Context, j job.Job) error {
 				gone = st.Status == backend.Missing
 			}
 			if !gone {
-				return errors.New("the client still lists the item")
+				return fmt.Errorf("the client still lists item %s after it was deleted", j.RemoteID)
 			}
 		}
 	}
@@ -914,7 +925,9 @@ func (e *Engine) retry2(j job.Job, err error) {
 	}
 	_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
 		c.Attempts++
-		c.Reason = "cleanup: " + err.Error() + " (retrying)"
+		if c.State != job.Failed { // a failed job keeps the reason it failed
+			c.Reason = "cleanup: " + err.Error() + " (retrying)"
+		}
 		c.NextRun = e.Now().Add(wait)
 		c.Updated = e.Now()
 		return nil
