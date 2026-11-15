@@ -200,3 +200,33 @@ body.ui .acts button.bad:hover{color:#f27b89}
 .orow{display:flex;justify-content:space-between;padding:8px 0}
 .orow b{font-weight:600}
 @media(max-width:900px){.jrow{grid-template-columns:minmax(0,1fr)}.ocols{grid-template-columns:minmax(0,1fr)}.jrow .acts{flex-direction:row;gap:16px}body.ui .side{height:auto;position:static}.side .sp{display:none}}
+
+/* overview chips, requests, library */
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 22px}
+.chip2{display:inline-flex;align-items:center;gap:7px;height:24px;padding:0 12px;border-radius:12px;font-size:12px;border:1px solid #2f5a44;color:#6dcc9d}
+.chip2::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.chip2.warn{color:#e5d875;border-color:#5c5a30}.chip2.bad{color:#f27b89;border-color:#6a3038}.chip2.dim{color:#8e918d;border-color:#3a3d3a}
+.rrow{grid-template-columns:minmax(0,1fr) auto}
+.orow.rrow{padding:10px 0;gap:12px;align-items:center}
+.acts.rhoriz{flex-direction:row;gap:16px;min-width:0}
+body.ui .acts.rhoriz button{height:auto}
+.lrow{grid-template-columns:minmax(0,1fr) auto}
+.lcells{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+.lc{position:relative;width:22px;height:26px;border:1px solid #3a3d3a;border-radius:2px;overflow:hidden;background:#101210;display:block}
+.lc i{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(0deg,#f27b89,#edb26b 25%,#e5d875 45%,#6dcc9d 65%,#70b9ed 85%,#ad92ec);background-size:100% 26px;background-position:bottom;background-repeat:no-repeat}
+.lc.done{border-color:#6dcc9d}.lc.done i{background:#6dcc9d}
+.lc b{position:relative;display:block;text-align:center;line-height:24px;font-size:10px;font-weight:400;color:#e5e8e2;text-shadow:0 0 3px #000}
+.lc.none b{color:#5a5c5a;text-shadow:none}
+.main .osec{margin-top:22px}
+
+/* settings: same prompt-link buttons and quiet cards */
+body.ui .main button:not(.fpill):not(.link):not(.badge),body.ui .savebar button{border:0;background:transparent;height:auto;padding:2px 14px 2px 0;color:#c9cdc6;border-radius:0}
+body.ui .main button:not(.fpill):not(.link)::before,body.ui .savebar button::before{content:"\276F ";color:#5a5c5a;font-family:"Segoe UI Symbol","DejaVu Sans Mono",monospace}
+body.ui .main button.go:not(.fpill),body.ui .savebar button.go{color:#45bba9}
+body.ui .main button:not(.fpill):not(.link):hover,body.ui .savebar button:hover{color:#fff;border:0}
+body.ui .main button.bad{color:#f27b89}
+body.ui .main button:disabled{opacity:.5}
+body.ui .sl h4,body.ui .card h4{color:#e5e8e2}
+body.ui .card:not(.setting){border-radius:4px;background:#0f100f}
+.orow.rrow .acts.rhoriz,.jrow .acts.rhoriz{flex-direction:row;white-space:nowrap;flex-wrap:nowrap}
+.orow.rrow .jname{min-width:0}
