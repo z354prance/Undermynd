@@ -77,3 +77,41 @@ body.dash main{max-width:1500px;margin:24px auto 0;display:grid;gap:22px}
 .job details{margin:6px 0 4px}.job summary{cursor:pointer;color:var(--terra);font-size:12px}
 .job .steps{color:var(--dim);font-size:11px;padding:4px 0}.job .steps div{display:flex;gap:12px}.job .steps span:first-child{width:140px;color:#888}
 @media(max-width:900px){.dgrid{grid-template-columns:1fr}.jgrid{grid-template-columns:1fr}.srow{grid-template-columns:minmax(0,1fr) 60px}.srow .bar{grid-column:1/-1}}
+
+/* admin: sidebar layout */
+body.wide{padding:0}
+body.wide .term{max-width:none;margin:0;border:0;border-radius:0;box-shadow:none;min-height:100vh}
+body.wide .body{padding:0}
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:calc(100vh - 36px)}
+.side{border-right:1px solid var(--line);padding:14px 10px;background:#0f0f0f;display:flex;flex-direction:column;gap:2px;position:sticky;top:0;align-self:start;height:calc(100vh - 36px);overflow:auto}
+.sgroup{color:var(--dimmer);font-size:10px;letter-spacing:.14em;text-transform:uppercase;margin:16px 8px 4px}.sgroup:first-child{margin-top:2px}
+.side button{text-align:left;border:0;background:none;color:var(--dim);padding:7px 10px;border-radius:5px;display:flex;align-items:center;gap:8px}
+.side button:hover{color:var(--text);background:#151515}
+.side button.on{color:var(--teal);background:#141c1b;box-shadow:inset 2px 0 0 var(--teal)}
+.badge{margin-left:auto;background:var(--red);color:#111;border-radius:9px;padding:0 6px;font-size:10px;line-height:16px}
+.main{padding:22px 32px 30px;min-width:0;max-width:1180px}
+body.wide .pane-head{margin-bottom:14px}
+body.wide .pane-head h3{font-size:18px;margin:0 0 4px}
+body.wide .pane-head .hint{max-width:760px;margin:0}
+body.wide .card{margin:8px 0;background:#101010}
+body.wide .card.folded{padding:0}
+body.wide .card.folded h4{padding:11px 14px;margin:0}
+.fh4{cursor:pointer!important;display:flex;align-items:center;gap:8px;user-select:none}.fh4:hover{background:#141414}
+.caret{color:var(--dim);width:10px;flex:none}
+.card.open .fh4{border-bottom:1px solid #1a1a1a}
+.fold{display:none;padding:6px 14px 12px}.card.open>.fold{display:block}
+.fold>*{margin-left:0!important;margin-right:0!important}
+/* help text appears only when a field is focused */
+body.wide .fld .fh{display:none}body.wide .fld:focus-within .fh{display:block}
+body.wide .fld label{margin-top:10px}
+.grid3{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+body.wide .savebar{background:linear-gradient(transparent,#0d0d0d 40%);padding-left:0}
+body.wide td,body.wide th{padding-right:14px}
+@media(max-width:760px){
+ .shell{grid-template-columns:1fr}
+ .side{position:static;height:auto;flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line);padding:8px;gap:4px}
+ .side button{white-space:nowrap}.sgroup{display:none}.side button.on{box-shadow:none}
+ .main{padding:16px 14px 24px}
+}
+body.wide .card:not(.folded) .grid3{grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0 14px}
+body.wide .card:not(.folded) .fld label{margin-top:6px}

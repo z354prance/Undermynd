@@ -8,7 +8,7 @@
   function field(form,label,type,name,ph){form.appendChild(el('label','',label));var i=el('input');i.type=type||'text';i.name=name;if(ph)i.placeholder=ph;i.autocomplete=type==='password'?'current-password':'off';form.appendChild(i);return i}
   function prompt(cmd){var d=el('div');d.appendChild(el('span','prompt','~/undermynd '));var b=el('b','','❯');b.style.color='var(--teal)';b.style.fontWeight='400';d.appendChild(b);d.appendChild(el('span','cmd',' '+cmd));return d}
   function start(){
-    stopLive();logoutBtn.hidden=true;
+    stopLive();logoutBtn.hidden=true;document.body.classList.remove('wide');
     api('GET','/session').then(function(s){
       if(s.signedIn)return app();
       if(s.needsSetup)return setup();
@@ -52,8 +52,12 @@
   function app(){
     logoutBtn.hidden=false;logoutBtn.onclick=function(){api('POST','/logout').then(start)};
     root.replaceChildren();
-    var tabs=el('div','tabs');[['jobs','Jobs'],['arrs','Arrs & categories'],['clients','Download clients'],['transcode','Transcode'],['playback','Playback'],['public','Public page'],['rss','RSS'],['system','System']].forEach(function(p){var t=p[0];var b=el('button',t===tab?'on':'',p[1]);tabBtns[t]=b;b.onclick=function(){stopLive();tab=t;detailId=null;app()};tabs.appendChild(b)});
-    root.appendChild(tabs);var body=el('div');root.appendChild(body);
+    document.body.classList.add('wide');
+    var shell=el('div','shell'),side=el('nav','side');
+    [['Pipeline',[['jobs','Jobs']]],['Connections',[['arrs','Arrs & categories'],['clients','Download clients'],['transcode','Transcode']]],['Public site',[['playback','Playback'],['public','Public page']]],['Automation',[['rss','RSS']]],['Server',[['system','System']]]].forEach(function(g){
+      side.appendChild(el('div','sgroup',g[0]));
+      g[1].forEach(function(p){var t=p[0];var b=el('button',t===tab?'on':'',p[1]);tabBtns[t]=b;b.onclick=function(){stopLive();tab=t;detailId=null;app()};side.appendChild(b)})});
+    var main=el('main','main'),body=el('div');main.appendChild(body);shell.appendChild(side);shell.appendChild(main);root.appendChild(shell);
     if(tab==='jobs')jobsView(body);else settingsView(body);
   }
   function fail(e){if(e.status===401){start()}else{var d=el('div','err',e.message);root.appendChild(d)}}
@@ -80,7 +84,7 @@
     function drawRows(){
       if(tab!=='jobs'||detailId)return;
       var list=lastRows.filter(match);host.replaceChildren();
-      var ac=attentionCount(lastRows);if(tabBtns.jobs)tabBtns.jobs.textContent=ac?'Jobs ('+ac+' need attention)':'Jobs';
+      var ac=attentionCount(lastRows);if(tabBtns.jobs){tabBtns.jobs.textContent='Jobs';if(ac){var bd=el('span','badge',String(ac));bd.title=ac+' need attention';tabBtns.jobs.appendChild(bd)}}
       if(!list.length){host.appendChild(el('div','empty',lastRows.length?'nothing matches these filters':'no jobs yet'));return}
       var t=el('table');var h=el('tr');['name','source','state','progress','backend','age',''].forEach(function(x){h.appendChild(el('th','',x))});t.appendChild(h);
       list.forEach(function(j){
@@ -146,7 +150,22 @@
   }
   function pane(body){
     body.replaceChildren();
-    ({arrs:arrsPane,clients:clientsPane,transcode:transcodePane,playback:playbackPane,public:publicPane,rss:rssPane,system:systemPane})[tab](body)
+    ({arrs:arrsPane,clients:clientsPane,transcode:transcodePane,playback:playbackPane,public:publicPane,rss:rssPane,system:systemPane})[tab](body);
+    if(tab!=='system'&&tab!=='rss')fold(body);
+  }
+  // Settings cards fold under their heading so a long pane reads as a short list.
+  var opened={};
+  function fold(body){
+    var cards=[].filter.call(body.children,function(c){return c.classList.contains('card')&&c.firstChild&&c.firstChild.tagName==='H4'});
+    if(cards.length<2)return;
+    cards.forEach(function(c,i){
+      var h=c.firstChild,key=tab+':'+h.firstChild.textContent.trim();
+      var inner=el('div','fold');while(h.nextSibling)inner.appendChild(h.nextSibling);c.appendChild(inner);
+      c.classList.add('folded');h.classList.add('fh4');var caret=el('span','caret','▸');h.insertBefore(caret,h.firstChild);
+      function set(o){c.classList.toggle('open',o);caret.textContent=o?'▾':'▸';opened[key]=o}
+      set(opened[key]===undefined?i===0:opened[key]);
+      h.onclick=function(){set(!c.classList.contains('open'))};
+    });
   }
 
   function arrsPane(body){
@@ -306,7 +325,7 @@
     c.appendChild(sv);tb.style.marginLeft='8px';c.appendChild(tb);c.appendChild(msg);
     function fill(v){en.checked=!!v.enabled;pv.value=v.provider||'emby';pu.value=v.public_url||'';sp.value=v.server_public_url||'';tp.value=v.template_id||'';sh.value=v.smtp_host||'';sn.value=v.smtp_port||'';ss.value=v.smtp_security||'';su.value=v.smtp_user||'';fr.value=v.from||'';ad.value=v.admin_email||'';sw.placeholder=v.has_smtp_password?'set — leave blank to keep':'';hc.replaceChildren(chip(!!v.enabled,v.enabled?'on':'off'))}
     body.appendChild(c);
-    var q=el('div','card');q.appendChild(el('h4','','Account requests'));var lst=el('div');q.appendChild(lst);body.appendChild(q);
+    var q=el('div','card');q.appendChild(el('h4','','Account request queue'));var lst=el('div');q.appendChild(lst);body.appendChild(q);
     var names={pending:'awaiting approval',incomplete:'setup needs attention',provisioning:'creating account',awaiting_setup:'waiting for the visitor to finish setup',setting_up:'finishing setup',active:'active',declined:'declined'};
     function act(id,a,b,note){b.disabled=true;api('POST','/access/requests/'+id+'/'+a,note||{}).then(loadQ).catch(function(e){b.disabled=false;alert(e.message)})}
     function loadQ(){api('GET','/access/requests').then(function(r){lst.replaceChildren();var items=r.requests||[];if(!items.length){lst.appendChild(help('No account requests yet.'));return}
