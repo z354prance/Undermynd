@@ -546,4 +546,10 @@ func TestSeerrRequestBox(t *testing.T) {
 	if code, _ := e.do("POST", "/admin/api/requests/5/approve", nil, true); code != 401 {
 		t.Fatalf("approving needs the admin session: %d", code)
 	}
+	if code, _ := e.do("POST", "/api/v1/requests/6/5/approve", nil, true); code != 401 {
+		t.Fatalf("approving from the public page needs the admin session: %d", code)
+	}
+	if _, b := e.do("GET", "/api/v1/auth/status", nil, false); !strings.Contains(string(b), `"admin":false`) {
+		t.Fatalf("visitors are not admin: %s", b)
+	}
 }

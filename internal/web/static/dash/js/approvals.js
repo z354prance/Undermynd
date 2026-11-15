@@ -19,6 +19,7 @@
   });
   async function refresh() {
     try {
+      try { const a = await (await fetch('/api/v1/auth/status', {cache:'no-store', credentials:'same-origin'})).json(); admin = a.admin === true; } catch (_) {}
       const response = await fetch('/api/v1/requests', {cache:'no-store', signal:AbortSignal.timeout(20000)});
       if (!response.ok) throw new Error('unavailable');
       const data = await response.json();

@@ -39,12 +39,15 @@ func (s *Server) dashboardRoutes(mux *http.ServeMux, files http.Handler) {
 		writeJSON(w, map[string]any{"services": out})
 	})
 	mux.HandleFunc("GET /api/v1/auth/status", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, map[string]any{"authenticated": false, "setup_required": false})
+		// "authenticated" stays false: the public page has no admin screens here. "admin" only
+		// switches on the approve/deny buttons for the Undermynd admin session.
+		writeJSON(w, map[string]any{"authenticated": false, "setup_required": false, "admin": s.signedIn(r)})
 	})
 	mux.HandleFunc("GET /api/v1/media-request/status", s.requestStatus)
 	mux.HandleFunc("GET /api/v1/media-request/search", s.requestSearch)
 	mux.HandleFunc("POST /api/v1/media-request", s.requestCreate)
 	mux.HandleFunc("GET /api/v1/requests", s.requestsPending)
+	mux.HandleFunc("POST /api/v1/requests/{serviceID}/{requestID}/{action}", s.guard(s.admin(s.requestsDecide)))
 	mux.HandleFunc("GET /api/v1/donations", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, s.Cfg.Get().Donations)
 	})

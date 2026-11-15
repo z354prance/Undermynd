@@ -165,7 +165,11 @@ func (s *Server) requestsAdminList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) requestsDecide(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	idText := r.PathValue("id")
+	if idText == "" {
+		idText = r.PathValue("requestID")
+	}
+	id, err := strconv.ParseInt(idText, 10, 64)
 	c := s.seerrAdmin()
 	if err != nil || c == nil {
 		jsonErr(w, http.StatusBadRequest, "invalid request decision")

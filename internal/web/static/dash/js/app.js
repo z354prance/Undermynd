@@ -1771,7 +1771,7 @@ async function serviceAPIRequest(url, options = {}) {
     ...options,
     credentials: "same-origin",
     headers: {
-      "X-Overmynd-Request": "1",
+      "X-Undermynd-Request": "1",
       ...(options.body ? { "Content-Type": "application/json" } : {}),
       ...(options.headers || {}),
     },
