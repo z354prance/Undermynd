@@ -101,9 +101,30 @@ func TestRSS(t *testing.T) {
 		got["Cam.Show.S01E01.1080p.CAM"] != "no rule matched" {
 		t.Fatalf("status should say what happened to each item: %+v", got)
 	}
+	// A skipped item can be started by hand, only as the list was last shown.
+	idx, title := -1, "Other.Show.S01E01.720p"
+	for _, f := range p.Status() {
+		for n, it := range f.Items {
+			if it.Title == title {
+				idx = n
+			}
+		}
+	}
+	if _, err := p.Download(context.Background(), "tracker", idx, "wrong title", "tv-sonarr"); err == nil {
+		t.Fatal("a changed list must be refused")
+	}
+	if _, err := p.Download(context.Background(), "tracker", idx, title, "nope"); err == nil {
+		t.Fatal("an unknown category must be refused")
+	}
+	if _, err := p.Download(context.Background(), "tracker", idx, title, "tv-sonarr"); err != nil {
+		t.Fatal(err)
+	}
+	if len(st.List()) != 2 {
+		t.Fatalf("the manual download should create a job: %+v", st.List())
+	}
 	now = now.Add(2 * time.Minute)
 	p.Tick(context.Background())
-	if len(st.List()) != 1 {
+	if len(st.List()) != 2 {
 		t.Fatal("an item is only ever acted on once")
 	}
 }

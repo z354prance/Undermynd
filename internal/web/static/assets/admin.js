@@ -342,10 +342,19 @@
     body.appendChild(head('RSS auto-download','Feeds are checked on a schedule. The first check of a new feed only records what is already there, so nothing old gets downloaded. The first rule that matches an item starts it.'));
     body.appendChild(el('div','sec','what the feeds are reading'));
     var live=el('div');body.appendChild(live);
+    var cats=[];api('GET','/settings').then(function(v){cats=(v.categories||[]).map(function(c){return c.name})}).catch(function(){});
+    // "download" turns into a category picker; starting it goes through the same path as a rule.
+    function manual(feed,idx,title,cell){var btn=el('button','','download');btn.onclick=function(){
+      var sel=document.createElement('select');cats.forEach(function(n){var o=document.createElement('option');o.textContent=n;sel.appendChild(o)});
+      var go=el('button','go','start'),no=el('button','','cancel'),msg=el('span','msg');
+      function back(){cell.replaceChildren(manual(feed,idx,title,cell))}
+      no.onclick=back;
+      go.onclick=function(){go.disabled=true;msg.textContent='starting…';api('POST','/rss/download',{feed:feed,index:idx,title:title,category:sel.value}).then(function(){showFeeds()}).catch(function(e){go.disabled=false;msg.className='msg err';msg.textContent=e.message})};
+      [sel,go,no,msg].forEach(function(x){x.style.marginRight='6px';cell.appendChild(x)});btn.remove()};return btn}
     function showFeeds(){api('GET','/rss/status').then(function(list){live.textContent='';if(!list.length)live.appendChild(help('No feeds yet.'));list.forEach(function(st){
       var card=el('div','card');var h=el('h4','',st.name+'  ');var when=st.checkedAt&&st.checkedAt.indexOf('0001')!==0?'checked '+new Date(st.checkedAt).toLocaleTimeString():'not checked yet';h.appendChild(el('span','',when));card.appendChild(h);
       if(st.error){var er=el('div','msg err',st.error);card.appendChild(er)}
-      var t=document.createElement('table');(st.items||[]).forEach(function(it){var tr=document.createElement('tr');var a=document.createElement('td');a.textContent=it.title;var b=document.createElement('td');b.textContent=it.outcome;b.style.opacity='.75';b.style.paddingLeft='16px';b.style.whiteSpace='nowrap';tr.appendChild(a);tr.appendChild(b);t.appendChild(tr)});
+      var t=document.createElement('table');(st.items||[]).forEach(function(it,idx){var tr=document.createElement('tr');var a=document.createElement('td');a.textContent=it.title;var b=document.createElement('td');b.textContent=it.outcome;b.style.opacity='.75';b.style.paddingLeft='16px';b.style.whiteSpace='nowrap';tr.appendChild(a);tr.appendChild(b);var c=document.createElement('td');c.style.whiteSpace='nowrap';c.style.paddingLeft='12px';if(it.outcome.indexOf('started')!==0)c.appendChild(manual(st.name,idx,it.title,c));tr.appendChild(c);t.appendChild(tr)});
       if(st.items&&st.items.length)card.appendChild(t);else if(!st.error)card.appendChild(help('Nothing read from this feed yet.'));
       live.appendChild(card)})}).catch(function(e){live.textContent=e.message})}
     var chk=el('button','','check feeds now');chk.onclick=function(){chk.textContent='checking…';api('POST','/rss/check',{}).then(function(){chk.textContent='check feeds now';showFeeds()}).catch(function(){chk.textContent='check feeds now'})};body.appendChild(chk);

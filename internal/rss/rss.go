@@ -37,6 +37,7 @@ type Poller struct {
 
 	status  map[string]*FeedStatus // feed name -> what the last check saw
 	outcome map[string]string      // item key -> what was done with it (this run only)
+	polled  map[string][]item      // feed name -> items of the last check, in the order shown
 }
 
 // FeedStatus is what the last check of a feed saw, for the admin page.
@@ -77,7 +78,7 @@ func (p *Poller) CheckNow(ctx context.Context) {
 
 func New(c *config.Config, e *pipeline.Engine, l *log.Logger) *Poller {
 	return &Poller{Cfg: c, Engine: e, Log: l, Now: time.Now, HTTP: &http.Client{Timeout: 60 * time.Second},
-		seen: map[string]time.Time{}, last: map[string]time.Time{}, status: map[string]*FeedStatus{}, outcome: map[string]string{}, path: filepath.Join(c.Env.ConfigDir, "rss-seen.json")}
+		seen: map[string]time.Time{}, last: map[string]time.Time{}, status: map[string]*FeedStatus{}, polled: map[string][]item{}, outcome: map[string]string{}, path: filepath.Join(c.Env.ConfigDir, "rss-seen.json")}
 }
 
 func (p *Poller) load() {
@@ -252,6 +253,7 @@ func (p *Poller) poll(ctx context.Context, f config.Feed) error {
 		st.Items = append(st.Items, ItemView{Title: it.Title, Outcome: o})
 	}
 	p.status[f.Name] = st
+	p.polled[f.Name] = items[:min(len(items), 100)]
 	if !known && len(items) == 0 {
 		p.seen[prefix+"empty"] = p.Now()
 	}
@@ -316,4 +318,33 @@ func (p *Poller) add(ctx context.Context, r config.Rule, it item) error {
 		return errors.New("the link is neither a torrent nor an NZB")
 	}
 	return errors.New("item has no usable link")
+}
+
+// Download starts one item of a feed by hand, in the chosen category, whether or not
+// any rule matched it. index and title name the item as the admin page last showed it,
+// so a feed that changed since is refused rather than starting the wrong release.
+func (p *Poller) Download(ctx context.Context, feed string, index int, title, category string) (string, error) {
+	if _, ok := p.Cfg.Get().Category(category); !ok {
+		return "", errors.New("choose one of your categories")
+	}
+	p.mu.Lock()
+	items := p.polled[feed]
+	if index < 0 || index >= len(items) || items[index].Title != title {
+		p.mu.Unlock()
+		return "", errors.New("the feed changed since it was last checked; check feeds now and try again")
+	}
+	it := items[index]
+	p.mu.Unlock()
+	if err := p.add(ctx, config.Rule{Category: category}, it); err != nil {
+		return "", err
+	}
+	outcome := "started by hand in " + category
+	p.mu.Lock()
+	p.outcome[it.key(feed)] = outcome
+	if st := p.status[feed]; st != nil && index < len(st.Items) && st.Items[index].Title == title {
+		st.Items[index].Outcome = outcome
+	}
+	p.mu.Unlock()
+	p.Log.Printf("rss %q: %q started by hand in %s", feed, title, category)
+	return outcome, nil
 }
