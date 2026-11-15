@@ -120,13 +120,65 @@ func (s *Server) v1Playback(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(s.playbackJSON())
 }
 
-// playbackStatus tells the admin what the last poll saw.
+// playbackStatus tells the admin what the last poll saw, and whether posters load.
 func (s *Server) playbackStatus(w http.ResponseWriter, r *http.Request) {
 	s.playbackJSON()
 	pbCache.Lock()
 	st := pbCache.status
 	pbCache.Unlock()
+	if c, ok := s.tracearr(); ok {
+		ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+		defer cancel()
+		if sessions, err := c.Streams(ctx); err == nil {
+			withArt, sample := 0, ""
+			for _, x := range sessions {
+				if x.PosterURL != "" {
+					withArt++
+					if sample == "" {
+						sample = x.PosterURL
+					}
+				}
+			}
+			st += fmt.Sprintf(" · %d of %d have a poster link from Tracearr", withArt, len(sessions))
+			if sample != "" {
+				st += " · " + s.checkPoster(ctx, sample)
+			}
+		}
+		if rec := c.RecentlyAdded(ctx); len(rec.Items) > 0 {
+			withArt, sample := 0, ""
+			for _, it := range rec.Items {
+				if it.PosterURL != "" {
+					withArt++
+					if sample == "" {
+						sample = it.PosterURL
+					}
+				}
+			}
+			st += fmt.Sprintf(" · recently added: %d of %d have a poster link", withArt, len(rec.Items))
+			if sample != "" {
+				st += " · " + s.checkPoster(ctx, sample)
+			}
+		}
+	}
 	writeJSON(w, map[string]string{"status": st})
+}
+
+// checkPoster fetches one poster the way the proxy would and says what came back.
+func (s *Server) checkPoster(ctx context.Context, path string) string {
+	if !validPosterPath(path) {
+		return "poster link rejected by the proxy (" + path + ")"
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(s.Cfg.Get().Playback.TracearrURL, "/")+path, nil)
+	if err != nil {
+		return "poster check failed"
+	}
+	resp, err := (&http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}).Do(req)
+	if err != nil {
+		return "poster fetch failed: " + err.Error()
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return fmt.Sprintf("poster fetch: HTTP %d, %s, %d bytes", resp.StatusCode, http.DetectContentType(body), len(body))
 }
 
 // arrRecent turns the arrs' import history into Recently Added items.
