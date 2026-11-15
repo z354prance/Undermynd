@@ -237,3 +237,20 @@ body .dashboard-footer > .live-indicator { display:flex; align-items:center; gap
 #approvalPopover button:disabled { opacity:.5; cursor:wait; }
 
 a.nav-item { text-decoration:none; color:inherit; display:inline-flex; align-items:center; gap:6px; }
+
+/* Undermynd: posters come back as small thumbnails beside the text rows. */
+#dashboardView :is(#playbackList,#recentlyAddedList) .playback-art { display:block !important; position:relative; overflow:hidden; border-radius:2px; background:var(--panel-soft); }
+#playbackList .now-playing-card { grid-template-columns:46px minmax(0,1fr); column-gap:10px; }
+#playbackList .playback-art { grid-column:1; grid-row:1 / span 2; width:46px; height:69px; align-self:start; }
+#playbackList .now-playing-details { grid-column:2; grid-row:1; }
+#playbackList .progress-track { grid-column:2; grid-row:2; }
+#recentlyAddedList .recent-poster-card { height:50px; grid-template-columns:28px minmax(0,1fr) auto; grid-template-rows:18px 16px; column-gap:10px; }
+#recentlyAddedList .playback-art { grid-column:1; grid-row:1 / span 2; width:28px; height:42px; align-self:center; }
+#recentlyAddedList .now-playing-details { grid-column:2 / -1; grid-row:1; }
+#recentlyAddedList .recent-episodes { grid-column:2; grid-row:2; }
+#recentlyAddedList .recent-poster-card > .item-meta:last-child { grid-column:3; grid-row:2; }
+@media(max-width:540px) {
+ #recentlyAddedList .recent-poster-card { height:70px; grid-template-columns:28px minmax(0,1fr); grid-template-rows:18px 16px 16px; }
+ #recentlyAddedList .now-playing-details, #recentlyAddedList .recent-episodes, #recentlyAddedList .recent-poster-card > .item-meta:last-child { grid-column:2; }
+ #recentlyAddedList .recent-poster-card > .item-meta:last-child { grid-row:3; }
+}
