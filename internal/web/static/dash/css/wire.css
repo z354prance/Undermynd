@@ -45,3 +45,6 @@
 
 .wire.w-fail .st.done .ln.bad{background:var(--r-red);animation:wflick 1.6s steps(1) infinite}
 .wire.w-fail .st.cur .lb{color:var(--r-red)}
+.wire .lb .pc{display:block;font-weight:400;font-size:10px;line-height:1.2;margin-top:1px}
+.wire .lb{overflow:hidden;text-overflow:ellipsis;padding-right:4px}
+.wire .st:last-child .lb{padding-right:0}

@@ -406,6 +406,7 @@ type jobRow struct {
 	Reason   string    `json:"reason"`
 	Flag     string    `json:"flag"`
 	Attn     bool      `json:"attention"`
+	FailedAt string    `json:"failedAt,omitempty"`
 	Progress float64   `json:"progress"`
 	Backend  string    `json:"backend"`
 	Node     string    `json:"transcodeNode,omitempty"`
@@ -419,7 +420,7 @@ func (s *Server) jobRows() []jobRow {
 	for _, j := range s.Store.List() {
 		out = append(out, jobRow{ID: j.ID, Name: j.Name, Source: j.Source, Category: j.Category, State: j.State, Group: job.Group(j.State),
 			Reason: j.Reason, Flag: j.Flag, Attn: j.State == job.Failed || j.Flag != "", Progress: job.Overall(j), Backend: j.Backend,
-			Node: j.TranscodeNode, Worker: j.TranscodeWorker, Created: j.Created, Changed: j.StateChanged})
+			Node: j.TranscodeNode, Worker: j.TranscodeWorker, Created: j.Created, Changed: j.StateChanged, FailedAt: job.FailedStage(j)})
 	}
 	return out
 }

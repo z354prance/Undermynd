@@ -348,7 +348,10 @@ func (e *Engine) Retry(id string) error {
 		if j.State != job.Failed {
 			return errors.New("only a failed job can be retried")
 		}
-		j.FailCleaned, j.ArrDeleted, j.Flag = false, false, ""
+		j.FailCleaned, j.ArrDeleted, j.ArrNotified, j.Flag = false, false, false, ""
+		if j.RemoteID != "" {
+			j.PastRemoteIDs = append(j.PastRemoteIDs, j.RemoteID)
+		}
 		j.RemoteID, j.SavePath, j.StagingDir, j.CompleteDir, j.Files = "", "", "", "", nil
 		j.Progress, j.Retries = 0, 0
 		j.LastProgress = e.Now()
@@ -611,7 +614,9 @@ func (e *Engine) doDownload(ctx context.Context, j job.Job) {
 // again: the job fails, the cleanup removes the item from the client, and the arr
 // sees the failure, blocklists the release and grabs a different one.
 func (e *Engine) failStalled(ctx context.Context, j job.Job, why string) {
-	_ = e.backend(j).Remove(ctx, j.RemoteID, true)
+	if err := e.backend(j).Remove(ctx, j.RemoteID, true); err != nil {
+		e.Log.Printf("job %s: deleting client item %s: %v (cleanup tries again)", short(j.ID), j.RemoteID, err)
+	}
 	e.fail(j, "download failed: "+why)
 }
 
@@ -818,11 +823,28 @@ func (e *Engine) doReady(ctx context.Context, j job.Job) {
 }
 
 func (e *Engine) removeBackendItem(ctx context.Context, j job.Job) error {
+	b := e.backend(j)
+	// Items from earlier attempts: delete them, and do not hold up cleanup if one is already gone.
+	for _, old := range j.PastRemoteIDs {
+		if old == "" || old == j.RemoteID {
+			continue
+		}
+		if err := b.Remove(ctx, old, true); err != nil {
+			e.Log.Printf("job %s: removing earlier client item %s: %v", short(j.ID), old, err)
+		}
+	}
 	if j.RemoteID != "" {
-		b := e.backend(j)
 		if it, err := b.Status(ctx, j.RemoteID); err != nil {
 			return err
-		} else if it.Status != backend.Missing {
+		} else if it.Status == backend.Missing {
+			// A failed item can drop out of TorBox's list while it still sits in the
+			// account. Ask for the delete anyway; "not found" is the expected answer.
+			if err := b.Remove(ctx, j.RemoteID, true); err != nil {
+				e.Log.Printf("job %s: client item %s not listed; delete answered: %v", short(j.ID), j.RemoteID, err)
+			} else {
+				e.Log.Printf("job %s: client item %s was not listed but has been deleted", short(j.ID), j.RemoteID)
+			}
+		} else {
 			if err := b.Remove(ctx, j.RemoteID, true); err != nil {
 				return err
 			}

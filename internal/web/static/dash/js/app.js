@@ -169,24 +169,27 @@ function asciiMeter(percent) {
 }
 
 
-const WIRE_STAGES = ["Requested", "Found", "Download", "Convert", "Ready"];
+const WIRE_STAGES = ["Requested", "Found", "Download", "Transfer", "Convert", "Ready"];
+// Six steps: Download is the grab into TorBox (or the download client), Transfer
+// is the copy from TorBox to this server. A local client has no transfer of its own.
 function wireState(item, progress) {
-  const cur = {requested:0, wanted:1, downloading:2, downloaded:2, processing:3, importing:4, available:5, playing:5}[item.stage] ?? 1;
+  const pulling = pipelineRecords(item, "download", state.downloads).some(d => /pulling/i.test(d.status || ""));
+  let cur = {requested:0, wanted:1, downloading:2, downloaded:3, processing:4, importing:5, available:6, playing:6}[item.stage] ?? 1;
+  if (item.stage === "downloading" && pulling) cur = 3;
   const problems = (progress.problems || []).join(" ");
   let mode = "run";
-  if (cur >= 5) mode = "done";
+  if (cur >= 6) mode = "done";
   else if (/fail|error/i.test(problems)) mode = "fail";
   else if (/stall/i.test(problems)) mode = "stall";
-  else if (cur <= 1 || cur === 4 || progress.paused || progress.percent === null) mode = "wait";
-  // Draw a failure on the stage that failed: Convert only when a Tdarr job is the
-  // one that failed, otherwise Download (a failed transfer ends there).
-  let at = cur;
+  else if (cur <= 1 || cur === 5 || progress.paused || progress.percent === null) mode = "wait";
+  let percent = progress.percent === null ? 0 : Math.max(0, Math.min(100, progress.percent));
   if (mode === "fail") {
-    const badJob = pipelineRecords(item, "processing", state.processing).some(j => j.state === "problem" || /fail|error/i.test(String(j.state)));
-    at = badJob || /tdarr|transcode|health/i.test(problems) ? 3 : Math.min(Math.max(cur, 2), 2);
+    // The server says which step failed; without that, a transfer problem is the usual cause.
+    const at = {download:2, transfer:3, convert:4, ready:5}[item.failed_at];
+    cur = at ?? (pipelineRecords(item, "processing", state.processing).some(j => j.state === "problem") ? 4 : 2);
+    if (progress.percent === null && cur === 2) percent = Math.max(0, Math.min(100, Number(item.progress) || 0));
   }
-  const percent = progress.percent === null ? 0 : Math.max(0, Math.min(100, progress.percent));
-  return {cur: mode === "fail" ? at : cur, mode, percent};
+  return {cur, mode, percent};
 }
 function wireMarkup(item, progress) {
   const {cur, mode, percent} = wireState(item, progress);
@@ -201,7 +204,7 @@ function wireMarkup(item, progress) {
         line = `<b class="ln act" style="--p:${p.toFixed(1)}%"><s class="fill" style="width:${p.toFixed(1)}%;background-size:${stretch}% 100%"></s>${mode === "run" && p > 0 ? `<u class="dot" style="left:${p.toFixed(1)}%"></u>` : ""}<em class="rest"></em></b>`;
       } else line = '<b class="ln todo"></b>';
     }
-    const pctLabel = cur === i && ["run","stall","fail"].includes(mode) && percent > 0 ? ` ${Math.round(percent)}%` : "";
+    const pctLabel = cur === i && ["run","stall","fail"].includes(mode) && percent > 0 ? `<b class="pc">${Math.round(percent)}%</b>` : "";
     return `<div class="st ${kind}"><div class="wr"><i class="nd"></i>${line}</div><span class="lb">${name}${pctLabel}</span></div>`;
   }).join("");
   return `<div class="wire w-${mode}" aria-hidden="true">${cells}</div>`;

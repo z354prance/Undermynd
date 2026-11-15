@@ -70,9 +70,9 @@
   var jobFilter={q:'',group:'all',source:'all'},lastRows=[],paused=false,es=null,tabBtns={};
   function stopLive(){clearInterval(timer);if(es){es.close();es=null}}
   function attentionCount(rows){return rows.filter(function(r){return r.attention&&r.state!=='cleaned'}).length}
-  var WSTAGES=['Requested','Found','Download','Convert','Ready'];
+  var WSTAGES=['Requested','Found','Download','Transfer','Convert','Ready'];
   function jobWire(j){
-    var m={received:[0,'wait'],submitted:[1,'wait'],downloading:[2,'run'],pulling:[2,'run'],downloaded:[3,'wait'],queued_transcode:[3,'wait'],transcoding:[3,'run'],verifying:[3,'run'],ready:[4,'wait'],imported:[5,'done'],cleaned:[5,'done'],failed:[2,'fail']}[j.state]||[1,'wait'];
+    var m={received:[0,'wait'],submitted:[1,'wait'],downloading:[2,'run'],pulling:[3,'run'],downloaded:[4,'wait'],queued_transcode:[4,'wait'],transcoding:[4,'run'],verifying:[4,'run'],ready:[5,'wait'],imported:[6,'done'],cleaned:[6,'done'],failed:[{download:2,transfer:3,convert:4,ready:5}[j.failedAt]||2,'fail']}[j.state]||[1,'wait'];
     var cur=m[0],mode=m[1],pct=Math.max(0,Math.min(100,Math.round((j.progress||0)*100)));
     if(mode==='run'&&pct===0)mode='wait';
     var w=el('div','wire w-'+mode);
@@ -239,7 +239,7 @@
     var i=el('input');i.type=opts.type||'text';i.value=opts.value==null?'':opts.value;i.autocomplete='off';if(opts.ph)i.placeholder=opts.ph;if(opts.type==='checkbox'){i.checked=!!opts.value;i.style.width='auto'}
     w.appendChild(i);if(opts.help)w.appendChild(el('div','fh',opts.help));box.appendChild(w);return i
   }
-  function chip(on,text){return el('span','chip '+(on?'on':'off'),(on?'● ':'○ ')+text)}
+  function chip(on,text){return el('span','chip2 '+(on?'ok':'dim'),text)}
   function saveBar(body,fn){var bar=el('div','savebar');var b=el('button','go','save');var m=el('span','msg');b.onclick=function(){fn(m)};bar.appendChild(b);bar.appendChild(m);body.appendChild(bar)}
 
   function settingsView(body){
@@ -267,7 +267,7 @@
     body.appendChild(conn);
     var cats=el('div');body.appendChild(cats);
     function add(c){
-      var card=el('div','card');var f={};var g=el('div','grid3');f.orig=c.name||'';
+      var card=el('div','card cat kind-'+(c.kind||'none'));var f={};var g=el('div','grid3');f.orig=c.name||'';
       f.name=row(g,'category name',{value:c.name,help:'what the arr sends, e.g. tv'});
       var w=el('div','fld');w.appendChild(el('label','','arr type'));var k=el('select');[['sonarr','sonarr'],['radarr','radarr'],['lidarr','lidarr'],['rss','no arr (RSS / watch folder)']].forEach(function(p){var x=p[0];var o=el('option','',p[1]);o.value=x;if(c.kind===x)o.selected=true;k.appendChild(o)});w.appendChild(k);g.appendChild(w);f.kind=k;
       f.arrUrl=row(g,'arr address',{value:c.arrUrl,ph:'http://10.0.0.5:8989',help:'so Undermynd can confirm the import'});

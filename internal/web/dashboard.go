@@ -95,6 +95,8 @@ type v1Lifecycle struct {
 	Title      string   `json:"title"`
 	Stage      string   `json:"stage"`
 	Problems   []string `json:"problems,omitempty"`
+	FailedAt   string   `json:"failed_at,omitempty"`
+	Progress   float64  `json:"progress,omitempty"`
 	References []v1Ref  `json:"references"`
 }
 
@@ -164,7 +166,8 @@ func (s *Server) dashboardRecords() ([]v1Download, []v1Process, []v1Lifecycle) {
 			l.Stage = "processing"
 			addProcess(v1Process{Source: "undermynd", State: "processing", Stage: "verify", Progress: 100})
 		case job.Failed:
-			l.Stage, l.Problems = "importing", []string{"failed"}
+			l.Stage, l.Problems, l.FailedAt = "importing", []string{"failed"}, job.FailedStage(j)
+			l.Progress = j.Progress * 100
 		default: // ready, imported: handed back, waiting for the arr
 			l.Stage = "importing"
 		}

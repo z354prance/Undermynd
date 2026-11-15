@@ -72,10 +72,11 @@ type Job struct {
 	StateChanged time.Time `json:"stateChanged"`
 	LastProgress time.Time `json:"lastProgress"`
 
-	ArrDeleted  bool   `json:"arrDeleted,omitempty"`  // the arr called delete on this item
-	ArrNotified bool   `json:"arrNotified,omitempty"` // the arr was told to blocklist the release
-	FailCleaned bool   `json:"failCleaned,omitempty"` // files and backend item removed after a failure
-	Flag        string `json:"flag,omitempty"`        // reconciler note shown in the UI
+	ArrDeleted    bool     `json:"arrDeleted,omitempty"`    // the arr called delete on this item
+	PastRemoteIDs []string `json:"pastRemoteIds,omitempty"` // client items from earlier attempts, removed at cleanup
+	ArrNotified   bool     `json:"arrNotified,omitempty"`   // the arr was told to blocklist the release
+	FailCleaned   bool     `json:"failCleaned,omitempty"`   // files and backend item removed after a failure
+	Flag          string   `json:"flag,omitempty"`          // reconciler note shown in the UI
 
 	History []Transition `json:"history,omitempty"`
 }
@@ -161,4 +162,30 @@ func (j Job) DownloadID() string {
 		return strings.ToUpper(j.ID)
 	}
 	return j.ID
+}
+
+// FailedStage names the step a failed job was on when it failed: "download"
+// (to the download client or TorBox), "transfer" (from TorBox to this server),
+// "convert" (Tdarr and the check after it) or "ready" (handing back to the arr).
+// It is empty for a job that has not failed.
+func FailedStage(j Job) string {
+	if j.State != Failed {
+		return ""
+	}
+	from := Downloading
+	for i := len(j.History) - 1; i >= 0; i-- {
+		if j.History[i].To == Failed {
+			from = j.History[i].From
+			break
+		}
+	}
+	switch from {
+	case Pulling, Downloaded:
+		return "transfer"
+	case QueuedTranscode, Transcoding, Verifying:
+		return "convert"
+	case Ready, Imported:
+		return "ready"
+	}
+	return "download"
 }

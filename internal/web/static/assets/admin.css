@@ -237,3 +237,32 @@ body.ui .card:not(.setting){border-radius:4px;background:#0f100f}
 .ncard .nh .link{min-width:0;flex:1;overflow-wrap:anywhere;word-break:break-all;text-align:left;white-space:normal}
 .ncard .nh .fpill{flex:none}
 .ncard .reason{overflow-wrap:anywhere;word-break:break-word}
+
+/* ===== settings tabs: same language as Overview and Jobs ===== */
+body.ui .pane-head h3{font-size:20px;color:#e5e8e2;margin-bottom:6px}
+body.ui .pane-head .hint{color:#8e918d}
+body.ui .main :is(input:not([type=checkbox]),select,textarea){background:#0b0c0b;border:1px solid #30322f;border-radius:2px;height:34px;color:#e5e8e2}
+body.ui .main textarea{height:auto;padding:8px 10px}
+body.ui .main :is(input,select,textarea):focus{outline:0;border-color:#45bba9}
+body.ui .main select{appearance:none;-webkit-appearance:none;padding-right:28px;background-image:linear-gradient(45deg,transparent 50%,#8e918d 50%),linear-gradient(135deg,#8e918d 50%,transparent 50%);background-position:calc(100% - 15px) 15px,calc(100% - 10px) 15px;background-size:5px 5px;background-repeat:no-repeat}
+body.ui .main input[type=checkbox]{accent-color:#45bba9;width:15px;height:15px}
+body.ui .fld label,body.ui label{color:#8e918d}
+body.ui .fh{color:#5f625e}
+body.ui .card.setting{border-top-color:#232523}
+body.ui .sl h4 .chip2,body.ui .card h4 .chip2{height:20px;font-size:11px;padding:0 9px}
+/* a category reads like a job card: accent edge by the arr it belongs to */
+body.ui .card.cat{border:1px solid #30322f;border-left:2px solid #acb4c0;border-radius:4px;background:#0f100f;padding:18px 20px}
+body.ui .card.cat.kind-sonarr{border-left-color:#409cff}
+body.ui .card.cat.kind-radarr{border-left-color:#d4af37}
+body.ui .card.cat.kind-lidarr{border-left-color:#3fb950}
+body.ui .card.cat>button{margin:6px 18px 0 0;display:inline-block}
+body.ui .card:not(.setting):not(.cat){border:1px solid #30322f;border-radius:4px;background:#0f100f}
+body.ui .kv{border-top-color:#1f211f}
+body.ui .kv .k{color:#8e918d}
+body.ui .savebar{background:rgba(13,13,12,.94);border-top-color:#30322f}
+body.ui .savebar button:first-child{color:#45bba9}
+body.ui .msg.ok{color:#6dcc9d}body.ui .msg.err{color:#f27b89}
+/* TorBox hourly budget: the capsule from the public storage bar */
+body.ui .card .bar{height:8px;border-radius:4px;background:repeating-linear-gradient(135deg,#2a2c2a 0 3px,#1c1e1c 3px 6px);margin:6px 0 4px}
+body.ui .card .bar i{border-radius:4px}
+body.ui .main select{background:#0b0c0b url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238e918d' stroke-width='1.4'/%3E%3C/svg%3E") no-repeat right 11px center}
