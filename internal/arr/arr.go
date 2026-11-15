@@ -71,3 +71,42 @@ func (c *Client) Imported(ctx context.Context, downloadID string) (bool, error) 
 	}
 	return false, nil
 }
+
+// Check proves the address and key work by reading the arr's status, and returns
+// its name and version. It also reads the history, the call the import check
+// makes, so a key that can read status but not history is caught too.
+func (c *Client) Check(ctx context.Context) (name, version string, err error) {
+	get := func(path string, out any) error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+c.prefix()+path, nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("X-Api-Key", c.APIKey)
+		resp, err := c.HTTP.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		switch {
+		case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
+			return fmt.Errorf("%s refused the API key (HTTP %d)", c.Kind, resp.StatusCode)
+		case resp.StatusCode != http.StatusOK:
+			return fmt.Errorf("%s answered HTTP %d for %s", c.Kind, resp.StatusCode, path)
+		}
+		if out == nil {
+			return nil
+		}
+		return json.NewDecoder(resp.Body).Decode(out)
+	}
+	var st struct {
+		AppName string `json:"appName"`
+		Version string `json:"version"`
+	}
+	if err = get("/system/status", &st); err != nil {
+		return "", "", err
+	}
+	if err = get("/history?page=1&pageSize=1", nil); err != nil {
+		return "", "", err
+	}
+	return st.AppName, st.Version, nil
+}

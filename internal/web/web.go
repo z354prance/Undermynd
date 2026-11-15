@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/z354prance/undermynd/internal/arr"
 	"github.com/z354prance/undermynd/internal/auth"
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/job"
@@ -78,6 +79,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/api/events", s.admin(s.events))
 	mux.HandleFunc("GET /admin/api/system", s.admin(s.system))
 	mux.HandleFunc("POST /admin/api/intake", s.guard(s.admin(s.setIntake)))
+	mux.HandleFunc("POST /admin/api/arrs/test", s.guard(s.admin(s.arrTest)))
 	mux.HandleFunc("POST /admin/api/tdarr/test", s.guard(s.admin(s.tdarrTest)))
 	mux.HandleFunc("POST /admin/api/settings/client-password", s.guard(s.admin(s.newClientPassword)))
 	return secure(mux)
@@ -614,6 +616,44 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 // tdarrTest checks an address and key (a blank key means the stored one) and reports what it found.
+// arrTest checks one arr connection. A blank key means the one already saved for that category.
+func (s *Server) arrTest(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name   string `json:"name"`
+		Kind   string `json:"kind"`
+		URL    string `json:"url"`
+		APIKey string `json:"apiKey"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	key := in.APIKey
+	if key == "" {
+		for _, c := range s.Cfg.Get().Categories {
+			if c.Name == in.Name {
+				key = string(c.ArrAPIKey)
+			}
+		}
+	}
+	addr := strings.TrimSpace(in.URL)
+	if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
+		jsonErr(w, http.StatusBadRequest, "the address must start with http:// or https://")
+		return
+	}
+	if key == "" {
+		jsonErr(w, http.StatusBadRequest, "no API key is set for this category")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	app, ver, err := arr.New(in.Kind, addr, key).Check(ctx)
+	if err != nil {
+		jsonErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, map[string]string{"app": app, "version": ver})
+}
+
 func (s *Server) tdarrTest(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		URL    string `json:"url"`
