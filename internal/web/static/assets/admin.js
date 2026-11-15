@@ -299,7 +299,7 @@
     var en=row(g,'let visitors request accounts',{type:'checkbox'});
     var pv=row(g,'server type',{help:'emby or jellyfin'});
     var pu=row(g,'this site’s public HTTPS address',{ph:'https://status.example.com',help:'used in the emailed links'});
-    var sp=row(g,'Jellyfin public address',{ph:'https://jellyfin.example.com',help:'Jellyfin only, shown in sign-in instructions'});
+    var sp=row(g,'media server web address',{ph:'https://emby.example.com',help:'HTTPS. Shown in the “you’re ready to watch” email so people know where to watch. Required for Jellyfin.'});
     var tp=row(g,'template user ID',{help:'a disabled, non-admin user whose permissions new accounts copy'});
     var sh=row(g,'SMTP host',{ph:'smtp.example.com'});
     var sn=row(g,'SMTP port',{type:'number'});

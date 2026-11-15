@@ -76,3 +76,11 @@ func TestEveryLetterRenders(t *testing.T) {
 		}
 	}
 }
+
+func TestReadyEmailPointsToTheWebAddress(t *testing.T) {
+	s := Settings{Provider: "emby", PublicURL: "https://status.example.com", ServerPublicURL: "https://emby.example.com", From: "a@example.com"}
+	n := serverCompletionNotice(Request{Name: "Ann", Email: "ann@example.com", Username: "ann", Connect: "ann@connect.example.com"}, s)
+	if !strings.Contains(n.l.text(), "https://emby.example.com") || !strings.Contains(n.l.html(), `href="https://emby.example.com"`) {
+		t.Fatal("web address missing from the ready email")
+	}
+}

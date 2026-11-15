@@ -6,6 +6,13 @@ import (
 	"strings"
 )
 
+func siteHost(raw string) string {
+	if u, err := url.Parse(raw); err == nil && u.Host != "" {
+		return u.Host
+	}
+	return raw
+}
+
 func siteName(s Settings) string {
 	if u, err := url.Parse(s.PublicURL); err == nil && u.Host != "" {
 		return u.Host
@@ -103,15 +110,24 @@ func testNotice(s Settings) notice {
 	}}
 }
 
-func embyCompletionNotice(r Request) notice {
+func embyCompletionNotice(r Request, s Settings) notice {
+	details := [][2]string{{"Emby Connect email", r.Connect}, {"Server username", r.Username}}
+	web := "Open https://app.emby.media, sign in with Emby Connect, and select the linked server."
+	var button [2]string
+	if s.ServerPublicURL != "" {
+		details = append([][2]string{{"Watch on the web", s.ServerPublicURL}}, details...)
+		web = "Open " + s.ServerPublicURL + " in any browser and sign in. You can also use https://app.emby.media with Emby Connect and select the linked server."
+		button = [2]string{"Open " + siteHost(s.ServerPublicURL), s.ServerPublicURL}
+	}
 	return notice{r.Email, "You're ready to watch", letter{
 		Title:   "Your account is ready",
 		Intro:   []string{"Hi " + r.Name + ", setup is complete. Your Emby Connect account is linked and your server account is ready to use."},
-		Details: [][2]string{{"Emby Connect email", r.Connect}, {"Server username", r.Username}},
+		Details: details,
+		Button:  button,
 		Parts: [][2]string{
 			{"Which password to use", "Use your Emby Connect password when you choose Emby Connect sign-in. If an app asks for a local server login instead, use your server username with the password you chose during setup."},
 			{"TVs and streaming devices", "Install the Emby app (Roku, Fire TV, Android or Google TV, Apple TV, Samsung or LG) and choose Emby Connect. If a code appears, open the address shown on the TV on your phone or computer, sign in to Emby Connect, and enter the code. Then select the linked server."},
-			{"Web browser", "Open https://app.emby.media, sign in with Emby Connect, and select the linked server."},
+			{"Web browser", web},
 			{"Phones and tablets", "Install Emby from the Apple App Store or Google Play, choose Emby Connect, sign in, and select the linked server."},
 			{"Gaming consoles", "Xbox One and Series X|S: install Emby from the Microsoft Store and choose Emby Connect. PlayStation 4: open https://tv.emby.media in the console's browser and follow the prompts. Other consoles vary; if yours is not supported, use a TV, streaming device, phone or browser."},
 		},

@@ -191,6 +191,10 @@ func (m *Manager) Validate(s Settings) (Settings, error) {
 	if s.Enabled && s.Provider == "jellyfin" && !validURL(s.ServerPublicURL, true) {
 		return s, errors.New("enter the public HTTPS Jellyfin server URL for sign-in instructions")
 	}
+	s.ServerPublicURL = strings.TrimRight(strings.TrimSpace(s.ServerPublicURL), "/")
+	if s.ServerPublicURL != "" && !validURL(s.ServerPublicURL, true) {
+		return s, errors.New("enter the media server's public address as an HTTPS URL, like https://emby.example.com")
+	}
 	s.PublicURL = strings.TrimRight(strings.TrimSpace(s.PublicURL), "/")
 	s.EmbyURL = old.EmbyURL // the media server address and key are set on the Playback tab
 	s.EmbyKey = old.EmbyKey
