@@ -555,14 +555,24 @@
   </div>
 <dialog id="accessRequestDialog" class="request-dialog access-dialog" aria-labelledby="accessRequestTitle">
     <header><h2 id="accessRequestTitle">Request server access</h2><button type="button" class="service-secondary-button" data-close-access>Close</button></header>
-    <p id="accessConnectHelp">First, <a href="https://emby.media/connect.html" target="_blank" rel="noopener noreferrer">create and verify your Emby Connect account</a>, or use one you already have. Then enter the email address of that account below. We never ask for your Connect password.</p>
-    <form id="accessRequestForm">
-      <label class="service-form-field"><span>Your name</span><input name="name" autocomplete="name" required maxlength="100"></label>
-      <label class="service-form-field"><span>Email for updates</span><input name="email" type="email" autocomplete="email" required maxlength="254"></label>
-      <label class="service-form-field"><span>Preferred server username</span><input name="username" autocomplete="off" required minlength="3" maxlength="64" pattern="[a-zA-Z0-9][a-zA-Z0-9_.\-]{2,63}" title="3-64 letters, numbers, dots, underscores, or dashes"></label>
-      <label id="accessConnectField" class="service-form-field"><span>Emby Connect email address</span><input name="connect_username" type="email" inputmode="email" autocomplete="email" placeholder="the email your Emby Connect account uses" required maxlength="254"></label>
-      <p class="service-field-help">Your request is held for approval. If approved, we will email a link to finish setting up your server account.</p>
-      <button class="service-primary-button" type="submit">Submit for approval</button>
+    <form id="accessRequestForm" novalidate>
+      <fieldset class="access-step" data-step="1">
+        <p class="access-stepno">Step 1 of 2</p>
+        <p id="accessConnectHelp">First, <a href="https://emby.media/community/index.php?/register" target="_blank" rel="noopener noreferrer">create an Emby Connect account</a> (or use one you already have). We never ask for your Connect password.</p>
+        <label class="service-form-field"><span id="accessEmailLabel">Emby Connect email address</span><input name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" required maxlength="254"></label>
+        <p class="service-field-help" id="accessEmailHelp">Use the address your Emby Connect account is registered with. It's also the address we'll use to tell you about your request.</p>
+        <input type="hidden" name="connect_username">
+        <div class="access-actions-row"><span></span><button class="service-primary-button" type="button" data-access-next>Continue</button></div>
+      </fieldset>
+      <fieldset class="access-step" data-step="2" hidden>
+        <p class="access-stepno">Step 2 of 2</p>
+        <div class="access-two">
+          <label class="service-form-field"><span>Your name</span><input name="name" autocomplete="name" required maxlength="100"></label>
+          <label class="service-form-field"><span>Preferred server username</span><input name="username" autocomplete="off" required minlength="3" maxlength="64" pattern="[a-zA-Z0-9][a-zA-Z0-9_.\-]{2,63}" title="3-64 letters, numbers, dots, underscores, or dashes"></label>
+        </div>
+        <p class="service-field-help" id="accessConnectNote">Once your request is approved, Emby will email you to link your Connect account to this server. Watch for it and accept it, then we'll email a link to finish setting up your account.</p>
+        <div class="access-actions-row"><button class="service-secondary-button" type="button" data-access-back>Back</button><button class="service-primary-button" type="submit">Submit for approval</button></div>
+      </fieldset>
     </form>
     <p id="accessRequestMessage" role="status"></p>
   </dialog>

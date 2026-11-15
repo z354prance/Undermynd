@@ -36,18 +36,34 @@
       const status = await api("status");
       el("requestAccessButton").hidden = !status.enabled;
       const jellyfin = status.provider === "jellyfin";
+      accessJellyfin = jellyfin;
       el("accessConnectHelp").hidden = jellyfin;
-      el("accessConnectField").hidden = jellyfin;
-      const connect = el("accessRequestForm").elements.connect_username;
-      connect.required = !jellyfin; connect.disabled = jellyfin;
+      el("accessConnectNote").textContent = jellyfin ? "Your request is held for approval. If approved, we'll email a link to finish setting up your server account." : "Once your request is approved, Emby will email you to link your Connect account to this server. Watch for it and accept it, then we'll email a link to finish setting up your account.";
+      el("accessEmailLabel").textContent = jellyfin ? "Email address" : "Emby Connect email address";
+      el("accessEmailHelp").textContent = jellyfin ? "We'll use this address to tell you about your request." : "Use the address your Emby Connect account is registered with. It's also the address we'll use to tell you about your request.";
       el("accessSetupHelp").textContent = jellyfin ? "Choose a password for your Jellyfin account below." : "Confirm any Emby Connect linking email first. Choose a separate password for your local server account below.";
     }
     catch { el("requestAccessButton").hidden = true; }
   }
+  let accessJellyfin = false;
+  const accessStep = n => {
+    for (const f of el("accessRequestForm").querySelectorAll(".access-step")) f.hidden = f.dataset.step !== String(n);
+    el("accessRequestForm").querySelector(`.access-step[data-step="${n}"] input:not([type=hidden])`)?.focus();
+  };
+  const validStep = n => [...el("accessRequestForm").querySelectorAll(`.access-step[data-step="${n}"] input:not([type=hidden])`)].every(i => i.reportValidity());
+  el("accessRequestForm").querySelector("[data-access-next]").addEventListener("click", () => {
+    if (!validStep(1)) return;
+    message("accessRequestMessage", ""); accessStep(2);
+  });
+  el("accessRequestForm").querySelector("[data-access-back]").addEventListener("click", () => accessStep(1));
+  el("accessRequestForm").elements.email.addEventListener("keydown", event => {
+    if (event.key === "Enter") { event.preventDefault(); el("accessRequestForm").querySelector("[data-access-next]").click(); }
+  });
   el("requestAccessButton").addEventListener("click", () => {
-    el("accessRequestForm").hidden = false;
+    el("accessRequestForm").hidden = false; accessStep(1);
     message("accessRequestMessage", "");
     el("accessRequestDialog").showModal();
+    el("accessRequestForm").elements.email.focus();
   });
   for (const dialog of document.querySelectorAll(".access-dialog")) {
     dialog.querySelector("[data-close-access]").addEventListener("click", () => dialog.close());
@@ -59,10 +75,15 @@
   el("accessRequestForm").addEventListener("submit", event => {
     event.preventDefault();
     const form = event.currentTarget;
+    if (!validStep(2)) return;
+    // The Connect account's address is also the contact address.
+    form.elements.connect_username.value = accessJellyfin ? "" : form.elements.email.value.trim();
     busy(form, async () => {
       message("accessRequestMessage", "Submitting your request...");
       try {
-        const result = await api("request", Object.fromEntries(new FormData(form)));
+        const data = Object.fromEntries(new FormData(form));
+        if (accessJellyfin) delete data.connect_username;
+        const result = await api("request", data);
         form.reset(); form.hidden = true;
         message("accessRequestMessage", result.message);
       } catch (error) { message("accessRequestMessage", error.message); }

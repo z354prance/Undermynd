@@ -300,12 +300,14 @@ body .request-dialog .service-form-field { display:block; margin:0; }
 body .request-dialog .service-field-help { margin:4px 0 0; }
 body .request-dialog form > button[type=submit], body .request-dialog-actions { align-self:flex-end; }
 body .request-dialog-actions { display:flex; justify-content:flex-end; gap:20px; margin-top:16px; }
-body .access-dialog form { display:grid; grid-template-columns:1fr 1fr; gap:14px 16px; }
-body .access-dialog form > :is(.service-form-field:nth-of-type(4), .service-field-help) { grid-column:1 / -1; }
-body .access-dialog form > .service-field-help { grid-column:1; margin:0; align-self:center; }
-body .access-dialog form > button[type=submit] { grid-column:2; justify-self:end; align-self:center; }
-body .access-dialog { width:min(600px,calc(100vw - 32px)); }
-@media (max-width:540px) { body .access-dialog form { grid-template-columns:1fr; } body .access-dialog form > * { grid-column:1 !important; } }
+body .access-dialog { width:min(560px,calc(100vw - 32px)); }
+body .access-dialog fieldset { border:0; margin:0; padding:0; display:flex; flex-direction:column; gap:12px; min-width:0; }
+body .access-dialog fieldset[hidden] { display:none; }
+body .access-dialog .access-stepno { margin:0; color:#5f625e; font-size:11px; }
+body .access-dialog .access-two { display:grid; grid-template-columns:1fr 1fr; gap:14px 16px; }
+body .access-dialog .access-actions-row { display:flex; justify-content:space-between; align-items:center; margin-top:6px; }
+body .access-dialog .service-field-help { margin:0; }
+@media (max-width:540px) { body .access-dialog .access-two { grid-template-columns:1fr; } }
 #cardDetailsDialog { padding:16px 18px; width:min(360px,calc(100vw - 24px)); }
 #cardDetailsDialog dl > div { display:flex; justify-content:space-between; gap:14px; padding:4px 0; border-top:1px solid #1f211f; font-size:12px; }
 #cardDetailsDialog dt { color:#8e918d; } #cardDetailsDialog dd { margin:0; text-align:right; overflow-wrap:anywhere; }
