@@ -117,7 +117,16 @@ type Rule struct {
 	Enabled        bool   `json:"enabled"`
 }
 
+// Watch is a folder whose .torrent, .nzb and .magnet files are sent through the
+// same pipeline as everything else. Finished files go to the category's folder.
+type Watch struct {
+	Dir      string `json:"dir"`
+	Category string `json:"category"` // blank = the category of the first RSS rule
+	Enabled  bool   `json:"enabled"`
+}
+
 type Settings struct {
+	Watches      []Watch    `json:"watches"`
 	IntakePaused bool       `json:"intakePaused"` // new grabs are accepted but held until resumed
 	Feeds        []Feed     `json:"feeds"`
 	Rules        []Rule     `json:"rules"`

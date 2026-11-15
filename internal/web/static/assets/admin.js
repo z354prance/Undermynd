@@ -241,7 +241,17 @@
       f.enabled=row(g,'enabled',{type:'checkbox',value:c.enabled!==false});
       card.appendChild(g);var rm=el('button','bad','remove rule');rm.onclick=function(){card.remove()};card.appendChild(rm);card._f=f;rules.appendChild(card)}
     S.rules.forEach(addRule);var ar=el('button','','+ add rule');ar.onclick=function(){addRule({enabled:true})};body.appendChild(ar);
+    body.appendChild(el('div','sec','watched folders'));
+    body.appendChild(help('Drop a .torrent, .magnet or .nzb file in a folder and it goes through the same flow. Handled files move to a submitted-to-undermynd subfolder. Finished files are kept in the Complete folder under the category. Do not point this at a folder another app also watches.'));
+    var watches=el('div');body.appendChild(watches);
+    function addWatch(c){var card=el('div','card');var g=el('div','grid3');var f={};
+      f.dir=row(g,'folder',{value:c.dir,help:'full path as the container sees it'});
+      f.category=row(g,'category',{value:c.category,help:'blank = the category of your first enabled RSS rule'});
+      f.enabled=row(g,'enabled',{type:'checkbox',value:c.enabled!==false});
+      card.appendChild(g);var rm=el('button','bad','remove folder');rm.onclick=function(){card.remove()};card.appendChild(rm);card._f=f;watches.appendChild(card)}
+    (S.watches||[]).forEach(addWatch);var aw=el('button','','+ add folder');aw.onclick=function(){addWatch({enabled:true})};body.appendChild(aw);
     saveBar(body,function(m){save(function(b){
+      b.watches=[].map.call(watches.children,function(c){var f=c._f;return {dir:f.dir.value,category:f.category.value,enabled:f.enabled.checked}});
       b.feeds=[].map.call(feeds.children,function(c){var f=c._f;return {name:f.name.value,url:f.url.value,intervalMinutes:+f.intervalMinutes.value,enabled:f.enabled.checked}});
       b.rules=[].map.call(rules.children,function(c){var f=c._f;return {name:f.name.value,feed:f.feed.value,mustContain:f.mustContain.value,mustNotContain:f.mustNotContain.value,category:f.category.value,enabled:f.enabled.checked}})},m)})
   }

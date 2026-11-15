@@ -452,3 +452,30 @@ func TestSlowClientDeleteDoesNotBlockTheJob(t *testing.T) {
 		t.Fatalf("a pulled job must go on to ready while the delete is unconfirmed, got %s (%s)", j.State, j.Reason)
 	}
 }
+
+// Jobs from RSS or a watch folder were not grabbed by an arr, so nothing will
+// import them: the finished files stay in the complete folder and the job ends.
+func TestWatchJobKeepsItsFilesAndEnds(t *testing.T) {
+	u := newURig(t)
+	nzb := []byte(`<?xml version="1.0"?><nzb><file subject="x"><segments><segment bytes="40" number="1">a@b</segment></segments></file></nzb>manual`)
+	j, err := u.eng.SubmitNZB(pipeline.SubmitNZBRequest{Source: "watch", Category: "tv-sonarr", Name: "Manual.Thing.2024", NZB: nzb})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j.Source != "watch" {
+		t.Fatalf("source should be watch, got %q", j.Source)
+	}
+	u.tick(2)
+	u.tb.finish("101", map[string]string{"Manual.Thing.2024/Manual.Thing.2024.mkv": strings.Repeat("m", 4000)})
+	u.tick(4)
+	got, _ := u.st.Get(j.ID)
+	if got.State != job.Cleaned {
+		t.Fatalf("expected the job to end as cleaned, got %s (%s)", got.State, got.Reason)
+	}
+	if !exists(filepath.Join(got.CompleteDir, "Manual.Thing.2024.mkv")) {
+		t.Fatal("the delivered file must be kept")
+	}
+	if len(u.tb.deleted) == 0 {
+		t.Fatal("the TorBox item must still be removed")
+	}
+}

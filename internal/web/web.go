@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -419,9 +420,10 @@ type settingsView struct {
 		HasPassword bool   `json:"hasPassword"`
 		SaveDir     string `json:"saveDir"`
 	} `json:"qbit"`
-	Feeds []config.Feed `json:"feeds"`
-	Rules []config.Rule `json:"rules"`
-	Tdarr struct {
+	Feeds   []config.Feed  `json:"feeds"`
+	Watches []config.Watch `json:"watches"`
+	Rules   []config.Rule  `json:"rules"`
+	Tdarr   struct {
 		URL            string `json:"url"`
 		APIKey         string `json:"apiKey,omitempty"` // write-only
 		HasAPIKey      bool   `json:"hasApiKey"`
@@ -461,7 +463,10 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 			HasArrAPIKey: k.ArrAPIKey != "", Transcode: k.Transcode, OnFail: k.OnTranscodeFail})
 	}
 	v.QBit.URL, v.QBit.Username, v.QBit.HasPassword, v.QBit.SaveDir = c.QBit.URL, c.QBit.Username, c.QBit.Password != "", c.QBit.SaveDir
-	v.Feeds, v.Rules = c.Feeds, c.Rules
+	v.Feeds, v.Rules, v.Watches = c.Feeds, c.Rules, c.Watches
+	if v.Watches == nil {
+		v.Watches = []config.Watch{}
+	}
 	if v.Feeds == nil {
 		v.Feeds = []config.Feed{}
 	}
@@ -517,6 +522,30 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		next.Feeds = append(next.Feeds, f)
+	}
+	next.Watches = nil
+	for _, wf := range in.Watches {
+		wf.Dir, wf.Category = filepath.Clean(strings.TrimSpace(wf.Dir)), strings.TrimSpace(wf.Category)
+		if strings.TrimSpace(wf.Dir) == "" || wf.Dir == "." {
+			continue
+		}
+		if !filepath.IsAbs(wf.Dir) {
+			jsonErr(w, http.StatusBadRequest, "watch folder "+wf.Dir+": use a full path starting with /")
+			return
+		}
+		if wf.Category != "" {
+			if _, ok := next.Category(wf.Category); !ok {
+				jsonErr(w, http.StatusBadRequest, "watch folder "+wf.Dir+": that category does not exist")
+				return
+			}
+		}
+		for _, own := range []string{s.Cfg.Env.Complete(), s.Cfg.Env.Work()} {
+			if wf.Dir == own || strings.HasPrefix(wf.Dir+"/", own+"/") {
+				jsonErr(w, http.StatusBadRequest, "watch folder "+wf.Dir+": that is one of Undermynd's own folders, so files would loop")
+				return
+			}
+		}
+		next.Watches = append(next.Watches, wf)
 	}
 	for _, ru := range in.Rules {
 		ru.Name = strings.TrimSpace(ru.Name)

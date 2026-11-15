@@ -728,6 +728,20 @@ func (e *Engine) handBack(j job.Job) {
 
 func (e *Engine) doReady(ctx context.Context, j job.Job) {
 	now := e.Now()
+	// RSS and watch-folder jobs were not grabbed by an arr, so none will import
+	// them: the finished files stay where they were delivered and the job ends.
+	if j.Source == "rss" || j.Source == "watch" {
+		if err := e.cleanupExcept(ctx, j, true); err != nil {
+			e.retry2(j, err)
+			return
+		}
+		_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
+			c.Move(job.Cleaned, "delivered to "+c.CompleteDir, now)
+			return nil
+		})
+		e.Log.Printf("job %s delivered to %s", short(j.ID), j.CompleteDir)
+		return
+	}
 	if j.ArrDeleted {
 		_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
 			c.Move(job.Imported, "the arr removed the item after import", now)
@@ -829,9 +843,17 @@ func (e *Engine) removeTree(p, root string) error {
 }
 
 func (e *Engine) cleanupFiles(ctx context.Context, j job.Job) error {
+	return e.cleanupExcept(ctx, j, false)
+}
+
+// cleanupExcept removes what a job left behind. With keepDelivered the finished
+// files in the complete folder stay (jobs no arr is waiting to import).
+func (e *Engine) cleanupExcept(ctx context.Context, j job.Job, keepDelivered bool) error {
 	env := e.Cfg.Env
-	if err := e.removeTree(j.CompleteDir, env.Complete()); err != nil {
-		return err
+	if !keepDelivered {
+		if err := e.removeTree(j.CompleteDir, env.Complete()); err != nil {
+			return err
+		}
 	}
 	if err := e.removeTree(env.StagingDir(j.ID), env.Work()); err != nil {
 		return err
@@ -880,7 +902,7 @@ func (e *Engine) doFailed(ctx context.Context, j job.Job) {
 		_, _ = e.Store.Update(j.ID, func(c *job.Job) error { c.FailCleaned, c.Attempts, c.NextRun = true, 0, time.Time{}; return nil })
 	}
 	// The arr sees the failure (state "error") until it handles it and calls delete.
-	if j.ArrDeleted || j.Source == "rss" {
+	if j.ArrDeleted || j.Source == "rss" || j.Source == "watch" {
 		_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
 			c.Move(job.Cleaned, "failed job cleaned up; the arr has dealt with it", e.Now())
 			return nil
