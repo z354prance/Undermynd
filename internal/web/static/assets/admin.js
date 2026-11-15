@@ -48,17 +48,22 @@
     root.appendChild(f);c.focus();
   }
   // ---------------------------------------------------------------- app
-  var tab='jobs',detailId=null;
+  var tab='overview',detailId=null;
   function app(){
     logoutBtn.hidden=false;logoutBtn.onclick=function(){api('POST','/logout').then(start)};
     root.replaceChildren();
     document.body.classList.add('wide');
     var shell=el('div','shell'),side=el('nav','side');
-    [['Pipeline',[['jobs','Jobs']]],['Connections',[['arrs','Arrs & categories'],['clients','Download clients'],['transcode','Transcode']]],['Public site',[['playback','Playback'],['public','Public page']]],['Automation',[['rss','RSS']]],['Server',[['system','System']]]].forEach(function(g){
+    var brand=el('a','brand');brand.href='/admin';var bi=el('img');bi.src='/assets/logo.svg';bi.alt='';brand.appendChild(bi);brand.appendChild(el('span','',  '~/undermynd'));side.appendChild(brand);
+    function nav(t,label){var b=el('button',t===tab?'on':'',label);tabBtns[t]=b;b.onclick=function(){stopLive();tab=t;detailId=null;app()};side.appendChild(b)}
+    nav('overview','Overview');nav('jobs','Jobs');
+    [['Connections',[['arrs','Arrs & categories'],['clients','Download clients'],['transcode','Transcode']]],['Public site',[['playback','Playback'],['public','Public page']]],['Automation',[['rss','Feeds']]],['Server',[['system','Settings']]]].forEach(function(g){
       side.appendChild(el('div','sgroup',g[0]));
-      g[1].forEach(function(p){var t=p[0];var b=el('button',t===tab?'on':'',p[1]);tabBtns[t]=b;b.onclick=function(){stopLive();tab=t;detailId=null;app()};side.appendChild(b)})});
+      g[1].forEach(function(p){nav(p[0],p[1])})});
+    side.appendChild(el('span','sp'));var pub=el('a','sidelink','public page');pub.href='/';side.appendChild(pub);
+    var so=el('button','sidelink','sign out');so.onclick=function(){api('POST','/logout').then(start)};side.appendChild(so);
     var main=el('main','main'),body=el('div');main.appendChild(body);shell.appendChild(side);shell.appendChild(main);root.appendChild(shell);
-    if(tab==='jobs')jobsView(body);else settingsView(body);
+    if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else settingsView(body);
   }
   function fail(e){if(e.status===401){start()}else{var d=el('div','err',e.message);root.appendChild(d)}}
   function ago(t){var s=Math.max(0,(Date.now()-new Date(t))/1000);if(s<90)return Math.round(s)+'s';if(s<5400)return Math.round(s/60)+'m';if(s<172800)return Math.round(s/3600)+'h';return Math.round(s/86400)+'d'}
@@ -79,47 +84,55 @@
         wr.appendChild(ln)}
       st.appendChild(wr);st.appendChild(el('span','lb',name));w.appendChild(st)});
     return w}
+  function jobActions(j){
+    var act=el('div','acts');
+    function b(cls,label,fn,title){var x=el('button',cls,label);if(title)x.title=title;x.onclick=fn;act.appendChild(x)}
+    if(j.state==='failed'){b('go','retry',function(){doAction(j.id,'retry')});b('','clean up now',function(){doAction(j.id,'cleanup')})}
+    if(j.state==='ready')b('go','mark imported',function(){doAction(j.id,'imported')});
+    if(j.state==='imported')b('','clean up now',function(){doAction(j.id,'cleanup')});
+    if(j.state!=='cleaned'&&j.state!=='failed'&&j.state!=='imported')b('','fail it',function(){if(confirm('Fail this job? The arr will treat the download as failed and may search again.'))doAction(j.id,'fail')},'report a failed download so the arr blocklists this release and grabs another');
+    if(j.state!=='cleaned')b('bad','cancel',function(){if(confirm('Cancel and clean up this job?'))doAction(j.id,'cancel')});
+    return act}
+  function jobRow(j,onOpen){
+    var r=el('div','jrow'+(j.state==='failed'?' failed':''));
+    var n=el('div','jname');var a=el('button','link',j.name);a.onclick=function(){onOpen(j)};n.appendChild(a);
+    var why=(j.flag?j.flag+' ':'')+(j.reason&&j.state!=='cleaned'?j.reason:'');
+    n.appendChild(el('div','reason',why||(j.source+' / '+j.category+' · '+ago(j.created)+' ago')));
+    if(why)n.appendChild(el('div','reason faintline',j.source+' / '+j.category+' · '+(j.backend||'-')+' · '+ago(j.created)+' ago'+(j.transcodeNode?' · '+j.transcodeNode+(j.transcodeWorker?' / '+j.transcodeWorker:''):'')));
+    r.appendChild(n);var w=el('div','jwire');w.appendChild(jobWire(j));r.appendChild(w);r.appendChild(jobActions(j));return r}
+  var WORKING={queued:1,downloading:1,processing:1,finishing:1};
   function jobsView(body){
-    var bar=el('div','toolbar');var q=el('input');q.placeholder='search title';q.value=jobFilter.q;q.oninput=function(){jobFilter.q=q.value;drawRows()};bar.appendChild(q);
-    var gs=el('select');[['all','all states'],['attention','needs attention'],['queued','queued'],['downloading','downloading'],['processing','processing'],['finishing','finishing'],['failed','failed'],['done','done']].forEach(function(x){var o=el('option','',x[1]);o.value=x[0];if(jobFilter.group===x[0])o.selected=true;gs.appendChild(o)});gs.onchange=function(){jobFilter.group=gs.value;drawRows()};bar.appendChild(gs);
+    body.appendChild(el('h2','ptitle','Jobs'));
+    var bar=el('div','toolbar');var pills=el('div','pills');bar.appendChild(pills);
+    var q=el('input');q.placeholder='search title';q.value=jobFilter.q;q.oninput=function(){jobFilter.q=q.value;drawRows()};bar.appendChild(q);
     var ss=el('select');[['all','all sources'],['sonarr','sonarr'],['radarr','radarr'],['lidarr','lidarr'],['rss','rss']].forEach(function(x){var o=el('option','',x[1]);o.value=x[0];if(jobFilter.source===x[0])o.selected=true;ss.appendChild(o)});ss.onchange=function(){jobFilter.source=ss.value;drawRows()};bar.appendChild(ss);
     bar.appendChild(el('span','sp'));
     var pb=el('button','','');function pauseLabel(){pb.textContent=paused?'resume intake':'pause intake';pb.className=paused?'go':''}
     pb.onclick=function(){api('POST','/intake',{paused:!paused}).then(function(r){paused=r.paused;pauseLabel();banner()}).catch(fail)};pauseLabel();bar.appendChild(pb);
     body.appendChild(bar);var note=el('div','notice');body.appendChild(note);var host=el('div');body.appendChild(host);
     function banner(){note.textContent=paused?'Intake is paused: new grabs are accepted but held until you resume.':'';note.style.display=paused?'block':'none';pauseLabel()}
+    function inGroup(r,g){
+      if(g==='attention')return r.attention&&r.state!=='cleaned';
+      if(g==='working')return !!WORKING[r.group];
+      if(g==='done')return r.group==='done';
+      return r.state!=='cleaned'}
     function match(r){
       if(jobFilter.q&&r.name.toLowerCase().indexOf(jobFilter.q.toLowerCase())<0)return false;
       if(jobFilter.source!=='all'&&r.source!==jobFilter.source)return false;
-      if(jobFilter.group==='attention')return r.attention&&r.state!=='cleaned';
-      if(jobFilter.group!=='all')return r.group===jobFilter.group;
-      return r.state!=='cleaned'||jobFilter.group==='done';
-    }
+      return inGroup(r,jobFilter.group)}
     function drawRows(){
       if(tab!=='jobs'||detailId)return;
+      var base=lastRows.filter(function(r){return (!jobFilter.q||r.name.toLowerCase().indexOf(jobFilter.q.toLowerCase())>=0)&&(jobFilter.source==='all'||r.source===jobFilter.source)});
+      pills.replaceChildren();
+      [['all','All'],['attention','Needs you'],['working','Working'],['done','Done']].forEach(function(g){
+        var n=base.filter(function(r){return inGroup(r,g[0])}).length;
+        var p=el('button','fpill '+g[0]+(jobFilter.group===g[0]?' on':''),g[1]+' '+n);p.onclick=function(){jobFilter.group=g[0];drawRows()};pills.appendChild(p)});
       var list=lastRows.filter(match);host.replaceChildren();
       var ac=attentionCount(lastRows);if(tabBtns.jobs){tabBtns.jobs.textContent='Jobs';if(ac){var bd=el('span','badge',String(ac));bd.title=ac+' need attention';tabBtns.jobs.appendChild(bd)}}
       if(!list.length){host.appendChild(el('div','empty',lastRows.length?'nothing matches these filters':'no jobs yet'));return}
-      var t=el('table');var h=el('tr');['name','source','state','progress','backend','age',''].forEach(function(x){h.appendChild(el('th','',x))});t.appendChild(h);
-      list.forEach(function(j){
-        var r=el('tr');var n=el('td');var a=el('button','link',j.name);a.onclick=function(){detailId=j.id;detail(body,j.id)};n.appendChild(a);
-        if(j.flag)n.appendChild(el('div','flag',j.flag));if(j.reason&&j.state!=='cleaned')n.appendChild(el('div','reason',j.reason));r.appendChild(n);
-        r.appendChild(el('td','mono',j.source+' / '+j.category));
-        var st=el('td');st.appendChild(el('span','pill '+j.state,j.state));r.appendChild(st);
-        var pct=Math.round(j.progress*100);var pt=el('td');pt.appendChild(jobWire(j));pt.appendChild(el('span','reason',pct+'%'+(j.transcodeNode?' · '+j.transcodeNode+(j.transcodeWorker?' / '+j.transcodeWorker:''):'')));r.appendChild(pt);
-        r.appendChild(el('td','mono',j.backend||'-'));r.appendChild(el('td','mono',ago(j.created)));
-        var act=el('td','acts');
-        if(j.state==='failed'){var rt=el('button','go','retry');rt.onclick=function(){doAction(j.id,'retry')};act.appendChild(rt);var cl=el('button','','clean up now');cl.onclick=function(){doAction(j.id,'cleanup')};act.appendChild(cl)}
-        if(j.state==='ready'){var mi=el('button','','mark imported');mi.onclick=function(){doAction(j.id,'imported')};act.appendChild(mi)}
-        if(j.state==='imported'){var cn=el('button','','clean up now');cn.onclick=function(){doAction(j.id,'cleanup')};act.appendChild(cn)}
-        if(j.state!=='cleaned'&&j.state!=='failed'&&j.state!=='imported'){var ff=el('button','','fail it');ff.title='report a failed download so the arr blocklists this release';ff.onclick=function(){if(confirm('Fail this job? The arr will treat the download as failed and may search again.'))doAction(j.id,'fail')};act.appendChild(ff)}
-        if(j.state!=='cleaned'){var cc=el('button','bad','cancel');cc.onclick=function(){if(confirm('Cancel and clean up this job?'))doAction(j.id,'cancel')};act.appendChild(cc)}
-        r.appendChild(act);t.appendChild(r);
-      });
-      host.appendChild(t);
+      var box=el('div','jlist');list.forEach(function(j){box.appendChild(jobRow(j,function(j){detailId=j.id;detail(body,j.id)}))});host.appendChild(box);
     }
     function take(d){lastRows=d.jobs||[];paused=!!d.paused;banner();drawRows()}
-    // live stream; falls back to polling if the stream is unavailable
     function poll(){api('GET','/jobs').then(function(rows){lastRows=rows;drawRows()}).catch(fail)}
     if(window.EventSource){
       es=new EventSource('/admin/api/events');
@@ -127,6 +140,27 @@
       es.onerror=function(){if(es&&es.readyState===2){es.close();es=null;poll();timer=setInterval(poll,3000)}};
     }else{poll();timer=setInterval(poll,3000)}
     banner();drawRows();
+  }
+  function overviewView(body){
+    var head=el('div','ohead');head.appendChild(el('h2','ptitle','Overview'));var upd=el('span','reason','');head.appendChild(upd);body.appendChild(head);
+    var cols=el('div','ocols');var left=el('div'),right=el('div');cols.appendChild(left);cols.appendChild(right);body.appendChild(cols);
+    function draw(){
+      upd.textContent='Updated '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+      var need=lastRows.filter(function(r){return r.attention&&r.state!=='cleaned'});
+      left.replaceChildren();left.appendChild(el('h3','osec','Needs you · '+need.length));
+      if(!need.length)left.appendChild(el('div','empty','Nothing needs you right now.'));
+      need.forEach(function(j){
+        var c=el('div','ncard');var h=el('div','nh');var a=el('button','link',j.name);a.onclick=function(){tab='jobs';detailId=j.id;app()};h.appendChild(a);h.appendChild(el('span','fpill failed',j.state==='failed'?'Failed':'Attention'));c.appendChild(h);
+        c.appendChild(el('div','reason',(j.flag?j.flag+' ':'')+(j.reason||'')));c.appendChild(jobActions(j));left.appendChild(c)});
+      right.replaceChildren();right.appendChild(el('h3','osec','Pipeline now'));
+      var cnt=function(f){return lastRows.filter(f).length};
+      var box=el('div','okv');
+      [['Downloading',cnt(function(r){return r.state==='downloading'||r.state==='pulling'})],['Waiting for a converter',cnt(function(r){return r.state==='queued_transcode'})],['Converting',cnt(function(r){return r.state==='transcoding'||r.state==='verifying'})],['Waiting on the arr',cnt(function(r){return r.state==='ready'})],['Finished',cnt(function(r){return r.group==='done'})]].forEach(function(x){var r=el('div','orow');r.appendChild(el('span','',x[0]));r.appendChild(el('b','',String(x[1])));box.appendChild(r)});
+      right.appendChild(box);
+      var ac=attentionCount(lastRows);if(tabBtns.jobs){tabBtns.jobs.textContent='Jobs';if(ac){var bd=el('span','badge',String(ac));tabBtns.jobs.appendChild(bd)}}
+    }
+    function poll(){api('GET','/jobs').then(function(d){lastRows=Array.isArray(d)?d:(d.jobs||[]);draw()}).catch(fail)}
+    poll();timer=setInterval(poll,5000);
   }
   function doAction(id,a){api('POST','/jobs/'+encodeURIComponent(id)+'/'+a).then(function(){app()}).catch(function(e){if(e.status===401)fail(e);else{alert(e.message);app()}})}
   function detail(body,id){
