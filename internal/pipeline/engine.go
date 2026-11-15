@@ -558,7 +558,7 @@ func (e *Engine) doDownload(ctx context.Context, j job.Job) {
 		}
 		e.fail(j, "the download client no longer has this item (TorBox may have removed a failed download)")
 	case backend.Errored:
-		e.reSubmitOrFail(ctx, j, it.Error)
+		e.failStalled(ctx, j, it.Error)
 	case backend.Complete:
 		_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
 			c.Progress = 1
@@ -571,11 +571,11 @@ func (e *Engine) doDownload(ctx context.Context, j job.Job) {
 		// TorBox showing the item as inactive with nothing moving is a failure on its
 		// side ("Inactive / Processing"); do not wait the full stall time for it.
 		if !moved && it.Inactive && now.Sub(j.LastProgress) > inactiveGrace {
-			e.reSubmitOrFail(ctx, j, fmt.Sprintf("TorBox shows it inactive with no progress for %d minutes", int(inactiveGrace.Minutes())))
+			e.failStalled(ctx, j, fmt.Sprintf("TorBox shows it inactive with no progress for %d minutes", int(inactiveGrace.Minutes())))
 			return
 		}
 		if !moved && now.Sub(j.LastProgress) > stall {
-			e.reSubmitOrFail(ctx, j, fmt.Sprintf("no progress for %d minutes", int(stall.Minutes())))
+			e.failStalled(ctx, j, fmt.Sprintf("no progress for %d minutes", int(stall.Minutes())))
 			return
 		}
 		_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
@@ -591,18 +591,12 @@ func (e *Engine) doDownload(ctx context.Context, j job.Job) {
 	}
 }
 
-func (e *Engine) reSubmitOrFail(ctx context.Context, j job.Job, why string) {
-	if j.Retries >= 2 {
-		e.fail(j, "stalled or errored: "+why)
-		return
-	}
+// failStalled ends a download that errored or stopped moving. It is not tried
+// again: the job fails, the cleanup removes the item from the client, and the arr
+// sees the failure, blocklists the release and grabs a different one.
+func (e *Engine) failStalled(ctx context.Context, j job.Job, why string) {
 	_ = e.backend(j).Remove(ctx, j.RemoteID, true)
-	_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
-		c.Retries++
-		c.Progress, c.LastProgress = 0, e.Now()
-		c.Move(job.Received, "re-submitting after: "+why, e.Now())
-		return nil
-	})
+	e.fail(j, "download failed: "+why)
 }
 
 // ---------------------------------------------------- stage and hand back
