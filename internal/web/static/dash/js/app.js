@@ -1130,7 +1130,7 @@ async function refreshDashboard() {
   try {
     const [health, activity, playback, services, missing] = await Promise.all([
       getJSON("/health"),
-      getJSON("/api/v1/activity"),
+      getJSON("/api/v1/media-progress"),
       getJSON("/api/v1/playback"),
       getJSON("/api/v1/public/services"),
       getJSON("/api/v1/missing"),

@@ -14,6 +14,8 @@ import (
 func (s *Server) dashboardRoutes(mux *http.ServeMux, files http.Handler) {
 	mux.Handle("GET /dash/", files)
 	mux.HandleFunc("GET /api/v1/activity", s.v1Activity)
+	// Same data under a name common ad-block lists do not match (some block /api/v1/activity).
+	mux.HandleFunc("GET /api/v1/media-progress", s.v1Activity)
 	mux.HandleFunc("GET /api/v1/downloads", func(w http.ResponseWriter, r *http.Request) {
 		d, _, _ := s.dashboardRecords()
 		writeJSON(w, map[string]any{"downloads": d, "errors": []string{}})
