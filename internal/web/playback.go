@@ -6,11 +6,14 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/z354prance/undermynd/internal/playback"
@@ -63,28 +66,66 @@ func (s *Server) tracearr() (*tracearr.Client, bool) {
 	return tracearr.New(p.TracearrURL, string(p.TracearrKey)), true
 }
 
-func (s *Server) v1Playback(w http.ResponseWriter, r *http.Request) {
+// One poll serves every viewer for a few seconds, and a slow or dead Tracearr
+// can never hold the page up for long.
+var pbCache struct {
+	sync.Mutex
+	at     time.Time
+	key    string
+	body   []byte
+	status string
+}
+
+func (s *Server) playbackJSON() []byte {
+	pbCache.Lock()
+	defer pbCache.Unlock()
+	p := s.Cfg.Get().Playback
+	key := p.TracearrURL + "|" + p.EmbyURL + "|" + p.HiddenLibraries
+	if pbCache.body != nil && pbCache.key == key && time.Since(pbCache.at) < 4*time.Second {
+		return pbCache.body
+	}
+	out := func(sessions []tracearr.Session, errs []string, status string) []byte {
+		if sessions == nil {
+			sessions = []tracearr.Session{}
+		}
+		if errs == nil {
+			errs = []string{}
+		}
+		b, _ := json.Marshal(map[string]any{"sessions": sessions, "errors": errs})
+		pbCache.at, pbCache.key, pbCache.body, pbCache.status = time.Now(), key, b, status
+		return b
+	}
 	c, ok := s.tracearr()
 	if !ok {
-		writeJSON(w, map[string]any{"sessions": []any{}, "errors": []string{}})
-		return
+		return out(nil, nil, "Tracearr is not set up")
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	sessions, err := c.Streams(ctx)
 	if err != nil {
-		writeJSON(w, map[string]any{"sessions": []any{}, "errors": []string{"Now playing is unavailable from Tracearr."}})
-		return
+		s.Log.Printf("playback: %v", err)
+		return out(nil, []string{"Now playing is unavailable from Tracearr."}, "Tracearr: "+err.Error())
 	}
-	p := s.Cfg.Get().Playback
+	total := len(sessions)
 	sessions = playback.Filter(ctx, playback.Emby{URL: p.EmbyURL, Key: string(p.EmbyKey)}, sessions, p.HiddenLibraries)
 	for i := range sessions {
 		sessions[i].PosterURL = signedPoster(sessions[i].PosterURL)
 	}
-	if sessions == nil {
-		sessions = []tracearr.Session{}
-	}
-	writeJSON(w, map[string]any{"sessions": sessions, "errors": []string{}})
+	return out(sessions, nil, fmt.Sprintf("Tracearr reports %d stream(s); %d shown, %d hidden", total, len(sessions), total-len(sessions)))
+}
+
+func (s *Server) v1Playback(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(s.playbackJSON())
+}
+
+// playbackStatus tells the admin what the last poll saw.
+func (s *Server) playbackStatus(w http.ResponseWriter, r *http.Request) {
+	s.playbackJSON()
+	pbCache.Lock()
+	st := pbCache.status
+	pbCache.Unlock()
+	writeJSON(w, map[string]string{"status": st})
 }
 
 // v1Recent lists what Sonarr, Radarr and Lidarr imported lately, music included.

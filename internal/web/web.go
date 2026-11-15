@@ -106,6 +106,7 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, map[string]bool{"ok": true})
 	})))
 	mux.HandleFunc("POST /admin/api/library/sweep", s.guard(s.admin(s.librarySweep)))
+	mux.HandleFunc("GET /admin/api/playback/status", s.admin(s.playbackStatus))
 	mux.HandleFunc("POST /admin/api/playback/test", s.guard(s.admin(s.playbackTest)))
 	mux.HandleFunc("POST /admin/api/tdarr/test", s.guard(s.admin(s.tdarrTest)))
 	mux.HandleFunc("POST /admin/api/settings/client-password", s.guard(s.admin(s.newClientPassword)))
