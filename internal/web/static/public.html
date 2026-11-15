@@ -1,13 +1,15 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Undermynd</title><link rel="icon" href="/assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/assets/app.css"></head>
-<body><div class="term">
-<div class="titlebar"><img src="/assets/favicon.svg" alt=""><span>undermynd — status</span><span class="sp"></span><a href="/admin">admin</a></div>
-<div class="body">
-<div><span class="prompt">~/undermynd <b>❯</b></span> <span class="cmd">jobs --active</span></div>
-<div id="list"></div>
-<div><span class="prompt">~/undermynd <b>❯</b></span> <span class="cmd">seasons --in-progress</span></div>
-<div id="seasons"></div>
-<div style="margin-top:18px"><a href="/missing">what the arrs are still missing →</a></div>
-</div></div>
+<body class="dash">
+<header class="dhead"><img src="/assets/logo.svg" alt=""><span class="dtitle"><span class="prompt">~/undermynd <b>&gt;</b></span> status</span><span class="sp"></span>
+<nav><a href="/missing">[ missing ]</a> <a href="/admin">[ admin ]</a></nav></header>
+<main>
+<div class="dgrid">
+<section class="panel"><div class="phead"><h2>seasons in progress</h2><span id="seasonCount" class="pcount">0</span></div><div id="seasons" class="pbody"></div></section>
+<section class="panel"><div class="phead"><h2>recently added</h2><span id="recentCount" class="pcount">0</span></div><div id="recent" class="pbody"></div></section>
+</div>
+<section class="panel"><div class="phead"><h2>media in progress</h2><span id="jobCount" class="pcount">0</span></div>
+<div id="list" class="pbody"></div></section>
+</main>
 <script src="/assets/public.js"></script></body></html>

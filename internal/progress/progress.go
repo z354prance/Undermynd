@@ -30,7 +30,16 @@ type Season struct {
 	Total    int    `json:"total"`
 }
 
+// Recent is a run of imports of one title on one day: "3 episodes of X".
+type Recent struct {
+	Kind  string    `json:"kind"`
+	Title string    `json:"title"`
+	Count int       `json:"count"`
+	Date  time.Time `json:"date"`
+}
+
 type Snapshot struct {
+	Recent    []Recent  `json:"recent"`
 	Seasons   []Season  `json:"seasons"`
 	Missing   []Missing `json:"missing"`
 	Errors    []string  `json:"errors"`
@@ -64,6 +73,7 @@ type Tracker struct {
 	missAt   time.Time
 	missing  []Missing
 	missErrs []string
+	recent   []Recent
 }
 
 func New(c *config.Config, s *store.Store, l *log.Logger) *Tracker {
@@ -213,9 +223,15 @@ func (t *Tracker) Refresh(ctx context.Context) {
 		t.missAt = now
 		var all []Missing
 		t.missErrs = nil
+		var imports []arr.Import
 		for _, cat := range s.Categories {
 			if !usable(cat) {
 				continue
+			}
+			if ims, ierr := t.ArrFor(cat).RecentImports(ctx); ierr != nil {
+				t.missErrs = append(t.missErrs, fmt.Sprintf("%s history: %v", cat.Name, ierr))
+			} else {
+				imports = append(imports, ims...)
 			}
 			items, err := t.ArrFor(cat).MissingItems(ctx)
 			if err != nil {
@@ -237,6 +253,7 @@ func (t *Tracker) Refresh(ctx context.Context) {
 			all = all[:1000]
 		}
 		t.missing = all
+		t.recent = groupRecent(imports, 12)
 	}
 	errs = append(errs, t.missErrs...)
 	if t.missing == nil {
@@ -245,7 +262,10 @@ func (t *Tracker) Refresh(ctx context.Context) {
 	if errs == nil {
 		errs = []string{}
 	}
-	t.snap = Snapshot{Seasons: seasons, Missing: t.missing, Errors: errs, UpdatedAt: now}
+	if t.recent == nil {
+		t.recent = []Recent{}
+	}
+	t.snap = Snapshot{Recent: t.recent, Seasons: seasons, Missing: t.missing, Errors: errs, UpdatedAt: now}
 }
 
 // CountSeasons counts monitored episodes per season of a series that is active:
@@ -272,4 +292,31 @@ func CountSeasons(eps []arr.Episode, queued map[int64]bool, now time.Time, runti
 		counts[ep.Season] = c
 	}
 	return counts
+}
+
+// groupRecent folds imports of the same title on the same day into one entry,
+// newest first, keeping at most n.
+func groupRecent(in []arr.Import, n int) []Recent {
+	type key struct {
+		kind, title, day string
+	}
+	idx := map[key]int{}
+	var out []Recent
+	for _, im := range in {
+		k := key{im.Kind, im.Title, im.Date.Local().Format("2006-01-02")}
+		if i, ok := idx[k]; ok {
+			out[i].Count++
+			if im.Date.After(out[i].Date) {
+				out[i].Date = im.Date
+			}
+			continue
+		}
+		idx[k] = len(out)
+		out = append(out, Recent{Kind: im.Kind, Title: im.Title, Count: 1, Date: im.Date})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Date.After(out[j].Date) })
+	if len(out) > n {
+		out = out[:n]
+	}
+	return out
 }

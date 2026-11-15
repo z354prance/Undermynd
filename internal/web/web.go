@@ -202,10 +202,28 @@ func (s *Server) signedIn(r *http.Request) bool {
 
 // ---------------------------------------------------------------- public
 
+type publicStep struct {
+	Stage string    `json:"stage"`
+	At    time.Time `json:"at"`
+}
+
 type publicJob struct {
-	Title    string  `json:"title"`
-	Group    string  `json:"group"`
-	Progress float64 `json:"progress"`
+	Title    string       `json:"title"`
+	Group    string       `json:"group"`
+	Progress float64      `json:"progress"`
+	Stage    string       `json:"stage"`
+	Via      string       `json:"via,omitempty"` // the app that asked for it, as a display name
+	Size     int64        `json:"size,omitempty"`
+	Done     int64        `json:"done,omitempty"`
+	Steps    []publicStep `json:"steps"`
+}
+
+var viaName = map[string]string{"sonarr": "Sonarr", "radarr": "Radarr", "lidarr": "Lidarr", "rss": "RSS", "watch": "Watch folder"}
+
+var stageName = map[job.State]string{
+	job.Received: "Queued", job.Submitted: "Queued", job.Downloading: "Downloading", job.Pulling: "Copying",
+	job.Downloaded: "Downloaded", job.QueuedTranscode: "Waiting for Tdarr", job.Transcoding: "Processing",
+	job.Verifying: "Verifying", job.Ready: "Ready to import", job.Imported: "Imported", job.Failed: "Needs attention",
 }
 
 // publicJobs is the public view: title, state group and progress only. No
@@ -216,7 +234,17 @@ func (s *Server) publicJobs(w http.ResponseWriter, r *http.Request) {
 		if j.State == job.Cleaned {
 			continue
 		}
-		out = append(out, publicJob{Title: j.Name, Group: job.Group(j.State), Progress: job.Overall(j)})
+		pj := publicJob{Title: j.Name, Group: job.Group(j.State), Progress: job.Overall(j), Stage: stageName[j.State],
+			Via: viaName[j.Source], Size: j.Size, Steps: []publicStep{{Stage: "Received", At: j.Created}}}
+		if j.State == job.Downloading {
+			pj.Done = int64(j.Progress * float64(j.Size))
+		}
+		for _, h := range j.History {
+			if n := stageName[h.To]; n != "" && n != pj.Steps[len(pj.Steps)-1].Stage {
+				pj.Steps = append(pj.Steps, publicStep{Stage: n, At: h.At})
+			}
+		}
+		out = append(out, pj)
 	}
 	writeJSON(w, out)
 }
@@ -232,13 +260,14 @@ type publicMissing struct {
 // only. No errors, categories, addresses or IDs.
 func (s *Server) publicLibrary(w http.ResponseWriter, r *http.Request) {
 	out := struct {
+		Recent    []progress.Recent `json:"recent"`
 		Seasons   []progress.Season `json:"seasons"`
 		Missing   []publicMissing   `json:"missing"`
 		UpdatedAt time.Time         `json:"updatedAt"`
-	}{Seasons: []progress.Season{}, Missing: []publicMissing{}}
+	}{Seasons: []progress.Season{}, Recent: []progress.Recent{}, Missing: []publicMissing{}}
 	if s.Progress != nil {
 		snap := s.Progress.Snapshot()
-		out.Seasons, out.UpdatedAt = snap.Seasons, snap.UpdatedAt
+		out.Seasons, out.Recent, out.UpdatedAt = snap.Seasons, snap.Recent, snap.UpdatedAt
 		for i, m := range snap.Missing {
 			if i >= 1000 {
 				break

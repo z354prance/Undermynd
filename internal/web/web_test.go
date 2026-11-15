@@ -98,7 +98,7 @@ func TestPublicViewLeaksNothing(t *testing.T) {
 		t.Fatal(code)
 	}
 	body := string(b)
-	for _, leak := range []string{"/data", "passkey", "SEKRET", "qbittorrent", "abcdef0123", "internal path", "radarr"} {
+	for _, leak := range []string{"/data", "passkey", "SEKRET", "qbittorrent", "abcdef0123", "internal path"} {
 		if strings.Contains(body, leak) {
 			t.Fatalf("public view leaked %q: %s", leak, body)
 		}

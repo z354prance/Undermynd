@@ -57,6 +57,10 @@ func rig(t *testing.T, eps string) (*progress.Tracker, *store.Store) {
 		}
 		switch r.URL.Path {
 		case "/api/v3/history":
+			if r.URL.Query().Get("downloadId") == "" { // the recently-added read
+				fmt.Fprint(w, `{"records":[{"eventType":"downloadFolderImported","date":"2026-10-31T10:00:00Z","series":{"title":"24"}},{"eventType":"downloadFolderImported","date":"2026-10-31T09:00:00Z","series":{"title":"24"}},{"eventType":"grabbed","date":"2026-10-31T08:00:00Z","series":{"title":"24"}}]}`)
+				return
+			}
 			if r.URL.Query().Get("downloadId") != "abc" {
 				t.Errorf("history asked for %q", r.URL.Query().Get("downloadId"))
 			}
@@ -98,6 +102,9 @@ func TestRefreshShowsSeasonProgressAndMissing(t *testing.T) {
 	s := tr.Snapshot()
 	if len(s.Errors) != 0 || len(s.Seasons) != 1 || s.Seasons[0].Show != "24" || s.Seasons[0].Imported != 1 || s.Seasons[0].Total != 2 {
 		t.Fatalf("%+v", s)
+	}
+	if len(s.Recent) != 1 || s.Recent[0].Title != "24" || s.Recent[0].Count != 2 || s.Recent[0].Kind != "episode" {
+		t.Fatalf("recent: %+v", s.Recent)
 	}
 	if len(s.Missing) != 1 || s.Missing[0].Title != "24" || s.Missing[0].Detail != "S01E02" || s.Missing[0].Category != "tv-sonarr" {
 		t.Fatalf("missing: %+v", s.Missing)

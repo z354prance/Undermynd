@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -186,4 +187,56 @@ func (c *Client) MissingItems(ctx context.Context) ([]Missing, error) {
 		return out, nil
 	}
 	return nil, fmt.Errorf("%s has no missing list", c.Kind)
+}
+
+// Import is one recent import event, named for display.
+type Import struct {
+	Kind  string    `json:"kind"` // episode | movie | album
+	Title string    `json:"title"`
+	Date  time.Time `json:"date"`
+}
+
+// RecentImports reads the newest import events from the arr's history.
+func (c *Client) RecentImports(ctx context.Context) ([]Import, error) {
+	var r struct {
+		Records []struct {
+			EventType string    `json:"eventType"`
+			Date      time.Time `json:"date"`
+			Series    struct {
+				Title string `json:"title"`
+			} `json:"series"`
+			Movie struct {
+				Title string `json:"title"`
+			} `json:"movie"`
+			Artist struct {
+				Name string `json:"artistName"`
+			} `json:"artist"`
+			Album struct {
+				Title string `json:"title"`
+			} `json:"album"`
+		} `json:"records"`
+	}
+	q := "/history?page=1&pageSize=100&sortKey=date&sortDirection=descending&includeSeries=true&includeMovie=true&includeArtist=true&includeAlbum=true"
+	if err := c.get(ctx, q, &r); err != nil {
+		return nil, err
+	}
+	var out []Import
+	for _, x := range r.Records {
+		if !strings.Contains(strings.ToLower(x.EventType), "imported") {
+			continue
+		}
+		switch c.Kind {
+		case "sonarr":
+			out = append(out, Import{"episode", x.Series.Title, x.Date})
+		case "radarr":
+			out = append(out, Import{"movie", x.Movie.Title, x.Date})
+		case "lidarr":
+			t := x.Artist.Name
+			if x.Album.Title != "" {
+				t += " — " + x.Album.Title
+			}
+			out = append(out, Import{"album", t, x.Date})
+		}
+	}
+	return out, nil
 }
