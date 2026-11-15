@@ -777,10 +777,10 @@ func (e *Engine) removeTree(p, root string) error {
 
 func (e *Engine) cleanupFiles(ctx context.Context, j job.Job) error {
 	env := e.Cfg.Env
-	if err := e.removeTree(j.CompleteDir, filepath.Join(env.DataDir, "complete")); err != nil {
+	if err := e.removeTree(j.CompleteDir, env.Complete()); err != nil {
 		return err
 	}
-	if err := e.removeTree(env.StagingDir(j.ID), filepath.Join(env.DataDir, "undermynd")); err != nil {
+	if err := e.removeTree(env.StagingDir(j.ID), env.Work()); err != nil {
 		return err
 	}
 	if err := e.removeTdarrDirs(j); err != nil {

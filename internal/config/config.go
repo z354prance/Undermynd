@@ -18,6 +18,8 @@ import (
 type Env struct {
 	ConfigDir    string
 	DataDir      string
+	WorkDir      string // staging, Tdarr hand-off and local client folders; default <data>/undermynd
+	CompleteDir  string // where finished jobs are handed to the arrs; default <data>/complete
 	PublicAddr   string
 	MachineAddr  string
 	TrustProxy   bool
@@ -39,6 +41,8 @@ func LoadEnv() Env {
 	return Env{
 		ConfigDir:    get("UNDERMYND_CONFIG", "/config"),
 		DataDir:      get("UNDERMYND_DATA", "/data"),
+		WorkDir:      os.Getenv("UNDERMYND_WORK"),
+		CompleteDir:  os.Getenv("UNDERMYND_COMPLETE"),
 		PublicAddr:   get("UNDERMYND_PUBLIC_ADDR", ":8080"),
 		MachineAddr:  get("UNDERMYND_MACHINE_ADDR", ":8081"),
 		TrustProxy:   os.Getenv("UNDERMYND_TRUST_PROXY") == "true",
@@ -176,7 +180,7 @@ func Defaults(env Env) Settings {
 			{Name: "tv-sonarr", Kind: "sonarr"},
 			{Name: "lidarr", Kind: "lidarr"},
 		},
-		QBit:             QBit{SaveDir: filepath.Join(env.DataDir, "undermynd", "client")},
+		QBit:             QBit{SaveDir: filepath.Join(env.Work(), "client")},
 		ClientUser:       "undermynd",
 		ClientPassword:   secret.String(RandomToken(18)),
 		StallMinutes:     60,
@@ -187,10 +191,10 @@ func Defaults(env Env) Settings {
 
 func fill(s *Settings, env Env) {
 	if s.Tdarr.InDir == "" {
-		s.Tdarr.InDir = filepath.Join(env.DataDir, "undermynd", "tdarr", "in")
+		s.Tdarr.InDir = filepath.Join(env.Work(), "tdarr", "in")
 	}
 	if s.Tdarr.OutDir == "" {
-		s.Tdarr.OutDir = filepath.Join(env.DataDir, "undermynd", "tdarr", "out")
+		s.Tdarr.OutDir = filepath.Join(env.Work(), "tdarr", "out")
 	}
 	if s.Tdarr.TimeoutMinutes == 0 {
 		s.Tdarr.TimeoutMinutes = 720
@@ -217,7 +221,7 @@ func fill(s *Settings, env Env) {
 		s.FlagImportHours = 6
 	}
 	if s.QBit.SaveDir == "" {
-		s.QBit.SaveDir = filepath.Join(env.DataDir, "undermynd", "client")
+		s.QBit.SaveDir = filepath.Join(env.Work(), "client")
 	}
 	if s.ClientUser == "" {
 		s.ClientUser = "undermynd"
@@ -259,10 +263,10 @@ func (c *Config) save() error {
 
 // Folder layout under the shared data root.
 func (e Env) StagingDir(id string) string {
-	return filepath.Join(e.DataDir, "undermynd", "staging", id)
+	return filepath.Join(e.Work(), "staging", id)
 }
 func (e Env) CompleteRoot(category string) string {
-	return filepath.Join(e.DataDir, "complete", SafeName(category))
+	return filepath.Join(e.Complete(), SafeName(category))
 }
 
 func RandomToken(n int) string {
@@ -297,4 +301,20 @@ func SafeName(s string) string {
 		s = s[:200]
 	}
 	return s
+}
+
+// Work is the folder for everything Undermynd creates while a job is in flight.
+func (e Env) Work() string {
+	if e.WorkDir != "" {
+		return e.WorkDir
+	}
+	return filepath.Join(e.DataDir, "undermynd")
+}
+
+// Complete is the root of the folders the arrs import from.
+func (e Env) Complete() string {
+	if e.CompleteDir != "" {
+		return e.CompleteDir
+	}
+	return filepath.Join(e.DataDir, "complete")
 }

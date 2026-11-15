@@ -34,7 +34,10 @@ func dropPrivileges(logger *log.Logger, env config.Env) {
 	if err1 != nil || err2 != nil || uid == 0 {
 		return
 	}
-	for _, d := range []string{env.ConfigDir, env.DataDir} {
+	for _, d := range []string{env.ConfigDir, env.DataDir, env.Work(), env.Complete()} {
+		if _, err := os.Stat(d); err == nil {
+			continue // never change the owner of a folder that already exists
+		}
 		if err := os.MkdirAll(d, 0o755); err == nil {
 			_ = os.Chown(d, uid, gid)
 		}

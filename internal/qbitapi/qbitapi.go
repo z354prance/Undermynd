@@ -317,7 +317,7 @@ func (a *API) categories(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) preferences(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
-		"save_path": a.Cfg.Env.DataDir + "/complete", "temp_path_enabled": false, "auto_tmm_enabled": false,
+		"save_path": a.Cfg.Env.Complete(), "temp_path_enabled": false, "auto_tmm_enabled": false,
 		"max_ratio_enabled": true, "max_ratio": 0.0, "max_ratio_act": 0,
 		"max_seeding_time_enabled": false, "max_seeding_time": -1,
 		"queueing_enabled": false, "dht": false,

@@ -88,3 +88,9 @@ For categories with transcode on, finished videos go to the Tdarr **input folder
 Create a dedicated Tdarr library that watches the input folder and writes folder-to-folder into the output folder; Undermynd never touches any other library.
 Outputs are accepted when every video has a result of the same name that has stopped growing, passes a size sanity check and has the right container header. Then both folders are cleared and the job moves on.
 If a library is set to skip files that need no work, nothing appears in the output folder, so use "copy" for those files. The wait gives up after the configured timeout.
+
+## Folder layout
+
+By default everything lives under the one `/data` mount: work files in `/data/undermynd`, hand-back folders in `/data/complete/<category>`.
+If your layout differs, set `UNDERMYND_WORK` (staging, Tdarr hand-off, local client) and `UNDERMYND_COMPLETE` (what the arrs import from).
+Keep both inside one mount of one cache-only share so every move is a rename.
