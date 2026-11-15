@@ -163,12 +163,19 @@ func (e *Engine) doTranscode(ctx context.Context, j job.Job) {
 	}
 	if cli != nil {
 		if ws, err := cli.ActiveWorkers(ctx); err == nil {
+			// Match on the job's own folder name, so a node that mounts the share
+			// at a different path still finds its worker.
 			prefix := filepath.ToSlash(e.tdarrIn(j.ID)) + "/"
+			inJob := "/" + j.ID + "/"
 			for i := range ws {
-				if strings.HasPrefix(filepath.ToSlash(ws[i].File), prefix) {
+				p := filepath.ToSlash(ws[i].File)
+				if strings.HasPrefix(p, prefix) || strings.Contains(p, inJob) {
 					worker = &ws[i]
 					break
 				}
+			}
+			if worker == nil && len(ws) > 0 && j.State == job.QueuedTranscode && now.Sub(j.StateChanged) > time.Minute {
+				e.Log.Printf("job %s: %d Tdarr worker(s) busy, none on this job's folder (first: %s)", short(j.ID), len(ws), ws[0].File)
 			}
 		} else {
 			e.Log.Printf("job %s tdarr workers: %v", short(j.ID), err)
