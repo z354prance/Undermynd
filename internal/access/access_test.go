@@ -14,7 +14,10 @@ func testManager(t *testing.T, dir string, mails *[]string) *Manager {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.send = func(_ Settings, to, subject, body string) error { *mails = append(*mails, to+"|"+subject); return nil }
+	m.send = func(_ Settings, to, subject string, _ letter) error {
+		*mails = append(*mails, to+"|"+subject)
+		return nil
+	}
 	return m
 }
 

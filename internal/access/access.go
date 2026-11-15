@@ -72,7 +72,7 @@ type Manager struct {
 	fmu  sync.Mutex // guards the file and slice
 	recs []rec
 	next int64
-	send func(Settings, string, string, string) error
+	send func(Settings, string, string, letter) error
 }
 
 func New(dir string, load func() Settings, save func(Settings) error) (*Manager, error) {
@@ -313,16 +313,14 @@ func (m *Manager) Submit(r Request) error {
 	if err != nil {
 		return err
 	}
-	m.notify(id, s, []notice{{r.Email, "Access request received", "Your request for access has been received and is awaiting administrator approval. No account has been created yet."}, {s.AdminEmail, "New Undermynd access request", r.Name + " (" + r.Email + ") requested access as " + r.Username + ". Review it in Undermynd Admin: " + s.PublicURL + "/admin"}})
+	m.notify(id, s, []notice{receiptNotice(r, s), adminNewNotice(r, s)})
 	return nil
 }
-
-type notice struct{ to, subject, body string }
 
 func (m *Manager) notify(id int64, s Settings, notices []notice) {
 	failures := []string{}
 	for _, n := range notices {
-		if m.send(s, n.to, n.subject, n.body) != nil {
+		if m.send(s, n.to, n.subject, n.l) != nil {
 			failures = append(failures, "Email delivery failed for "+n.to)
 		}
 	}
@@ -337,7 +335,7 @@ func (m *Manager) TestMail() error {
 	if !address(s.AdminEmail) || !address(s.From) {
 		return errors.New("save valid sender and administrator email addresses first")
 	}
-	if e = m.send(s, s.AdminEmail, "Undermynd email test", "Email delivery from Undermynd is working."); e != nil {
+	if e = m.send(s, s.AdminEmail, testNotice(s).subject, testNotice(s).l); e != nil {
 		return errors.New("SMTP test failed; check host, encryption, mailbox login, and sender permissions")
 	}
 	return nil
@@ -359,7 +357,7 @@ func (m *Manager) fail(id int64, s Settings, message string) error {
 	if e := m.setState(id, "incomplete", message); e != nil {
 		return e
 	}
-	m.notify(id, s, []notice{{s.AdminEmail, "Undermynd account setup incomplete", fmt.Sprintf("Access request %d needs attention: %s. Review it in Undermynd Admin.", id, message)}})
+	m.notify(id, s, []notice{adminProblemNotice(id, s, message)})
 	return errors.New(message)
 }
 
@@ -474,11 +472,7 @@ func (m *Manager) sendSetup(r Request, s Settings) error {
 	if e := m.update(r.ID, func(x *rec) { x.TokenHash, x.TokenExpires = hash(token), time.Now().Add(24*time.Hour).Unix() }); e != nil {
 		return e
 	}
-	if isJellyfin(s) {
-		m.notify(r.ID, s, []notice{{r.Email, "Your access request is approved", "Your Jellyfin account has been created and remains disabled until you choose a password. Use this single-use link within 24 hours:\n\n" + s.PublicURL + "/#access-setup=" + token + "\n\nUsername: " + r.Username + "\nDo not share this link."}})
-		return nil
-	}
-	m.notify(r.ID, s, []notice{{r.Email, "Your access request is approved", "Your Emby user has been created and remains disabled until setup is complete. Confirm any Emby Connect email first, then set your local password using this single-use link (expires in 24 hours):\n\n" + s.PublicURL + "/#access-setup=" + token + "\n\nUsername: " + r.Username + "\nDo not share this link. Undermynd will not ask for your Emby Connect password."}})
+	m.notify(r.ID, s, []notice{setupNotice(r, s, token)})
 	return nil
 }
 
@@ -497,9 +491,9 @@ func (m *Manager) Resend(id int64) error {
 	case "awaiting_setup":
 		return m.sendSetup(r, s)
 	case "pending":
-		m.notify(id, s, []notice{{r.Email, "Access request received", "Your access request is awaiting approval."}, {s.AdminEmail, "Access request awaiting approval", r.Name + " (" + r.Email + "): " + s.PublicURL + "/admin"}})
+		m.notify(id, s, []notice{receiptNotice(r, s), adminPendingNotice(r, s)})
 	case "declined":
-		m.notify(id, s, []notice{{r.Email, "Access request update", "Your request for server access was not approved. Contact the server owner if you have questions."}})
+		m.notify(id, s, []notice{declinedNotice(r)})
 	case "active":
 		m.notify(id, s, []notice{serverCompletionNotice(r, s)})
 	default:
@@ -522,7 +516,7 @@ func (m *Manager) Decline(id int64) error {
 	if e != nil {
 		return e
 	}
-	m.notify(id, s, []notice{{r.Email, "Access request update", "Your request for server access was not approved. Contact the server owner if you have questions."}})
+	m.notify(id, s, []notice{declinedNotice(r)})
 	return nil
 }
 
@@ -571,7 +565,7 @@ func (m *Manager) Setup(ctx context.Context, token, password string) error {
 			}
 			_ = m.setState(id, "awaiting_setup", recoveryMessage)
 			if r.Error == "" || activationAttempted {
-				m.notify(id, s, []notice{{s.AdminEmail, "Undermynd account setup needs attention", fmt.Sprintf("The recipient could not finish access request %d: %s. Check its status in Undermynd Admin: %s/admin", id, recoveryMessage, s.PublicURL)}})
+				m.notify(id, s, []notice{adminStuckNotice(id, s, recoveryMessage)})
 			}
 		}
 	}()
