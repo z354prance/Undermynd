@@ -160,7 +160,7 @@
     function add(c){
       var card=el('div','card');var f={};var g=el('div','grid3');f.orig=c.name||'';
       f.name=row(g,'category name',{value:c.name,help:'what the arr sends, e.g. tv'});
-      var w=el('div','fld');w.appendChild(el('label','','arr type'));var k=el('select');['sonarr','radarr','lidarr'].forEach(function(x){var o=el('option','',x);o.value=x;if(c.kind===x)o.selected=true;k.appendChild(o)});w.appendChild(k);g.appendChild(w);f.kind=k;
+      var w=el('div','fld');w.appendChild(el('label','','arr type'));var k=el('select');[['sonarr','sonarr'],['radarr','radarr'],['lidarr','lidarr'],['rss','no arr (RSS / watch folder)']].forEach(function(p){var x=p[0];var o=el('option','',p[1]);o.value=x;if(c.kind===x)o.selected=true;k.appendChild(o)});w.appendChild(k);g.appendChild(w);f.kind=k;
       f.arrUrl=row(g,'arr address',{value:c.arrUrl,ph:'http://10.0.0.5:8989',help:'so Undermynd can confirm the import'});
       f.arrApiKey=row(g,'arr API key',{type:'password',ph:c.hasArrApiKey?'set — leave blank to keep':'',help:'in the arr: Settings → General'});
       f.transcode=row(g,'transcode with Tdarr',{type:'checkbox',value:c.transcode,help:'off for music'});
