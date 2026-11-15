@@ -187,7 +187,7 @@ function wireMarkup(item, progress) {
     const kind = cur > i ? "done" : cur === i ? "cur" : "todo";
     let line = "";
     if (i < WIRE_STAGES.length - 1) {
-      if (cur > i) line = '<b class="ln"></b>';
+      if (cur > i) line = `<b class="ln${mode === "fail" && cur === i + 1 && cur >= 4 ? " bad" : ""}"></b>`;
       else if (cur === i) {
         const p = mode === "run" || mode === "stall" || mode === "fail" ? percent : 0;
         const stretch = p > 0 ? Math.round(10000 / p) : 100;
