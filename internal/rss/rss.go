@@ -34,11 +34,50 @@ type Poller struct {
 	last   map[string]time.Time // feed name -> last poll
 	loaded bool
 	path   string
+
+	status  map[string]*FeedStatus // feed name -> what the last check saw
+	outcome map[string]string      // item key -> what was done with it (this run only)
+}
+
+// FeedStatus is what the last check of a feed saw, for the admin page.
+type FeedStatus struct {
+	Name      string     `json:"name"`
+	CheckedAt time.Time  `json:"checkedAt"`
+	Error     string     `json:"error,omitempty"`
+	Items     []ItemView `json:"items"`
+}
+
+type ItemView struct {
+	Title   string `json:"title"`
+	Outcome string `json:"outcome"`
+}
+
+// Status returns the last check of every feed, in the order the feeds are configured.
+func (p *Poller) Status() []FeedStatus {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := []FeedStatus{}
+	for _, f := range p.Cfg.Get().Feeds {
+		if st, ok := p.status[f.Name]; ok {
+			out = append(out, *st)
+		} else {
+			out = append(out, FeedStatus{Name: f.Name, Items: []ItemView{}})
+		}
+	}
+	return out
+}
+
+// CheckNow makes every feed due on the next tick and runs it.
+func (p *Poller) CheckNow(ctx context.Context) {
+	p.mu.Lock()
+	p.last = map[string]time.Time{}
+	p.mu.Unlock()
+	p.Tick(ctx)
 }
 
 func New(c *config.Config, e *pipeline.Engine, l *log.Logger) *Poller {
 	return &Poller{Cfg: c, Engine: e, Log: l, Now: time.Now, HTTP: &http.Client{Timeout: 60 * time.Second},
-		seen: map[string]time.Time{}, last: map[string]time.Time{}, path: filepath.Join(c.Env.ConfigDir, "rss-seen.json")}
+		seen: map[string]time.Time{}, last: map[string]time.Time{}, status: map[string]*FeedStatus{}, outcome: map[string]string{}, path: filepath.Join(c.Env.ConfigDir, "rss-seen.json")}
 }
 
 func (p *Poller) load() {
@@ -108,6 +147,12 @@ func (p *Poller) Tick(ctx context.Context) {
 		p.last[f.Name] = p.Now()
 		if err := p.poll(ctx, f); err != nil {
 			p.Log.Printf("rss %q: %v", f.Name, err)
+			st := p.status[f.Name]
+			if st == nil {
+				st = &FeedStatus{Name: f.Name, Items: []ItemView{}}
+				p.status[f.Name] = st
+			}
+			st.CheckedAt, st.Error = p.Now(), err.Error()
 		}
 	}
 }
@@ -190,9 +235,23 @@ func (p *Poller) poll(ctx context.Context, f config.Feed) error {
 		}
 		p.seen[k] = p.Now()
 		if known {
-			p.apply(ctx, f, it)
+			p.outcome[k] = p.apply(ctx, f, it)
+		} else {
+			p.outcome[k] = "recorded on the first check, not downloaded"
 		}
 	}
+	st := &FeedStatus{Name: f.Name, CheckedAt: p.Now(), Items: []ItemView{}}
+	for i, it := range items {
+		if i >= 100 {
+			break
+		}
+		o, ok := p.outcome[it.key(f.Name)]
+		if !ok {
+			o = "seen earlier"
+		}
+		st.Items = append(st.Items, ItemView{Title: it.Title, Outcome: o})
+	}
+	p.status[f.Name] = st
 	if !known && len(items) == 0 {
 		p.seen[prefix+"empty"] = p.Now()
 	}
@@ -208,7 +267,7 @@ func ci(pat string) (*regexp.Regexp, error) {
 }
 
 // apply starts the item through the first enabled rule that matches its title.
-func (p *Poller) apply(ctx context.Context, f config.Feed, it item) {
+func (p *Poller) apply(ctx context.Context, f config.Feed, it item) string {
 	for _, r := range p.Cfg.Get().Rules {
 		if !r.Enabled || (r.Feed != "" && r.Feed != f.Name) {
 			continue
@@ -226,11 +285,12 @@ func (p *Poller) apply(ctx context.Context, f config.Feed, it item) {
 		}
 		if err := p.add(ctx, r, it); err != nil {
 			p.Log.Printf("rss %q: rule %q matched %q but adding failed: %v", f.Name, r.Name, it.Title, err)
-		} else {
-			p.Log.Printf("rss %q: rule %q started %q", f.Name, r.Name, it.Title)
+			return fmt.Sprintf("rule %q matched but adding failed: %v", r.Name, err)
 		}
-		return
+		p.Log.Printf("rss %q: rule %q started %q", f.Name, r.Name, it.Title)
+		return fmt.Sprintf("started by rule %q", r.Name)
 	}
+	return "no rule matched"
 }
 
 func (p *Poller) add(ctx context.Context, r config.Rule, it item) error {

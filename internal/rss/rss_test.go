@@ -90,6 +90,17 @@ func TestRSS(t *testing.T) {
 	if jobs[0].Source != "rss" || jobs[0].State != job.Received {
 		t.Fatalf("rss job should be marked as rss: %+v", jobs[0])
 	}
+	got := map[string]string{}
+	for _, f := range p.Status() {
+		for _, it := range f.Items {
+			got[it.Title] = it.Outcome
+		}
+	}
+	if !strings.HasPrefix(got["New.Show.S02E03.1080p.WEB"], "started by rule") ||
+		got["Other.Show.S01E01.720p"] != "no rule matched" ||
+		got["Cam.Show.S01E01.1080p.CAM"] != "no rule matched" {
+		t.Fatalf("status should say what happened to each item: %+v", got)
+	}
 	now = now.Add(2 * time.Minute)
 	p.Tick(context.Background())
 	if len(st.List()) != 1 {

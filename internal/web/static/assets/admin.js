@@ -231,6 +231,16 @@
 
   function rssPane(body){
     body.appendChild(head('RSS auto-download','Feeds are checked on a schedule. The first check of a new feed only records what is already there, so nothing old gets downloaded. The first rule that matches an item starts it.'));
+    body.appendChild(el('div','sec','what the feeds are reading'));
+    var live=el('div');body.appendChild(live);
+    function showFeeds(){api('GET','/rss/status').then(function(list){live.textContent='';if(!list.length)live.appendChild(help('No feeds yet.'));list.forEach(function(st){
+      var card=el('div','card');var h=el('h4','',st.name+'  ');var when=st.checkedAt&&st.checkedAt.indexOf('0001')!==0?'checked '+new Date(st.checkedAt).toLocaleTimeString():'not checked yet';h.appendChild(el('span','',when));card.appendChild(h);
+      if(st.error){var er=el('div','msg err',st.error);card.appendChild(er)}
+      var t=document.createElement('table');(st.items||[]).forEach(function(it){var tr=document.createElement('tr');var a=document.createElement('td');a.textContent=it.title;var b=document.createElement('td');b.textContent=it.outcome;b.style.opacity='.75';b.style.paddingLeft='16px';b.style.whiteSpace='nowrap';tr.appendChild(a);tr.appendChild(b);t.appendChild(tr)});
+      if(st.items&&st.items.length)card.appendChild(t);else if(!st.error)card.appendChild(help('Nothing read from this feed yet.'));
+      live.appendChild(card)})}).catch(function(e){live.textContent=e.message})}
+    var chk=el('button','','check feeds now');chk.onclick=function(){chk.textContent='checking…';api('POST','/rss/check',{}).then(function(){chk.textContent='check feeds now';showFeeds()}).catch(function(){chk.textContent='check feeds now'})};body.appendChild(chk);
+    showFeeds();
     body.appendChild(el('div','sec','feeds'));
     var feeds=el('div');body.appendChild(feeds);
     function addFeed(c){var card=el('div','card');var g=el('div','grid3');var f={};

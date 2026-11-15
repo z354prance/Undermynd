@@ -111,7 +111,9 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	go eng.Run(ctx, env.TickInterval)
-	go rss.New(cfg, eng, logger).Run(ctx)
+	rp := rss.New(cfg, eng, logger)
+	site.RSS = rp
+	go rp.Run(ctx)
 	go watch.New(cfg, eng, logger).Run(ctx)
 
 	servers := []*http.Server{
