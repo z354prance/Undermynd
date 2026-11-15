@@ -55,7 +55,7 @@ func TestRSS(t *testing.T) {
 	s := cfg.Get()
 	s.Categories = []config.Category{{Name: "tv-sonarr", Kind: "sonarr"}}
 	s.Feeds = []config.Feed{{Name: "tracker", URL: srv.URL, IntervalMinutes: 1, Enabled: true}}
-	s.Rules = []config.Rule{{Name: "1080p shows", MustContain: `S\d+E\d+.*1080p`, MustNotContain: `cam|hdts`, Category: "tv-sonarr", Enabled: true}}
+	s.Rules = []config.Rule{{Name: "1080p shows", Feed: "TRACKER ", MustContain: `S\d+E\d+.*1080p`, MustNotContain: `cam|hdts`, Category: "tv-sonarr", Enabled: true}}
 	if err := cfg.Set(s); err != nil {
 		t.Fatal(err)
 	}

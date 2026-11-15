@@ -269,7 +269,7 @@ func ci(pat string) (*regexp.Regexp, error) {
 // apply starts the item through the first enabled rule that matches its title.
 func (p *Poller) apply(ctx context.Context, f config.Feed, it item) string {
 	for _, r := range p.Cfg.Get().Rules {
-		if !r.Enabled || (r.Feed != "" && r.Feed != f.Name) {
+		if !r.Enabled || (strings.TrimSpace(r.Feed) != "" && !strings.EqualFold(strings.TrimSpace(r.Feed), strings.TrimSpace(f.Name))) {
 			continue
 		}
 		inc, err1 := ci(r.MustContain)
