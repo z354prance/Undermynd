@@ -347,7 +347,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
-	c := &http.Cookie{Name: cookieName, Value: tok, Path: "/admin", HttpOnly: true,
+	c := &http.Cookie{Name: cookieName, Value: tok, Path: "/", HttpOnly: true,
 		Secure: secure, SameSite: http.SameSiteStrictMode, MaxAge: int(s.Auth.SessionTTL.Seconds())}
 	if secure && frameAncestors() != "'none'" {
 		// A page framed by another site only gets its cookie back if it is SameSite=None.
@@ -363,11 +363,14 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(cookieName); err == nil {
 		s.Auth.Logout(c.Value)
 	}
-	gone := &http.Cookie{Name: cookieName, Value: "", Path: "/admin", MaxAge: -1, HttpOnly: true}
+	gone := &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true}
 	if (r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https") && frameAncestors() != "'none'" {
 		gone.Secure, gone.SameSite, gone.Partitioned = true, http.SameSiteNoneMode, true // must match to clear it
 	}
 	http.SetCookie(w, gone)
+	old := *gone
+	old.Path = "/admin" // sessions started before the cookie covered the whole site
+	http.SetCookie(w, &old)
 	writeJSON(w, map[string]any{"ok": true})
 }
 

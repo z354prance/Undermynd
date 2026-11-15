@@ -561,3 +561,13 @@ func TestSeerrRequestBox(t *testing.T) {
 		t.Fatalf("visitors are not admin: %s", b)
 	}
 }
+
+// The admin session reaches the public page, so approve/deny buttons can show there.
+func TestAdminSessionIsSeenOnThePublicPage(t *testing.T) {
+	e := newEnv(t)
+	e.signIn()
+	_, b := e.do("GET", "/api/v1/auth/status", nil, false)
+	if !strings.Contains(string(b), `"admin":true`) {
+		t.Fatalf("signed-in admin not recognised on the public API: %s", b)
+	}
+}
