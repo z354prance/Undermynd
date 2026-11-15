@@ -2134,10 +2134,12 @@ $("mediaSearchForm").addEventListener("submit", async event => {
     if (!$("searchResultsPanel").open) $("searchResultsPanel").show();
     $("mediaSearchResults").innerHTML = mediaSearchResults.map((item,index) => {
       const title = item.title || item.name || "Untitled";
-      const existing = [2,3,5].includes(item.mediaInfo?.status);
-      const availability = item.mediaInfo?.status === 5 ? "Available" : "Already requested";
+      const status = item.mediaInfo?.status;
+      const existing = [2,3,5].includes(status);
+      const label = {2:"Pending approval",3:"Processing",4:"Partly available",5:"Available"}[status] || "";
+      const year = (item.releaseDate || item.firstAirDate || "").slice(0,4);
       const poster = /^\/[A-Za-z0-9_.-]+$/.test(item.posterPath || "") ? `https://image.tmdb.org/t/p/w185${item.posterPath}` : "";
-      return `<article class="request-result"><div class="request-art">${poster ? `<img class="request-poster" src="${escapeHTML(poster)}" alt="" loading="lazy">` : ""}</div><div class="request-result-content"><h3 title="${escapeHTML(title)}">${escapeHTML(title)}</h3><p>${item.mediaType === "tv" ? "TV show" : "Movie"} · ${escapeHTML((item.releaseDate || item.firstAirDate || "").slice(0,4))}</p><p class="request-overview">${escapeHTML(item.overview || "No description available.")}</p><button class="service-primary-button" type="button" data-request-index="${index}" ${existing ? "disabled" : ""}>${existing ? availability : "Request"}</button></div></article>`;
+      return `<article class="request-result${existing ? " is-existing" : ""}"><div class="request-art">${poster ? `<img class="request-poster" src="${escapeHTML(poster)}" alt="" loading="lazy">` : `<span class="request-art-empty">${item.mediaType === "tv" ? "TV" : "FILM"}</span>`}</div><div class="request-result-content"><h3 title="${escapeHTML(title)}">${escapeHTML(title)}</h3><p class="request-meta"><span class="request-kind">${item.mediaType === "tv" ? "TV show" : "Movie"}</span>${year ? ` · ${escapeHTML(year)}` : ""}${label ? ` <span class="request-status status-${status}">${label}</span>` : ""}</p><p class="request-overview">${escapeHTML(item.overview || "No description available.")}</p><button class="service-primary-button" type="button" data-request-index="${index}" ${existing ? "disabled" : ""}>${existing ? label : "Request"}</button></div></article>`;
     }).join("");
     if (!mediaSearchResults.length) $("mediaSearchResults").innerHTML = '<p class="empty-state">No movies or TV shows found. Try another title.</p>';
     $("mediaRequestMessage").textContent = mediaSearchResults.length ? `${mediaSearchResults.length} results. Select a title to confirm your request.` : "No movies or TV shows found. Try another title.";

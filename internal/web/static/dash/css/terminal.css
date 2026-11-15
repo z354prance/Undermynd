@@ -257,3 +257,21 @@ a.nav-item { text-decoration:none; color:inherit; display:inline-flex; align-ite
 /* Keep six poster rows inside the panel: fixed row height, no stretching. */
 #dashboardView #recentlyAddedList { grid-template-columns:minmax(0,1fr); grid-auto-rows:50px; align-content:start; gap:3px; padding:6px 12px; overflow:hidden; }
 #recentlyAddedList .recent-poster-card .item-title { min-height:0; }
+
+/* Request box: flat terminal rows instead of rounded cards. */
+#searchResultsPanel { border-radius:2px; box-shadow:0 20px 70px #000c; }
+#searchResultsPanel .media-search-results { grid-template-columns:minmax(0,1fr); gap:0; padding:0 4px 12px; max-height:56vh; overflow:auto; }
+#searchResultsPanel .request-result { border:0; border-bottom:1px solid var(--border); border-left:2px solid var(--media-accent, var(--border)); border-radius:0; padding:10px 12px; gap:14px; background:transparent; }
+#searchResultsPanel .request-result:hover { background:#161815; }
+#searchResultsPanel .request-result.is-existing { opacity:.62; }
+#searchResultsPanel .request-art { width:56px; min-width:56px; height:84px; border-radius:2px; display:grid; place-items:center; }
+#searchResultsPanel .request-art-empty { color:var(--muted); font-size:10px; letter-spacing:.08em; }
+#searchResultsPanel .request-result h3 { font-size:14px; font-weight:500; }
+#searchResultsPanel .request-meta { margin:2px 0 4px; color:var(--muted); font-size:11px; }
+#searchResultsPanel .request-status { margin-left:6px; padding:0 6px; border:1px solid var(--border); border-radius:2px; font-size:10px; text-transform:uppercase; letter-spacing:.05em; }
+#searchResultsPanel .request-status.status-5 { color:#7bd88f; border-color:#2f5a38; }
+#searchResultsPanel .request-status.status-2, #searchResultsPanel .request-status.status-3 { color:#e0b36a; border-color:#5c4a28; }
+#searchResultsPanel .request-overview { -webkit-line-clamp:2; margin:0 0 8px; }
+#searchResultsPanel .request-result-content { flex:1; }
+#searchResultsPanel .request-result .service-primary-button:disabled { opacity:.7; cursor:default; }
+#mediaRequestMessage { min-height:1.4em; }
