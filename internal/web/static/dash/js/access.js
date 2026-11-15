@@ -133,7 +133,7 @@
         const details = document.createElement("details");
         const summary = document.createElement("summary"); summary.textContent = "Correct contact details"; details.append(summary);
         const form = document.createElement("form"); form.className = "access-correction";
-        for (const [name, title, type, value] of [["email", "Notification email", "email", item.email], ["connect_username", "Emby Connect username", "text", item.connect_username]]) {
+        for (const [name, title, type, value] of [["email", "Notification email", "email", item.email], ["connect_username", "Emby Connect email", "email", item.connect_username]]) {
           const label = document.createElement("label"); label.className = "service-form-field";
           const span = document.createElement("span"); span.textContent = title;
           const input = document.createElement("input"); input.name = name; input.type = type; input.value = value; input.required = true;

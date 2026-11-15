@@ -26,7 +26,7 @@ func receiptNotice(r Request, s Settings) notice {
 func adminNewNotice(r Request, s Settings) notice {
 	d := [][2]string{{"Name", r.Name}, {"Email", r.Email}, {"Username", r.Username}}
 	if r.Connect != "" {
-		d = append(d, [2]string{"Emby Connect", r.Connect})
+		d = append(d, [2]string{"Emby Connect email", r.Connect})
 	}
 	return notice{s.AdminEmail, "New access request from " + r.Name, letter{
 		Title:   "New access request",
@@ -58,9 +58,9 @@ func setupNotice(r Request, s Settings, token string) notice {
 	return notice{r.Email, "Your account is approved - finish setting it up", letter{
 		Title:   "You're approved",
 		Intro:   []string{"Hi " + r.Name + ", your Emby account has been created. It stays switched off until you finish setup."},
-		Details: [][2]string{{"Your username", r.Username}, {"Emby Connect", r.Connect}},
+		Details: [][2]string{{"Your username", r.Username}, {"Emby Connect email", r.Connect}},
 		Steps: []string{
-			"If Emby emails you about linking your Emby Connect account, confirm it first.",
+			"Emby will email you (at the Connect address above) to confirm linking your Emby Connect account. Confirm it first.",
 			"Open the setup page with the button below.",
 			"Choose a password of at least 12 characters. This is separate from your Emby Connect password.",
 			"Sign in with Emby Connect, or with your username and this password.",
@@ -107,7 +107,7 @@ func embyCompletionNotice(r Request) notice {
 	return notice{r.Email, "You're ready to watch", letter{
 		Title:   "Your account is ready",
 		Intro:   []string{"Hi " + r.Name + ", setup is complete. Your Emby Connect account is linked and your server account is ready to use."},
-		Details: [][2]string{{"Emby Connect account", r.Connect}, {"Server username", r.Username}},
+		Details: [][2]string{{"Emby Connect email", r.Connect}, {"Server username", r.Username}},
 		Parts: [][2]string{
 			{"Which password to use", "Use your Emby Connect password when you choose Emby Connect sign-in. If an app asks for a local server login instead, use your server username with the password you chose during setup."},
 			{"TVs and streaming devices", "Install the Emby app (Roku, Fire TV, Android or Google TV, Apple TV, Samsung or LG) and choose Emby Connect. If a code appears, open the address shown on the TV on your phone or computer, sign in to Emby Connect, and enter the code. Then select the linked server."},

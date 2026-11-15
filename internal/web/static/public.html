@@ -560,12 +560,12 @@
   </div>
 <dialog id="accessRequestDialog" class="request-dialog access-dialog" aria-labelledby="accessRequestTitle">
     <header><h2 id="accessRequestTitle">Request server access</h2><button type="button" class="service-secondary-button" data-close-access>Close</button></header>
-    <p id="accessConnectHelp">First, <a href="https://emby.media/connect.html" target="_blank" rel="noopener noreferrer">create and verify your Emby Connect account</a>, or use one you already have. Return here with its username. We never ask for your Connect password.</p>
+    <p id="accessConnectHelp">First, <a href="https://emby.media/connect.html" target="_blank" rel="noopener noreferrer">create and verify your Emby Connect account</a>, or use one you already have. Then enter the email address of that account below. We never ask for your Connect password.</p>
     <form id="accessRequestForm">
       <label class="service-form-field"><span>Your name</span><input name="name" autocomplete="name" required maxlength="100"></label>
       <label class="service-form-field"><span>Email for updates</span><input name="email" type="email" autocomplete="email" required maxlength="254"></label>
       <label class="service-form-field"><span>Preferred server username</span><input name="username" autocomplete="off" required minlength="3" maxlength="64" pattern="[a-zA-Z0-9][a-zA-Z0-9_.\-]{2,63}" title="3-64 letters, numbers, dots, underscores, or dashes"></label>
-      <label id="accessConnectField" class="service-form-field"><span>Emby Connect username</span><input name="connect_username" autocomplete="off" required maxlength="100"></label>
+      <label id="accessConnectField" class="service-form-field"><span>Emby Connect email address</span><input name="connect_username" type="email" inputmode="email" autocomplete="email" placeholder="the email your Emby Connect account uses" required maxlength="254"></label>
       <p class="service-field-help">Your request is held for approval. If approved, we will email a link to finish setting up your server account.</p>
       <button class="service-primary-button" type="submit">Submit for approval</button>
     </form>

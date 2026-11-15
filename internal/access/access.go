@@ -250,9 +250,11 @@ func (m *Manager) Correct(id int64, email, connect string) error {
 	}
 	if isJellyfin(settings) {
 		connect = ""
+	} else {
+		connect = strings.ToLower(connect)
 	}
-	if !address(email) || len(email) > 254 || (!isJellyfin(settings) && len(connect) < 1) || len(connect) > 100 || strings.ContainsAny(connect, "\r\n") {
-		return errors.New("enter a valid notification email and, for Emby, a Connect username")
+	if !address(email) || len(email) > 254 || (!isJellyfin(settings) && !address(connect)) || len(connect) > 254 {
+		return errors.New("enter a valid notification email and, for Emby, the email address of your Emby Connect account")
 	}
 	m.fmu.Lock()
 	for _, r := range m.recs {
@@ -285,9 +287,11 @@ func (m *Manager) Submit(r Request) error {
 	r.Connect = strings.TrimSpace(r.Connect)
 	if isJellyfin(s) {
 		r.Connect = ""
+	} else {
+		r.Connect = strings.ToLower(r.Connect)
 	}
-	if len(r.Name) < 1 || len(r.Name) > 100 || strings.ContainsAny(r.Name, "\r\n") || !address(r.Email) || len(r.Email) > 254 || !usernamePattern.MatchString(r.Username) || (!isJellyfin(s) && len(r.Connect) < 1) || len(r.Connect) > 100 || strings.ContainsAny(r.Connect, "\r\n") {
-		return errors.New("enter a name, valid email, a username of 3-64 letters/numbers/dots/dashes, and, for Emby, your Connect username")
+	if len(r.Name) < 1 || len(r.Name) > 100 || strings.ContainsAny(r.Name, "\r\n") || !address(r.Email) || len(r.Email) > 254 || !usernamePattern.MatchString(r.Username) || (!isJellyfin(s) && !address(r.Connect)) || len(r.Connect) > 254 {
+		return errors.New("enter a name, valid email, a username of 3-64 letters/numbers/dots/dashes, and, for Emby, the email address of your Emby Connect account")
 	}
 	m.fmu.Lock()
 	open := 0
@@ -458,7 +462,7 @@ func (m *Manager) Approve(ctx context.Context, id int64) error {
 	if !isJellyfin(s) {
 		var link struct{ IsPending *bool }
 		if e = emby(ctx, s, "POST", "/Users/"+r.EmbyID+"/Connect/Link?ConnectUsername="+url.QueryEscape(r.Connect), nil, &link); e != nil || link.IsPending == nil {
-			return m.fail(id, s, "Emby Connect linking failed; check the requested Connect username")
+			return m.fail(id, s, "Emby Connect linking failed; check that the Connect email address is right")
 		}
 	}
 	if e = m.setState(id, "awaiting_setup", ""); e != nil {
