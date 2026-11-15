@@ -130,6 +130,22 @@ type Requests struct {
 	UserID  int64         `json:"userId"`
 }
 
+// Access lets visitors ask for a media server account; see the access package.
+type Access struct {
+	Provider        string        `json:"provider"`
+	ServerPublicURL string        `json:"serverPublicUrl"`
+	Enabled         bool          `json:"enabled"`
+	PublicURL       string        `json:"publicUrl"`
+	TemplateID      string        `json:"templateId"`
+	SMTPHost        string        `json:"smtpHost"`
+	SMTPPort        int           `json:"smtpPort"`
+	SMTPSecurity    string        `json:"smtpSecurity"`
+	SMTPUser        string        `json:"smtpUser"`
+	SMTPPassword    secret.String `json:"smtpPassword"`
+	From            string        `json:"from"`
+	AdminEmail      string        `json:"adminEmail"`
+}
+
 type Feed struct {
 	Name            string `json:"name"`
 	URL             string `json:"url"`
@@ -164,6 +180,7 @@ type Settings struct {
 	Playback     Playback   `json:"playback"`
 	Donations    Donations  `json:"donations"`
 	Requests     Requests   `json:"requests"`
+	Access       Access     `json:"access"`
 	NZBGet       NZBGet     `json:"nzbget"`
 	TorBox       TorBox     `json:"torbox"`
 	Categories   []Category `json:"categories"`

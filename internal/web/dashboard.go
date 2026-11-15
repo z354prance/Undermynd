@@ -52,12 +52,7 @@ func (s *Server) dashboardRoutes(mux *http.ServeMux, files http.Handler) {
 	mux.HandleFunc("GET /api/v1/donations", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, s.Cfg.Get().Donations)
 	})
-	mux.HandleFunc("POST /api/v1/access/status", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, map[string]any{"enabled": false})
-	})
-	mux.HandleFunc("GET /api/v1/access/status", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, map[string]any{"enabled": false})
-	})
+	s.accessRoutes(mux)
 }
 
 // Each place a job can be is a "service" to the page, so cards say where it is.

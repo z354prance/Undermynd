@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/z354prance/undermynd/internal/access"
 	"github.com/z354prance/undermynd/internal/arr"
 	"github.com/z354prance/undermynd/internal/auth"
 	"github.com/z354prance/undermynd/internal/config"
@@ -48,6 +49,7 @@ type Server struct {
 	Log      *log.Logger
 	Progress interface{ Snapshot() progress.Snapshot }
 	Storage  *storage.Monitor
+	Access   *access.Manager
 	RSS      interface {
 		Status() []rss.FeedStatus
 		CheckNow(context.Context)

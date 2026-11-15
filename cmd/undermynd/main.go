@@ -102,6 +102,15 @@ func main() {
 	machine.Handle("/", qb.Handler())
 	site := web.New(st, eng, cfg, au, logger)
 
+	if am, err := web.NewAccess(env.ConfigDir, cfg); err != nil {
+		logger.Fatalf("access: %v", err)
+	} else {
+		if err := am.RecoverInterrupted(); err != nil {
+			logger.Fatalf("access: %v", err)
+		}
+		site.Access = am
+	}
+
 	if cfg.Created {
 		s := cfg.Get()
 		logger.Printf("first run: download client login for Sonarr/Radarr/Lidarr -> username %q, password %q (shown once; rotate it in the admin page)", s.ClientUser, string(s.ClientPassword))

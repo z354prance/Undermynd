@@ -571,3 +571,19 @@ func TestAdminSessionIsSeenOnThePublicPage(t *testing.T) {
 		t.Fatalf("signed-in admin not recognised on the public API: %s", b)
 	}
 }
+
+func TestAccessRoutesAreGuarded(t *testing.T) {
+	e := newEnv(t)
+	for _, p := range []string{"/admin/api/access", "/admin/api/access/requests"} {
+		if code, _ := e.do("GET", p, nil, false); code != 401 {
+			t.Fatalf("GET %s = %d, want 401", p, code)
+		}
+	}
+	code, b := e.do("GET", "/api/v1/access/status", nil, false)
+	if code != 200 || !strings.Contains(string(b), `"enabled":false`) {
+		t.Fatalf("status: %d %s", code, b)
+	}
+	if code, _ := e.do("POST", "/api/v1/access/request", map[string]string{}, false); code != 403 {
+		t.Fatalf("unguarded submit = %d, want 403", code)
+	}
+}

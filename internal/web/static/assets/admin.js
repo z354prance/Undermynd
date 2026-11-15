@@ -276,7 +276,54 @@
       r.requests.forEach(function(q){var d=el('div','kv');d.appendChild(el('span','k',(q.title||'Untitled')+' ('+(q.media_type==='tv'?'TV show':'Movie')+')'));d.appendChild(el('span','v',q.requested_by||''));
         [['approve','approve'],['decline','deny']].forEach(function(a){var b=el('button','',a[1]);b.onclick=function(){b.disabled=true;api('POST','/requests/'+q.source_id+'/'+a[0]).then(loadPending).catch(function(e){b.disabled=false;alert(e.message)})};d.appendChild(b)});lst.appendChild(d)})}).catch(function(){lst.appendChild(help('Seerr is not reachable or not set up yet.'))})}
     loadPending();
+    accessCard(body);
     saveBar(body,function(m){save(function(b){b.requests={enabled:re.checked,url:ru.value,apiKey:rk.value,userId:+ri.value};b.donations={title:ti.value,paypal_url:pp.value,cashapp_url:ca.value,custom_label:cl.value,custom_url:cu.value}},m).then(function(){pane(body)})})
+  }
+
+  function accessCard(body){
+    var c=el('div','card');var h=el('h4','','Account requests ("need access?") ');var hc=el('span');h.appendChild(hc);c.appendChild(h);
+    c.appendChild(help('Visitors ask for a media server account. Approving creates a disabled copy of your template user, and the visitor finishes setup from an emailed single-use link. The media server address and key come from the Playback tab. Emails are sent over TLS/STARTTLS only.'));
+    var g=el('div','grid3'),A={};
+    var en=row(g,'let visitors request accounts',{type:'checkbox'});
+    var pv=row(g,'server type',{help:'emby or jellyfin'});
+    var pu=row(g,'this site’s public HTTPS address',{ph:'https://status.example.com',help:'used in the emailed links'});
+    var sp=row(g,'Jellyfin public address',{ph:'https://jellyfin.example.com',help:'Jellyfin only, shown in sign-in instructions'});
+    var tp=row(g,'template user ID',{help:'a disabled, non-admin user whose permissions new accounts copy'});
+    var sh=row(g,'SMTP host',{ph:'smtp.example.com'});
+    var sn=row(g,'SMTP port',{type:'number'});
+    var ss=row(g,'SMTP security',{help:'tls (port 465) or starttls (587)'});
+    var su=row(g,'SMTP username');
+    var sw=row(g,'SMTP password',{type:'password'});
+    var fr=row(g,'send from',{ph:'undermynd@example.com'});
+    var ad=row(g,'admin email',{ph:'you@example.com',help:'told about new requests and problems'});
+    c.appendChild(g);
+    var msg=el('span','msg');msg.style.marginLeft='12px';
+    var sv=el('button','go','save access settings'),tb=el('button','','send test email');
+    sv.onclick=function(){msg.className='msg';msg.textContent='saving…';
+      api('PUT','/access',{enabled:en.checked,provider:pv.value.trim().toLowerCase(),public_url:pu.value,server_public_url:sp.value,template_id:tp.value.trim(),smtp_host:sh.value.trim(),smtp_port:+sn.value,smtp_security:ss.value.trim().toLowerCase(),smtp_user:su.value,smtp_password:sw.value,from:fr.value.trim(),admin_email:ad.value.trim()})
+        .then(function(v){sw.value='';fill(v);msg.className='msg ok';msg.textContent='saved'}).catch(function(e){msg.className='msg err';msg.textContent=e.message})};
+    tb.onclick=function(){msg.className='msg';msg.textContent='sending…';api('POST','/access/test-email',{}).then(function(){msg.className='msg ok';msg.textContent='test email sent to the admin address'}).catch(function(e){msg.className='msg err';msg.textContent=e.message})};
+    c.appendChild(sv);tb.style.marginLeft='8px';c.appendChild(tb);c.appendChild(msg);
+    function fill(v){en.checked=!!v.enabled;pv.value=v.provider||'emby';pu.value=v.public_url||'';sp.value=v.server_public_url||'';tp.value=v.template_id||'';sh.value=v.smtp_host||'';sn.value=v.smtp_port||'';ss.value=v.smtp_security||'';su.value=v.smtp_user||'';fr.value=v.from||'';ad.value=v.admin_email||'';sw.placeholder=v.has_smtp_password?'set — leave blank to keep':'';hc.replaceChildren(chip(!!v.enabled,v.enabled?'on':'off'))}
+    body.appendChild(c);
+    var q=el('div','card');q.appendChild(el('h4','','Account requests'));var lst=el('div');q.appendChild(lst);body.appendChild(q);
+    var names={pending:'awaiting approval',incomplete:'setup needs attention',provisioning:'creating account',awaiting_setup:'waiting for the visitor to finish setup',setting_up:'finishing setup',active:'active',declined:'declined'};
+    function act(id,a,b,note){b.disabled=true;api('POST','/access/requests/'+id+'/'+a,note||{}).then(loadQ).catch(function(e){b.disabled=false;alert(e.message)})}
+    function loadQ(){api('GET','/access/requests').then(function(r){lst.replaceChildren();var items=r.requests||[];if(!items.length){lst.appendChild(help('No account requests yet.'));return}
+      items.forEach(function(it){var d=el('div','kv');d.appendChild(el('span','k',it.name+' — '+(names[it.status]||it.status)));d.appendChild(el('span','v',it.email+' · '+it.username+(it.connect_username?' · Connect '+it.connect_username:'')));
+        [it.error,it.mail_error].forEach(function(t){if(t){var e=el('div','msg err',t);d.appendChild(e)}});
+        var acts=[];
+        if(it.status==='pending')acts=[['approve','approve'],['decline','decline'],['resend','resend notices']];
+        else if(it.status==='incomplete')acts=[['approve','retry setup']];
+        else if(it.status==='awaiting_setup')acts=[['resend','send fresh setup link']];
+        else if(it.status==='active')acts=[['resend','resend sign-in instructions']];
+        else if(it.status==='declined')acts=[['resend','resend notice']];
+        if(it.emby_id&&['incomplete','awaiting_setup','active'].indexOf(it.status)>=0)acts.push(['reapply-template','reapply template'],['reset','reset after server deletion']);
+        acts.forEach(function(a){var b=el('button','',a[1]);b.onclick=function(){act(it.id,a[0],b)};d.appendChild(b)});
+        if(it.status==='pending'||it.status==='incomplete'){var b2=el('button','','correct details');b2.onclick=function(){var em=prompt_('Notification email',it.email);if(em==null)return;var cn=it.connect_username?prompt_('Emby Connect username',it.connect_username):'';if(cn==null)return;b2.disabled=true;api('POST','/access/requests/'+it.id+'/correct',{email:em,connect_username:cn}).then(loadQ).catch(function(e){b2.disabled=false;alert(e.message)})};d.appendChild(b2)}
+        lst.appendChild(d)})}).catch(function(e){lst.replaceChildren(help(e.message))})}
+    function prompt_(l,v){return window.prompt(l,v)}
+    api('GET','/access').then(fill).catch(function(e){msg.className='msg err';msg.textContent=e.message});loadQ();
   }
 
   function rssPane(body){
