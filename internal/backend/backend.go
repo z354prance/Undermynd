@@ -21,6 +21,8 @@ type Item struct {
 	Status   Status
 	Progress float64
 	Error    string
+	// Inactive: the client has the item but is not working on it (TorBox: active=false, unfinished, not queued).
+	Inactive bool
 }
 
 type File struct {

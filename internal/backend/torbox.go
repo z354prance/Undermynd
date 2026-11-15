@@ -329,7 +329,8 @@ func (t *TorBox) Status(ctx context.Context, id string) (Item, error) {
 	if it.DownloadFinished && len(it.Files) > 0 {
 		return Item{Status: Complete, Progress: 1}, nil
 	}
-	return Item{Status: Downloading, Progress: p}, nil
+	idle := !it.Active && !it.DownloadFinished && !strings.Contains(st, "queue")
+	return Item{Status: Downloading, Progress: p, Inactive: idle}, nil
 }
 
 func (t *TorBox) Files(ctx context.Context, id string) ([]File, error) {

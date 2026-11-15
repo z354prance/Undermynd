@@ -90,3 +90,24 @@ func TestStatusPrefersTheLiveItemOverAStaleList(t *testing.T) {
 		t.Fatalf("the live item should win over a stale list: %+v %v", it, err)
 	}
 }
+
+// An unfinished item TorBox is not working on is flagged; a queued one is not.
+func TestStatusFlagsInactiveItems(t *testing.T) {
+	state := "processing"
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/api/usenet/mylist", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"success":true,"data":{"id":7,"progress":0.8,"active":false,"download_state":"` + state + `","download_finished":false,"files":[]}}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	lim := backend.NewLimiter(filepath.Join(t.TempDir(), "l.json"), 60, time.Millisecond)
+	lim.APIGap = 0
+	tb := backend.NewTorBox(srv.URL, "tok", lim)
+	if it, _ := tb.Status(context.Background(), "7"); !it.Inactive {
+		t.Fatalf("inactive item not flagged: %+v", it)
+	}
+	state = "queued"
+	if it, _ := tb.Status(context.Background(), "7"); it.Inactive {
+		t.Fatalf("queued item must not be flagged: %+v", it)
+	}
+}
