@@ -948,27 +948,45 @@ func (e *Engine) doFailed(ctx context.Context, j job.Job) {
 		j.FailCleaned = true
 		_, _ = e.Store.Update(j.ID, func(c *job.Job) error { c.FailCleaned, c.Attempts, c.NextRun = true, 0, time.Time{}; return nil })
 	}
-	// Do not wait for the arr's own failed-download handling (it may be switched off):
-	// tell it directly, so it blocklists this release and grabs a different one.
-	if !j.ArrDeleted && !j.ArrNotified && j.Source != "rss" && j.Source != "watch" {
-		cat, _ := e.Cfg.Get().Category(j.Category)
-		if f, ok := e.arrFor(cat).(DownloadFailer); ok {
-			if _, err := f.FailDownload(ctx, j.DownloadID()); err != nil {
-				e.Log.Printf("job %s: telling the arr it failed: %v", short(j.ID), err)
-				e.retry2(j, fmt.Errorf("telling the arr: %w", err))
-				return
-			}
-			e.Log.Printf("job %s: the arr was told to blocklist and search again", short(j.ID))
-			_, _ = e.Store.Update(j.ID, func(c *job.Job) error { c.ArrNotified, c.Attempts, c.NextRun = true, 0, time.Time{}; return nil })
-		}
-	}
-	// The arr sees the failure (state "error") until it handles it and calls delete.
+	// Do not wait for the arr's own failed-download handling (it may be switched
+	// off, or the item may already be gone from its queue): tell it directly, so it
+	// blocklists this release and grabs a different one, then end the job.
 	if j.ArrDeleted || j.Source == "rss" || j.Source == "watch" {
-		_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
-			c.Move(job.Cleaned, "failed job cleaned up; the arr has dealt with it", e.Now())
-			return nil
-		})
+		e.endFailed(j, "failed job cleaned up; the arr has dealt with it")
+		return
 	}
+	cat, _ := e.Cfg.Get().Category(j.Category)
+	f, ok := e.arrFor(cat).(DownloadFailer)
+	if !ok {
+		e.endFailed(j, "failed job cleaned up; no arr is set for this category")
+		return
+	}
+	found, err := f.FailDownload(ctx, j.DownloadID())
+	if err != nil {
+		// Stay visible as failed so the arr's own handling can still see it, but do
+		// not sit forever: after six hours the job ends.
+		if e.Now().Sub(j.StateChanged) > 6*time.Hour {
+			e.endFailed(j, "failed job cleaned up; the arr could not be told: "+err.Error())
+			return
+		}
+		e.retry2(j, fmt.Errorf("telling the arr: %w", err))
+		return
+	}
+	if found {
+		e.Log.Printf("job %s: the arr was told to blocklist and search again", short(j.ID))
+		e.endFailed(j, "failed; the arr blocklisted the release and will search again")
+		return
+	}
+	e.endFailed(j, "failed job cleaned up; the arr no longer had it in its queue")
+}
+
+func (e *Engine) endFailed(j job.Job, why string) {
+	_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
+		c.ArrNotified = true
+		c.Attempts, c.NextRun = 0, time.Time{}
+		c.Move(job.Cleaned, why, e.Now())
+		return nil
+	})
 }
 
 // ---------------------------------------------------------------- files

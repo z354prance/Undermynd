@@ -620,3 +620,36 @@ func TestSweepPlacesOlderFiles(t *testing.T) {
 		t.Fatal("emptied folder should be removed")
 	}
 }
+
+type failArr struct{ told []string }
+
+func (f *failArr) Imported(context.Context, string) (bool, error) { return false, nil }
+func (f *failArr) FailDownload(_ context.Context, id string) (bool, error) {
+	f.told = append(f.told, id)
+	return true, nil
+}
+
+// A TorBox failure must reach the arr (blocklist and search again) and the job
+// must end by itself, even if the arr never removes the download.
+func TestTorBoxFailureTellsTheArrAndEndsTheJob(t *testing.T) {
+	u := newURig(t)
+	fa := &failArr{}
+	u.eng.ArrFor = func(config.Category) pipeline.ImportChecker { return fa }
+	id := u.addNZB("Bad.Show.S01E04")
+	u.tick(2)
+	for i := 0; i < 14; i++ {
+		u.tb.mu.Lock()
+		for _, it := range u.tb.items {
+			it["download_state"] = "failed"
+		}
+		u.tb.mu.Unlock()
+		u.tick(1)
+	}
+	j, _ := u.st.Get(id)
+	if j.State != job.Cleaned {
+		t.Fatalf("expected the failed job to end, got %s (%s)", j.State, j.Reason)
+	}
+	if len(fa.told) != 1 {
+		t.Fatalf("the arr must be told exactly once, was told %d times", len(fa.told))
+	}
+}

@@ -178,8 +178,15 @@ function wireState(item, progress) {
   else if (/fail|error/i.test(problems)) mode = "fail";
   else if (/stall/i.test(problems)) mode = "stall";
   else if (cur <= 1 || cur === 4 || progress.paused || progress.percent === null) mode = "wait";
+  // Draw a failure on the stage that failed: Convert only when a Tdarr job is the
+  // one that failed, otherwise Download (a failed transfer ends there).
+  let at = cur;
+  if (mode === "fail") {
+    const badJob = pipelineRecords(item, "processing", state.processing).some(j => j.state === "problem" || /fail|error/i.test(String(j.state)));
+    at = badJob || /tdarr|transcode|health/i.test(problems) ? 3 : Math.min(Math.max(cur, 2), 2);
+  }
   const percent = progress.percent === null ? 0 : Math.max(0, Math.min(100, progress.percent));
-  return {cur, mode, percent};
+  return {cur: mode === "fail" ? at : cur, mode, percent};
 }
 function wireMarkup(item, progress) {
   const {cur, mode, percent} = wireState(item, progress);
@@ -187,7 +194,7 @@ function wireMarkup(item, progress) {
     const kind = cur > i ? "done" : cur === i ? "cur" : "todo";
     let line = "";
     if (i < WIRE_STAGES.length - 1) {
-      if (cur > i) line = `<b class="ln${mode === "fail" && cur === i + 1 && cur >= 4 ? " bad" : ""}"></b>`;
+      if (cur > i) line = '<b class="ln"></b>';
       else if (cur === i) {
         const p = mode === "run" || mode === "stall" || mode === "fail" ? percent : 0;
         const stretch = p > 0 ? Math.round(10000 / p) : 100;
