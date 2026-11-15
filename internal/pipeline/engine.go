@@ -542,6 +542,10 @@ func (e *Engine) doDownload(ctx context.Context, j job.Job) {
 		return
 	}
 	now := e.Now()
+	if j.Attempts > 0 || strings.HasSuffix(j.Reason, "(retrying)") {
+		// A good answer ends the retry streak and its stale message.
+		j, _ = e.Store.Update(j.ID, func(c *job.Job) error { c.Attempts, c.Reason = 0, ""; return nil })
+	}
 	switch it.Status {
 	case backend.Missing:
 		if j.State == job.Submitted && now.Sub(j.StateChanged) < 2*time.Minute {
