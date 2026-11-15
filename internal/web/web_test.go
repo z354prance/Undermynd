@@ -195,7 +195,7 @@ func TestLoginFailureDoesNotSayWhich(t *testing.T) {
 
 func TestPagesServe(t *testing.T) {
 	e := newEnv(t)
-	for _, p := range []string{"/", "/admin", "/assets/app.css", "/assets/admin.js", "/assets/public.js", "/assets/favicon.svg", "/health"} {
+	for _, p := range []string{"/", "/admin", "/assets/app.css", "/assets/admin.js", "/dash/js/app.js", "/dash/css/app.css", "/dash/css/terminal.css", "/assets/favicon.svg", "/assets/logo.svg", "/health", "/api/v1/activity", "/api/v1/recently-added", "/api/v1/playback", "/api/v1/auth/status", "/api/v1/media-request/status"} {
 		if code, _ := e.do("GET", p, nil, false); code != 200 {
 			t.Fatalf("%s: %d", p, code)
 		}
@@ -270,5 +270,81 @@ func TestRenamingACategoryKeepsItsArrKey(t *testing.T) {
 	got := e.cfg.Get()
 	if got.Categories[0].Name != "renamed" || string(got.Categories[0].ArrAPIKey) != "TOP-SECRET-ARR-KEY" {
 		t.Fatalf("a renamed category must keep its key: %+v", got.Categories[0])
+	}
+}
+
+// The dashboard is Overmynd's page; it needs each job as a lifecycle that points at the
+// download or processing record it is currently in.
+func TestDashboardActivityShape(t *testing.T) {
+	e := newEnv(t)
+	_ = e.st.Put(job.Job{ID: "aaa", Name: "Show.S01E01", Category: "tv", Source: "sonarr", Kind: "torrent", Backend: "torbox", State: job.Downloading, Progress: 0.5, Size: 1000, Created: time.Now()})
+	_ = e.st.Put(job.Job{ID: "bbb", Name: "Other.S01E02", Category: "tv", Source: "sonarr", State: job.Transcoding, TranscodeProgress: 0.25, Created: time.Now()})
+	_ = e.st.Put(job.Job{ID: "ccc", Name: "Done.S01E03", Category: "tv", Source: "sonarr", State: job.Cleaned, Created: time.Now()})
+	code, b := e.do("GET", "/api/v1/activity", nil, false)
+	if code != 200 {
+		t.Fatal(code)
+	}
+	var got struct {
+		Lifecycles []struct {
+			Title string `json:"title"`
+			Kind  string `json:"kind"`
+			Stage string `json:"stage"`
+			Refs  []struct {
+				Source     string `json:"source"`
+				RecordType string `json:"record_type"`
+			} `json:"references"`
+		} `json:"lifecycles"`
+		Downloads struct {
+			Downloads []struct {
+				Source   string   `json:"source"`
+				Status   string   `json:"status"`
+				Progress *float64 `json:"progress"`
+				SizeLeft int64    `json:"size_left"`
+			} `json:"downloads"`
+		} `json:"download_snapshot"`
+		Processing struct {
+			Jobs []struct {
+				Source   string  `json:"source"`
+				Progress float64 `json:"progress"`
+			} `json:"jobs"`
+		} `json:"processing_snapshot"`
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err, string(b))
+	}
+	if len(got.Lifecycles) != 2 {
+		t.Fatalf("finished jobs must not appear: %s", b)
+	}
+	if len(got.Downloads.Downloads) != 1 || got.Downloads.Downloads[0].Source != "torboxarr" || got.Downloads.Downloads[0].SizeLeft != 500 || *got.Downloads.Downloads[0].Progress != 50 {
+		t.Fatalf("download record: %s", b)
+	}
+	if len(got.Processing.Jobs) != 1 || got.Processing.Jobs[0].Source != "tdarr" || got.Processing.Jobs[0].Progress != 25 {
+		t.Fatalf("processing record: %s", b)
+	}
+	for _, l := range got.Lifecycles {
+		if l.Kind != "episode" || len(l.Refs) != 1 {
+			t.Fatalf("lifecycle: %+v", l)
+		}
+	}
+}
+
+// Overmynd was embedded in a frame on the owner's site; the public page still may be,
+// but the admin pages never.
+func TestFrameAncestors(t *testing.T) {
+	e := newEnv(t)
+	req, _ := http.NewRequest("GET", e.srv.URL+"/", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "frame-ancestors 'self' https://xivix.cc") || resp.Header.Get("X-Frame-Options") != "" {
+		t.Fatalf("public page must be embeddable: %q", csp)
+	}
+	req, _ = http.NewRequest("GET", e.srv.URL+"/admin", nil)
+	resp, _ = http.DefaultClient.Do(req)
+	resp.Body.Close()
+	if !strings.Contains(resp.Header.Get("Content-Security-Policy"), "frame-ancestors 'none'") || resp.Header.Get("X-Frame-Options") != "DENY" {
+		t.Fatal("the admin page must never be framed")
 	}
 }

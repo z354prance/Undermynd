@@ -67,10 +67,9 @@ func (s *Server) Handler() http.Handler {
 	// ---- public: no sign-in, reads only the public view
 	mux.HandleFunc("GET /{$}", s.page("public.html"))
 	mux.HandleFunc("GET /api/public/jobs", s.publicJobs)
-	mux.HandleFunc("GET /missing", s.page("missing.html"))
-	mux.HandleFunc("GET /api/public/library", s.publicLibrary)
+	s.dashboardRoutes(mux, files)
 	mux.HandleFunc("GET /admin/api/library", s.admin(s.adminLibrary))
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, map[string]string{"status": "ok"}) })
 	mux.Handle("GET /assets/", files)
 
 	// ---- admin: everything under /admin
@@ -110,18 +109,34 @@ func (s *Server) Handler() http.Handler {
 	return secure(mux)
 }
 
+// frameAncestors lists the sites allowed to embed the public dashboard in a frame,
+// as Overmynd's was. UNDERMYND_FRAME_ANCESTORS replaces it; the admin pages are never framed.
+func frameAncestors() string {
+	if v := strings.TrimSpace(os.Getenv("UNDERMYND_FRAME_ANCESTORS")); v != "" {
+		return v
+	}
+	return "'self' https://xivix.cc https://www.xivix.cc"
+}
+
 func secure(next http.Handler) http.Handler {
+	embed := frameAncestors()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		admin := strings.HasPrefix(r.URL.Path, "/admin") || strings.HasPrefix(r.URL.Path, "/assets/")
+		if admin {
+			h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+			h.Set("X-Frame-Options", "DENY")
+		} else {
+			h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https://image.tmdb.org; style-src 'self' 'unsafe-inline'; frame-ancestors "+embed+"; base-uri 'none'; form-action 'self'")
+		}
 		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "no-referrer")
-		if strings.HasPrefix(r.URL.Path, "/admin") {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/admin"), strings.HasPrefix(r.URL.Path, "/api/"):
 			h.Set("Cache-Control", "no-store")
-		} else if strings.HasPrefix(r.URL.Path, "/assets/") {
+		case strings.HasPrefix(r.URL.Path, "/assets/"), strings.HasPrefix(r.URL.Path, "/dash/"), r.URL.Path == "/":
 			// The page scripts change with every release and carry no version in
-			// their name, so a cached copy would show an old admin page.
+			// their name, so a cached copy would show an old page.
 			h.Set("Cache-Control", "no-store")
 		}
 		next.ServeHTTP(w, r)
@@ -245,35 +260,6 @@ func (s *Server) publicJobs(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		out = append(out, pj)
-	}
-	writeJSON(w, out)
-}
-
-type publicMissing struct {
-	Kind   string     `json:"kind"`
-	Title  string     `json:"title"`
-	Detail string     `json:"detail,omitempty"`
-	Date   *time.Time `json:"date,omitempty"`
-}
-
-// publicLibrary is season progress and what the arrs still want: titles and counts
-// only. No errors, categories, addresses or IDs.
-func (s *Server) publicLibrary(w http.ResponseWriter, r *http.Request) {
-	out := struct {
-		Recent    []progress.Recent `json:"recent"`
-		Seasons   []progress.Season `json:"seasons"`
-		Missing   []publicMissing   `json:"missing"`
-		UpdatedAt time.Time         `json:"updatedAt"`
-	}{Seasons: []progress.Season{}, Recent: []progress.Recent{}, Missing: []publicMissing{}}
-	if s.Progress != nil {
-		snap := s.Progress.Snapshot()
-		out.Seasons, out.Recent, out.UpdatedAt = snap.Seasons, snap.Recent, snap.UpdatedAt
-		for i, m := range snap.Missing {
-			if i >= 1000 {
-				break
-			}
-			out.Missing = append(out.Missing, publicMissing{Kind: m.Kind, Title: m.Title, Detail: m.Detail, Date: m.Date})
-		}
 	}
 	writeJSON(w, out)
 }

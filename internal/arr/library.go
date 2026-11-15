@@ -191,9 +191,11 @@ func (c *Client) MissingItems(ctx context.Context) ([]Missing, error) {
 
 // Import is one recent import event, named for display.
 type Import struct {
-	Kind  string    `json:"kind"` // episode | movie | album
-	Title string    `json:"title"`
-	Date  time.Time `json:"date"`
+	Kind   string    `json:"kind"` // episode | movie | album
+	Title  string    `json:"title"`
+	Date   time.Time `json:"date"`
+	Detail string    `json:"detail,omitempty"` // "S01E02 - Episode title" for episodes
+	Year   int       `json:"year,omitempty"`
 }
 
 // RecentImports reads the newest import events from the arr's history.
@@ -205,8 +207,14 @@ func (c *Client) RecentImports(ctx context.Context) ([]Import, error) {
 			Series    struct {
 				Title string `json:"title"`
 			} `json:"series"`
+			Episode struct {
+				Title  string `json:"title"`
+				Season int    `json:"seasonNumber"`
+				Number int    `json:"episodeNumber"`
+			} `json:"episode"`
 			Movie struct {
 				Title string `json:"title"`
+				Year  int    `json:"year"`
 			} `json:"movie"`
 			Artist struct {
 				Name string `json:"artistName"`
@@ -216,7 +224,7 @@ func (c *Client) RecentImports(ctx context.Context) ([]Import, error) {
 			} `json:"album"`
 		} `json:"records"`
 	}
-	q := "/history?page=1&pageSize=100&sortKey=date&sortDirection=descending&includeSeries=true&includeMovie=true&includeArtist=true&includeAlbum=true"
+	q := "/history?page=1&pageSize=100&sortKey=date&sortDirection=descending&includeSeries=true&includeEpisode=true&includeMovie=true&includeArtist=true&includeAlbum=true"
 	if err := c.get(ctx, q, &r); err != nil {
 		return nil, err
 	}
@@ -227,15 +235,19 @@ func (c *Client) RecentImports(ctx context.Context) ([]Import, error) {
 		}
 		switch c.Kind {
 		case "sonarr":
-			out = append(out, Import{"episode", x.Series.Title, x.Date})
+			d := fmt.Sprintf("S%02dE%02d", x.Episode.Season, x.Episode.Number)
+			if x.Episode.Title != "" {
+				d += " - " + x.Episode.Title
+			}
+			out = append(out, Import{Kind: "episode", Title: x.Series.Title, Date: x.Date, Detail: d})
 		case "radarr":
-			out = append(out, Import{"movie", x.Movie.Title, x.Date})
+			out = append(out, Import{Kind: "movie", Title: x.Movie.Title, Date: x.Date, Year: x.Movie.Year})
 		case "lidarr":
 			t := x.Artist.Name
 			if x.Album.Title != "" {
 				t += " — " + x.Album.Title
 			}
-			out = append(out, Import{"album", t, x.Date})
+			out = append(out, Import{Kind: "album", Title: t, Date: x.Date})
 		}
 	}
 	return out, nil

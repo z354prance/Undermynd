@@ -24,6 +24,7 @@ import (
 )
 
 type Season struct {
+	ShowID   string `json:"showId"`
 	Show     string `json:"show"`
 	Season   int    `json:"season"`
 	Imported int    `json:"imported"`
@@ -32,10 +33,12 @@ type Season struct {
 
 // Recent is a run of imports of one title on one day: "3 episodes of X".
 type Recent struct {
-	Kind  string    `json:"kind"`
-	Title string    `json:"title"`
-	Count int       `json:"count"`
-	Date  time.Time `json:"date"`
+	Kind     string    `json:"kind"`
+	Title    string    `json:"title"`
+	Count    int       `json:"count"`
+	Date     time.Time `json:"date"`
+	Year     int       `json:"year,omitempty"`
+	Episodes []string  `json:"episodes,omitempty"`
 }
 
 type Snapshot struct {
@@ -207,6 +210,7 @@ func (t *Tracker) Refresh(ctx context.Context) {
 		}
 		for _, n := range counts {
 			n.Show = title
+			n.ShowID = key
 			seasons = append(seasons, n)
 		}
 	}
@@ -306,13 +310,20 @@ func groupRecent(in []arr.Import, n int) []Recent {
 		k := key{im.Kind, im.Title, im.Date.Local().Format("2006-01-02")}
 		if i, ok := idx[k]; ok {
 			out[i].Count++
+			if im.Detail != "" {
+				out[i].Episodes = append(out[i].Episodes, im.Detail)
+			}
 			if im.Date.After(out[i].Date) {
 				out[i].Date = im.Date
 			}
 			continue
 		}
 		idx[k] = len(out)
-		out = append(out, Recent{Kind: im.Kind, Title: im.Title, Count: 1, Date: im.Date})
+		r := Recent{Kind: im.Kind, Title: im.Title, Count: 1, Date: im.Date, Year: im.Year}
+		if im.Detail != "" {
+			r.Episodes = []string{im.Detail}
+		}
+		out = append(out, r)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Date.After(out[j].Date) })
 	if len(out) > n {
