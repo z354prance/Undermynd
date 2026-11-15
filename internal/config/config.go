@@ -122,6 +122,14 @@ type Donations struct {
 	CustomURL   string `json:"custom_url"`
 }
 
+// Requests lets visitors search and request media through Seerr as one fixed Seerr user.
+type Requests struct {
+	Enabled bool          `json:"enabled"`
+	URL     string        `json:"url"`
+	APIKey  secret.String `json:"apiKey"`
+	UserID  int64         `json:"userId"`
+}
+
 type Feed struct {
 	Name            string `json:"name"`
 	URL             string `json:"url"`
@@ -155,6 +163,7 @@ type Settings struct {
 	Tdarr        Tdarr      `json:"tdarr"`
 	Playback     Playback   `json:"playback"`
 	Donations    Donations  `json:"donations"`
+	Requests     Requests   `json:"requests"`
 	NZBGet       NZBGet     `json:"nzbget"`
 	TorBox       TorBox     `json:"torbox"`
 	Categories   []Category `json:"categories"`

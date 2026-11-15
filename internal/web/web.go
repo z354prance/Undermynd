@@ -107,6 +107,9 @@ func (s *Server) Handler() http.Handler {
 	})))
 	mux.HandleFunc("POST /admin/api/library/sweep", s.guard(s.admin(s.librarySweep)))
 	mux.HandleFunc("GET /admin/api/playback/status", s.admin(s.playbackStatus))
+	mux.HandleFunc("POST /admin/api/requests/test", s.guard(s.admin(s.requestsTest)))
+	mux.HandleFunc("GET /admin/api/requests", s.admin(s.requestsAdminList))
+	mux.HandleFunc("POST /admin/api/requests/{id}/{action}", s.guard(s.admin(s.requestsDecide)))
 	mux.HandleFunc("POST /admin/api/playback/test", s.guard(s.admin(s.playbackTest)))
 	mux.HandleFunc("POST /admin/api/tdarr/test", s.guard(s.admin(s.tdarrTest)))
 	mux.HandleFunc("POST /admin/api/settings/client-password", s.guard(s.admin(s.newClientPassword)))
@@ -538,7 +541,14 @@ type settingsView struct {
 		TimeoutMinutes int    `json:"timeoutMinutes"`
 	} `json:"tdarr"`
 	Donations config.Donations `json:"donations"`
-	Playback  struct {
+	Requests  struct {
+		Enabled   bool   `json:"enabled"`
+		URL       string `json:"url"`
+		APIKey    string `json:"apiKey,omitempty"` // write-only
+		HasAPIKey bool   `json:"hasApiKey"`
+		UserID    int64  `json:"userId"`
+	} `json:"requests"`
+	Playback struct {
 		TracearrURL     string `json:"tracearrUrl"`
 		TracearrKey     string `json:"tracearrKey,omitempty"` // write-only
 		HasTracearrKey  bool   `json:"hasTracearrKey"`
@@ -590,6 +600,7 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	v.Tdarr.URL, v.Tdarr.HasAPIKey, v.Tdarr.LibraryID = c.Tdarr.URL, c.Tdarr.APIKey != "", c.Tdarr.LibraryID
 	v.Tdarr.MaxInFlight, v.Tdarr.StallMinutes = c.Tdarr.MaxInFlight, c.Tdarr.StallMinutes
 	v.Donations = c.Donations
+	v.Requests.Enabled, v.Requests.URL, v.Requests.HasAPIKey, v.Requests.UserID = c.Requests.Enabled, c.Requests.URL, c.Requests.APIKey != "", c.Requests.UserID
 	v.Playback.TracearrURL, v.Playback.HasTracearrKey = c.Playback.TracearrURL, c.Playback.TracearrKey != ""
 	v.Playback.EmbyURL, v.Playback.HasEmbyKey, v.Playback.HiddenLibraries = c.Playback.EmbyURL, c.Playback.EmbyKey != "", c.Playback.HiddenLibraries
 	v.NZBGet.URL, v.NZBGet.Username, v.NZBGet.HasPassword, v.NZBGet.DestRoot = c.NZBGet.URL, c.NZBGet.Username, c.NZBGet.Password != "", c.NZBGet.DestRoot
@@ -701,6 +712,14 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	next.Donations = in.Donations
+	next.Requests.Enabled, next.Requests.URL, next.Requests.UserID = in.Requests.Enabled, strings.TrimSpace(in.Requests.URL), in.Requests.UserID
+	if in.Requests.APIKey != "" {
+		next.Requests.APIKey = secret.String(strings.TrimSpace(in.Requests.APIKey))
+	}
+	if next.Requests.Enabled && (next.Requests.URL == "" || next.Requests.APIKey == "" || next.Requests.UserID <= 0) {
+		jsonErr(w, http.StatusBadRequest, "media requests need the Seerr address, its API key and the user ID requests are made as")
+		return
+	}
 	next.Playback.TracearrURL, next.Playback.EmbyURL = strings.TrimSpace(in.Playback.TracearrURL), strings.TrimSpace(in.Playback.EmbyURL)
 	if in.Playback.TracearrKey != "" {
 		next.Playback.TracearrKey = secret.String(strings.TrimSpace(in.Playback.TracearrKey))

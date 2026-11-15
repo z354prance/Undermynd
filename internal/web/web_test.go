@@ -484,3 +484,66 @@ func TestDonationsSettings(t *testing.T) {
 		t.Fatal("a custom link needs a label")
 	}
 }
+
+// Visitors search and request through Seerr as one fixed user, rate-limited, failing closed;
+// decisions need the admin session.
+func TestSeerrRequestBox(t *testing.T) {
+	var gotUser, gotKey string
+	var posted []string
+	sr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUser, gotKey = r.Header.Get("X-API-User"), r.Header.Get("X-Api-Key")
+		switch {
+		case r.URL.Path == "/api/v1/auth/me":
+			io.WriteString(w, `{"id":7}`)
+		case r.URL.Path == "/api/v1/search":
+			io.WriteString(w, `{"results":[{"id":1,"mediaType":"movie","title":"Film","posterPath":"/../x"},{"id":2,"mediaType":"person"}]}`)
+		case r.Method == "POST" && r.URL.Path == "/api/v1/request":
+			posted = append(posted, "request")
+			io.WriteString(w, `{"id":99,"status":1}`)
+		case r.URL.Path == "/api/v1/request":
+			io.WriteString(w, `{"results":[{"id":5,"status":1,"media":{"mediaType":"movie","tmdbId":3},"requestedBy":{"displayName":"Sam"}}]}`)
+		case r.URL.Path == "/api/v1/movie/3":
+			io.WriteString(w, `{"title":"Pending Film"}`)
+		case r.URL.Path == "/api/v1/request/5":
+			io.WriteString(w, `{"status":1}`)
+		case r.URL.Path == "/api/v1/request/5/approve":
+			posted = append(posted, "approve")
+			io.WriteString(w, `{}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer sr.Close()
+	e := newEnv(t)
+	if _, b := e.do("GET", "/api/v1/media-request/status", nil, false); !strings.Contains(string(b), "false") {
+		t.Fatalf("off by default: %s", b)
+	}
+	if code, _ := e.do("GET", "/api/v1/media-request/search?query=film", nil, false); code != 503 {
+		t.Fatalf("search must fail closed: %d", code)
+	}
+	s := e.cfg.Get()
+	s.Requests.Enabled, s.Requests.URL, s.Requests.APIKey, s.Requests.UserID = true, sr.URL, "SEERRKEY", 7
+	_ = e.cfg.Set(s)
+	_, b := e.do("GET", "/api/v1/media-request/search?query=film", nil, false)
+	if !strings.Contains(string(b), "Film") || strings.Contains(string(b), "person") || strings.Contains(string(b), "../") || gotUser != "7" || gotKey != "SEERRKEY" {
+		t.Fatalf("search: %s user=%q", b, gotUser)
+	}
+	if code, _ := e.do("POST", "/api/v1/media-request", map[string]any{"media_id": 1, "media_type": "tv"}, false); code != 400 {
+		t.Fatalf("a show needs all seasons confirmed: %d", code)
+	}
+	for i := 0; i < 10; i++ {
+		if code, _ := e.do("POST", "/api/v1/media-request", map[string]any{"media_id": 1, "media_type": "movie"}, false); code != 201 {
+			t.Fatalf("request %d = %d", i, code)
+		}
+	}
+	if code, _ := e.do("POST", "/api/v1/media-request", map[string]any{"media_id": 1, "media_type": "movie"}, false); code != 429 {
+		t.Fatalf("11th request must be limited: %d", code)
+	}
+	_, b = e.do("GET", "/api/v1/requests", nil, false)
+	if !strings.Contains(string(b), "Pending Film") || strings.Contains(string(b), "SEERRKEY") {
+		t.Fatalf("pending list: %s", b)
+	}
+	if code, _ := e.do("POST", "/admin/api/requests/5/approve", nil, true); code != 401 {
+		t.Fatalf("approving needs the admin session: %d", code)
+	}
+}

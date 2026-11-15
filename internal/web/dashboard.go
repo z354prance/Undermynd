@@ -41,12 +41,10 @@ func (s *Server) dashboardRoutes(mux *http.ServeMux, files http.Handler) {
 	mux.HandleFunc("GET /api/v1/auth/status", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"authenticated": false, "setup_required": false})
 	})
-	mux.HandleFunc("GET /api/v1/media-request/status", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, map[string]any{"enabled": false})
-	})
-	mux.HandleFunc("GET /api/v1/requests", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, map[string]any{"requests": []any{}, "errors": []string{}})
-	})
+	mux.HandleFunc("GET /api/v1/media-request/status", s.requestStatus)
+	mux.HandleFunc("GET /api/v1/media-request/search", s.requestSearch)
+	mux.HandleFunc("POST /api/v1/media-request", s.requestCreate)
+	mux.HandleFunc("GET /api/v1/requests", s.requestsPending)
 	mux.HandleFunc("GET /api/v1/donations", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, s.Cfg.Get().Donations)
 	})
