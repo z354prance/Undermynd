@@ -109,8 +109,9 @@ func (s *Server) Handler() http.Handler {
 	return secure(mux)
 }
 
-// frameAncestors lists the sites allowed to embed the public dashboard in a frame,
-// as Overmynd's was. UNDERMYND_FRAME_ANCESTORS replaces it; the admin pages are never framed.
+// frameAncestors lists the sites allowed to embed the pages in a frame, as Overmynd's
+// were: the public dashboard and the admin pages. UNDERMYND_FRAME_ANCESTORS replaces
+// the list; "'none'" turns embedding off.
 func frameAncestors() string {
 	if v := strings.TrimSpace(os.Getenv("UNDERMYND_FRAME_ANCESTORS")); v != "" {
 		return v
@@ -124,8 +125,8 @@ func secure(next http.Handler) http.Handler {
 		h := w.Header()
 		admin := strings.HasPrefix(r.URL.Path, "/admin") || strings.HasPrefix(r.URL.Path, "/assets/")
 		if admin {
-			h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
-			h.Set("X-Frame-Options", "DENY")
+			// The admin pages may be framed only by the same sites as the public page.
+			h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; frame-ancestors "+embed+"; base-uri 'none'; form-action 'self'")
 		} else {
 			h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https://image.tmdb.org; style-src 'self' 'unsafe-inline'; frame-ancestors "+embed+"; base-uri 'none'; form-action 'self'")
 		}
@@ -338,9 +339,16 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusUnauthorized, "sign-in failed") // never says which part was wrong
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: tok, Path: "/admin", HttpOnly: true,
-		Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
-		SameSite: http.SameSiteStrictMode, MaxAge: int(s.Auth.SessionTTL.Seconds())})
+	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	c := &http.Cookie{Name: cookieName, Value: tok, Path: "/admin", HttpOnly: true,
+		Secure: secure, SameSite: http.SameSiteStrictMode, MaxAge: int(s.Auth.SessionTTL.Seconds())}
+	if secure && frameAncestors() != "'none'" {
+		// A page framed by another site only gets its cookie back if it is SameSite=None.
+		// It is kept per embedding site (Partitioned), and every change still needs the
+		// request header and a same-origin Origin, so this does not open it to forged requests.
+		c.SameSite, c.Partitioned = http.SameSiteNoneMode, true
+	}
+	http.SetCookie(w, c)
 	writeJSON(w, map[string]any{"ok": true})
 }
 
@@ -348,7 +356,11 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(cookieName); err == nil {
 		s.Auth.Logout(c.Value)
 	}
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/admin", MaxAge: -1, HttpOnly: true})
+	gone := &http.Cookie{Name: cookieName, Value: "", Path: "/admin", MaxAge: -1, HttpOnly: true}
+	if (r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https") && frameAncestors() != "'none'" {
+		gone.Secure, gone.SameSite, gone.Partitioned = true, http.SameSiteNoneMode, true // must match to clear it
+	}
+	http.SetCookie(w, gone)
 	writeJSON(w, map[string]any{"ok": true})
 }
 

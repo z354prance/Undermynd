@@ -328,8 +328,8 @@ func TestDashboardActivityShape(t *testing.T) {
 	}
 }
 
-// Overmynd was embedded in a frame on the owner's site; the public page still may be,
-// but the admin pages never.
+// Overmynd was embedded in a frame on the owner's site; the public and admin pages may be,
+// by the configured sites only.
 func TestFrameAncestors(t *testing.T) {
 	e := newEnv(t)
 	req, _ := http.NewRequest("GET", e.srv.URL+"/", nil)
@@ -344,7 +344,15 @@ func TestFrameAncestors(t *testing.T) {
 	req, _ = http.NewRequest("GET", e.srv.URL+"/admin", nil)
 	resp, _ = http.DefaultClient.Do(req)
 	resp.Body.Close()
-	if !strings.Contains(resp.Header.Get("Content-Security-Policy"), "frame-ancestors 'none'") || resp.Header.Get("X-Frame-Options") != "DENY" {
-		t.Fatal("the admin page must never be framed")
+	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "frame-ancestors 'self' https://xivix.cc") || resp.Header.Get("X-Frame-Options") != "" {
+		t.Fatalf("the admin page may be framed by the same sites only: %q", csp)
+	}
+	t.Setenv("UNDERMYND_FRAME_ANCESTORS", "'none'")
+	e2 := newEnv(t)
+	req, _ = http.NewRequest("GET", e2.srv.URL+"/admin", nil)
+	resp, _ = http.DefaultClient.Do(req)
+	resp.Body.Close()
+	if !strings.Contains(resp.Header.Get("Content-Security-Policy"), "frame-ancestors 'none'") {
+		t.Fatal("embedding must be switchable off")
 	}
 }
