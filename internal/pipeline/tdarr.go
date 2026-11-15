@@ -59,7 +59,7 @@ func (e *Engine) sendToTdarr(j job.Job) bool {
 	if cli, lib := e.tdarrClient(), e.Cfg.Get().Tdarr.LibraryID; cli != nil && lib != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		if err := cli.Scan(ctx, lib, e.tdarrIn(j.ID)); err != nil {
+		if err := cli.Scan(ctx, lib, e.Cfg.Get().Tdarr.InDir); err != nil {
 			e.Log.Printf("job %s tdarr scan request: %v (the library's folder watcher will still find it)", short(j.ID), err)
 		}
 	}

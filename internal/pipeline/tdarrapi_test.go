@@ -71,14 +71,14 @@ func newFakeTdarr() *fakeTdarr {
 		var req struct {
 			Data struct {
 				ScanConfig struct {
-					DBID        string   `json:"dbID"`
-					ArrayOrPath []string `json:"arrayOrPath"`
+					DBID        string `json:"dbID"`
+					ArrayOrPath string `json:"arrayOrPath"`
 				} `json:"scanConfig"`
 			} `json:"data"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		f.mu.Lock()
-		f.scans = append(f.scans, req.Data.ScanConfig.DBID+":"+strings.Join(req.Data.ScanConfig.ArrayOrPath, ","))
+		f.scans = append(f.scans, req.Data.ScanConfig.DBID+":"+req.Data.ScanConfig.ArrayOrPath)
 		f.mu.Unlock()
 		fmt.Fprint(w, "{}")
 	})
@@ -112,7 +112,7 @@ func TestTdarrAPIProgressAndSuccess(t *testing.T) {
 	u, td, id, in := setupTranscode(t, "")
 	td.mu.Lock()
 	if len(td.scans) != 1 || !strings.HasPrefix(td.scans[0], "lib1:") {
-		t.Fatalf("expected one scan of the job folder in the dedicated library, got %v", td.scans)
+		t.Fatalf("expected one scan of the input folder in the dedicated library, got %v", td.scans)
 	}
 	td.workers["w1"] = map[string]any{"_id": "w1", "idle": false, "file": in, "percentage": 40.0, "status": "Transcoding"}
 	td.mu.Unlock()

@@ -153,10 +153,12 @@ func (c *Client) ActiveWorkers(ctx context.Context) ([]Worker, error) {
 	return out, nil
 }
 
-// Scan asks Tdarr to look at exactly one path in exactly one library, so a new file is
-// picked up at once and does not depend on a folder watcher or a schedule.
+// Scan asks Tdarr to look for new files in the library's folder, the same request
+// its "Scan (find new)" button sends, so a new file is picked up at once and does not
+// depend on a folder watcher or a schedule. The path is a single folder string; a list
+// of paths is read as individual files and finds nothing in a folder.
 func (c *Client) Scan(ctx context.Context, libraryID, path string) error {
-	req := map[string]any{"data": map[string]any{"scanConfig": map[string]any{"dbID": libraryID, "arrayOrPath": []string{path}, "mode": "scanFindNew"}}}
+	req := map[string]any{"data": map[string]any{"scanConfig": map[string]any{"dbID": libraryID, "arrayOrPath": path, "mode": "scanFindNew"}}}
 	return c.do(ctx, http.MethodPost, "scan-files", req, nil)
 }
 
