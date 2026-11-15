@@ -94,6 +94,10 @@ func secure(next http.Handler) http.Handler {
 		h.Set("Referrer-Policy", "no-referrer")
 		if strings.HasPrefix(r.URL.Path, "/admin") {
 			h.Set("Cache-Control", "no-store")
+		} else if strings.HasPrefix(r.URL.Path, "/assets/") {
+			// The page scripts change with every release and carry no version in
+			// their name, so a cached copy would show an old admin page.
+			h.Set("Cache-Control", "no-store")
 		}
 		next.ServeHTTP(w, r)
 	})
