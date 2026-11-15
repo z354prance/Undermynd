@@ -28,6 +28,7 @@ import (
 	"github.com/z354prance/undermynd/internal/progress"
 	"github.com/z354prance/undermynd/internal/rss"
 	"github.com/z354prance/undermynd/internal/secret"
+	"github.com/z354prance/undermynd/internal/storage"
 	"github.com/z354prance/undermynd/internal/store"
 )
 
@@ -46,6 +47,7 @@ type Server struct {
 	Auth     *auth.Auth
 	Log      *log.Logger
 	Progress interface{ Snapshot() progress.Snapshot }
+	Storage  *storage.Monitor
 	RSS      interface {
 		Status() []rss.FeedStatus
 		CheckNow(context.Context)

@@ -2,10 +2,9 @@ package web
 
 import (
 	"net/http"
-	"syscall"
-	"time"
 
 	"github.com/z354prance/undermynd/internal/job"
+	"github.com/z354prance/undermynd/internal/storage"
 )
 
 // The public dashboard is Overmynd's page (static/dash), unchanged except for the
@@ -228,13 +227,12 @@ func (s *Server) v1Recent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"items": items, "errors": []string{}, "configured": true})
 }
 
-// v1Storage reports the free space of the filesystem the downloads live on.
+// v1Storage serves the cached library sizes and the free space of the media
+// filesystem, exactly as Overmynd's storage monitor did (UNDERMYND_STORAGE_ROOT).
 func (s *Server) v1Storage(w http.ResponseWriter, r *http.Request) {
-	var st syscall.Statfs_t
-	if err := syscall.Statfs(s.Cfg.Env.Complete(), &st); err != nil {
-		writeJSON(w, map[string]any{"enabled": false})
-		return
+	snap := storage.Snapshot{Enabled: false, Categories: []storage.Category{}}
+	if s.Storage != nil {
+		snap = s.Storage.Snapshot()
 	}
-	total, free := int64(st.Blocks)*int64(st.Bsize), int64(st.Bavail)*int64(st.Bsize)
-	writeJSON(w, map[string]any{"enabled": true, "total_bytes": total, "free_bytes": free, "categories": []any{}, "updated_at": time.Now()})
+	writeJSON(w, snap)
 }

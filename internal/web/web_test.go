@@ -3,6 +3,7 @@ package web_test
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/z354prance/undermynd/internal/storage"
 	"io"
 	"log"
 	"net/http"
@@ -354,5 +355,57 @@ func TestFrameAncestors(t *testing.T) {
 	resp.Body.Close()
 	if !strings.Contains(resp.Header.Get("Content-Security-Policy"), "frame-ancestors 'none'") {
 		t.Fatal("embedding must be switchable off")
+	}
+}
+
+// The storage readout comes from the media share (UNDERMYND_STORAGE_ROOT), not the downloads disk.
+func TestStorageEndpointReadsTheMediaRoot(t *testing.T) {
+	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, "Movies"), 0o755)
+	_ = os.WriteFile(filepath.Join(root, "Movies", "a.mkv"), make([]byte, 4096), 0o644)
+	dir := t.TempDir()
+	cfg, _ := config.Load(config.Env{ConfigDir: filepath.Join(dir, "c"), DataDir: filepath.Join(dir, "d")})
+	st, _ := store.Open(filepath.Join(dir, "c", "jobs.json"))
+	au, _ := auth.New(filepath.Join(dir, "c"))
+	l := log.New(io.Discard, "", 0)
+	srv := web.New(st, pipeline.New(st, cfg, l), cfg, au, l)
+	srv.Storage = storage.New(root)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	get := func() map[string]any {
+		resp, err := http.Get(ts.URL + "/api/v1/storage")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var m map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&m)
+		return m
+	}
+	get() // starts the scan
+	var m map[string]any
+	for i := 0; i < 50; i++ {
+		time.Sleep(100 * time.Millisecond)
+		if m = get(); m["scanning"] == false {
+			break
+		}
+	}
+	cats, _ := m["categories"].([]any)
+	if m["enabled"] != true || len(cats) != 5 || m["total_bytes"] == nil {
+		t.Fatalf("storage: %v", m)
+	}
+	if first := cats[0].(map[string]any); first["name"] != "Movies" || first["bytes"] != float64(4096) {
+		t.Fatalf("movies: %v", cats[0])
+	}
+	if off := web.New(st, pipeline.New(st, cfg, l), cfg, au, l); off != nil {
+		ts2 := httptest.NewServer(off.Handler())
+		defer ts2.Close()
+		resp, _ := http.Get(ts2.URL + "/api/v1/storage")
+		var d map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&d)
+		resp.Body.Close()
+		if d["enabled"] != false {
+			t.Fatalf("with no root set the readout must be off: %v", d)
+		}
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/z354prance/undermynd/internal/qbitapi"
 	"github.com/z354prance/undermynd/internal/rss"
 	"github.com/z354prance/undermynd/internal/sabapi"
+	"github.com/z354prance/undermynd/internal/storage"
 	"github.com/z354prance/undermynd/internal/store"
 	"github.com/z354prance/undermynd/internal/watch"
 	"github.com/z354prance/undermynd/internal/web"
@@ -114,6 +115,7 @@ func main() {
 	go eng.Run(ctx, env.TickInterval)
 	pt := progress.New(cfg, st, logger)
 	site.Progress = pt
+	site.Storage = storage.New(os.Getenv("UNDERMYND_STORAGE_ROOT"))
 	go pt.Run(ctx)
 	rp := rss.New(cfg, eng, logger)
 	site.RSS = rp
