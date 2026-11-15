@@ -230,3 +230,10 @@ body.ui .sl h4,body.ui .card h4{color:#e5e8e2}
 body.ui .card:not(.setting){border-radius:4px;background:#0f100f}
 .orow.rrow .acts.rhoriz,.jrow .acts.rhoriz{flex-direction:row;white-space:nowrap;flex-wrap:nowrap}
 .orow.rrow .jname{min-width:0}
+/* long release names must wrap inside their card, not push the columns apart */
+.ocols>div{min-width:0}
+.ncard{min-width:0;overflow:hidden}
+.ncard .nh{align-items:flex-start}
+.ncard .nh .link{min-width:0;flex:1;overflow-wrap:anywhere;word-break:break-all;text-align:left;white-space:normal}
+.ncard .nh .fpill{flex:none}
+.ncard .reason{overflow-wrap:anywhere;word-break:break-word}
