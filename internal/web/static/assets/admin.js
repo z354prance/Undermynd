@@ -91,7 +91,7 @@
         var r=el('tr');var n=el('td');var a=el('button','link',j.name);a.onclick=function(){detailId=j.id;detail(body,j.id)};n.appendChild(a);
         if(j.flag)n.appendChild(el('div','flag',j.flag));if(j.reason&&j.state!=='cleaned')n.appendChild(el('div','reason',j.reason));r.appendChild(n);
         r.appendChild(el('td','mono',j.source+' / '+j.category));
-        var st=el('td','',j.state);if(j.state==='failed')st.style.color='var(--red)';r.appendChild(st);
+        var st=el('td');st.appendChild(el('span','pill '+j.state,j.state));r.appendChild(st);
         var pct=Math.round(j.progress*100);var pt=el('td');var bar2=el('div','bar');var fill=el('i');fill.style.width=pct+'%';bar2.appendChild(fill);pt.appendChild(bar2);pt.appendChild(el('span','reason',pct+'%'+(j.transcodeNode?' · '+j.transcodeNode+(j.transcodeWorker?' / '+j.transcodeWorker:''):'')));r.appendChild(pt);
         r.appendChild(el('td','mono',j.backend||'-'));r.appendChild(el('td','mono',ago(j.created)));
         var act=el('td','acts');
@@ -151,21 +151,14 @@
   function pane(body){
     body.replaceChildren();
     ({arrs:arrsPane,clients:clientsPane,transcode:transcodePane,playback:playbackPane,public:publicPane,rss:rssPane,system:systemPane})[tab](body);
-    if(tab!=='system'&&tab!=='rss')fold(body);
+    if(tab!=='system'&&tab!=='rss')split(body);
   }
-  // Settings cards fold under their heading so a long pane reads as a short list.
-  var opened={};
-  function fold(body){
-    var cards=[].filter.call(body.children,function(c){return c.classList.contains('card')&&c.firstChild&&c.firstChild.tagName==='H4'});
-    if(cards.length<2)return;
-    cards.forEach(function(c,i){
-      var h=c.firstChild,key=tab+':'+h.firstChild.textContent.trim();
-      var inner=el('div','fold');while(h.nextSibling)inner.appendChild(h.nextSibling);c.appendChild(inner);
-      c.classList.add('folded');h.classList.add('fh4');var caret=el('span','caret','▸');h.insertBefore(caret,h.firstChild);
-      function set(o){c.classList.toggle('open',o);caret.textContent=o?'▾':'▸';opened[key]=o}
-      set(opened[key]===undefined?i===0:opened[key]);
-      h.onclick=function(){set(!c.classList.contains('open'))};
-    });
+  // A settings card becomes a row: its title and explanation on the left, the fields on the right.
+  function split(body){
+    [].filter.call(body.children,function(c){return c.classList.contains('card')&&c.firstChild&&c.firstChild.tagName==='H4'}).forEach(function(c){
+      var l=el('div','sl'),r=el('div','sr');l.appendChild(c.firstChild);
+      if(c.firstChild&&c.firstChild.classList&&c.firstChild.classList.contains('hint'))l.appendChild(c.firstChild);
+      while(c.firstChild)r.appendChild(c.firstChild);c.classList.add('setting');c.appendChild(l);c.appendChild(r)})
   }
 
   function arrsPane(body){
