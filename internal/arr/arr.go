@@ -16,7 +16,11 @@ type Client struct {
 	BaseURL string
 	APIKey  string
 	HTTP    *http.Client
+	note    string
 }
+
+// Note says what the last history check saw, so a job that never gets confirmed can be explained.
+func (c *Client) Note() string { return c.note }
 
 func New(kind, baseURL, apiKey string) *Client {
 	return &Client{Kind: kind, BaseURL: strings.TrimRight(baseURL, "/"), APIKey: apiKey,
@@ -60,15 +64,20 @@ func (c *Client) Imported(ctx context.Context, downloadID string) (bool, error) 
 	if err := json.NewDecoder(resp.Body).Decode(&h); err != nil {
 		return false, err
 	}
+	var seen []string
+	matched := 0
 	for _, r := range h.Records {
 		if !strings.EqualFold(r.DownloadID, downloadID) {
 			continue // the endpoint may ignore the filter on older versions
 		}
+		matched++
+		seen = append(seen, r.EventType)
 		e := strings.ToLower(r.EventType)
 		if strings.Contains(e, "imported") && !strings.Contains(e, "fail") {
 			return true, nil
 		}
 	}
+	c.note = fmt.Sprintf("%s history returned %d record(s), %d for this download (events: %s)", c.Kind, len(h.Records), matched, strings.Join(seen, ", "))
 	return false, nil
 }
 

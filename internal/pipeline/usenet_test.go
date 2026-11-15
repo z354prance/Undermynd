@@ -479,3 +479,28 @@ func TestWatchJobKeepsItsFilesAndEnds(t *testing.T) {
 		t.Fatal("the TorBox item must still be removed")
 	}
 }
+
+// An arr that imports by moving leaves the complete folder empty. When its
+// history never shows the import, that still counts, after a short wait.
+func TestFilesMovedOutOfCompleteMeansImported(t *testing.T) {
+	u := newURig(t)
+	id := u.addNZB("Moved.Show.S01E01")
+	u.tick(2)
+	u.tb.finish("101", map[string]string{"Moved.Show.S01E01/Moved.Show.S01E01.mkv": strings.Repeat("m", 4000)})
+	u.tick(3)
+	j, _ := u.st.Get(id)
+	if j.State != job.Ready {
+		t.Fatalf("expected ready, got %s (%s)", j.State, j.Reason)
+	}
+	u.tick(3)
+	if j, _ = u.st.Get(id); j.State != job.Ready {
+		t.Fatalf("with the file still in place the job must keep waiting, got %s", j.State)
+	}
+	if err := os.Remove(filepath.Join(j.CompleteDir, "Moved.Show.S01E01.mkv")); err != nil {
+		t.Fatal(err)
+	}
+	u.tick(4)
+	if j, _ = u.st.Get(id); j.State != job.Cleaned {
+		t.Fatalf("expected cleaned after the arr moved the files, got %s (%s)", j.State, j.Reason)
+	}
+}

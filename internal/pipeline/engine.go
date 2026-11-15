@@ -51,6 +51,8 @@ type Engine struct {
 	tcache   *backend.TorBox
 	ttcache  *backend.TorBox
 	lim      *backend.Limiter
+	nmu      sync.Mutex
+	notes    map[string]string
 
 	pulling sync.Map // job ID -> running
 	wg      sync.WaitGroup
@@ -767,7 +769,22 @@ func (e *Engine) doReady(ctx context.Context, j job.Job) {
 				return nil
 			})
 			return
+		default:
+			if n, has := chk.(interface{ Note() string }); has {
+				e.noteOnce(j.ID, "import check: "+n.Note())
+			}
 		}
+	}
+	// An arr that imports by moving takes the files out of the complete folder. If
+	// none are left a while after the job was ready, the import happened even when
+	// the history call did not show it.
+	if j.CompleteDir != "" && now.Sub(j.StateChanged) > time.Minute && !hasMedia(j.CompleteDir) {
+		_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
+			c.Move(job.Imported, "the files left the complete folder, so the arr moved them", now)
+			return nil
+		})
+		e.Log.Printf("job %s: no media left in %s, treating it as imported", short(j.ID), j.CompleteDir)
+		return
 	}
 	flag := ""
 	if h := int(now.Sub(j.StateChanged).Hours()); h >= s.FlagImportHours {
@@ -1088,4 +1105,34 @@ func (e *Engine) runPull(ctx context.Context, id string) {
 		c.Move(job.Downloaded, "files copied", e.Now())
 		return nil
 	})
+}
+
+// noteOnce logs a line for a job only when it differs from the last one, so a
+// check that repeats every few seconds does not fill the log.
+func (e *Engine) noteOnce(id, msg string) {
+	e.nmu.Lock()
+	defer e.nmu.Unlock()
+	if e.notes == nil {
+		e.notes = map[string]string{}
+	}
+	if e.notes[id] == msg {
+		return
+	}
+	e.notes[id] = msg
+	e.Log.Printf("job %s %s", short(id), msg)
+}
+
+// hasMedia reports whether any media file is left under dir.
+func hasMedia(dir string) bool {
+	found := false
+	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || found {
+			return nil
+		}
+		if !d.IsDir() && mediaExt[strings.ToLower(filepath.Ext(d.Name()))] {
+			found = true
+		}
+		return nil
+	})
+	return found
 }
