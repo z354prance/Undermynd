@@ -39,6 +39,8 @@ type Recent struct {
 	Date     time.Time `json:"date"`
 	Year     int       `json:"year,omitempty"`
 	Episodes []string  `json:"episodes,omitempty"`
+	Poster   string    `json:"poster,omitempty"`
+	Arr      string    `json:"arr,omitempty"`
 }
 
 type Snapshot struct {
@@ -235,6 +237,9 @@ func (t *Tracker) Refresh(ctx context.Context) {
 			if ims, ierr := t.ArrFor(cat).RecentImports(ctx); ierr != nil {
 				t.missErrs = append(t.missErrs, fmt.Sprintf("%s history: %v", cat.Name, ierr))
 			} else {
+				for i := range ims {
+					ims[i].Arr = cat.Name
+				}
 				imports = append(imports, ims...)
 			}
 			items, err := t.ArrFor(cat).MissingItems(ctx)
@@ -319,7 +324,7 @@ func groupRecent(in []arr.Import, n int) []Recent {
 			continue
 		}
 		idx[k] = len(out)
-		r := Recent{Kind: im.Kind, Title: im.Title, Count: 1, Date: im.Date, Year: im.Year}
+		r := Recent{Kind: im.Kind, Title: im.Title, Count: 1, Date: im.Date, Year: im.Year, Poster: im.Poster, Arr: im.Arr}
 		if im.Detail != "" {
 			r.Episodes = []string{im.Detail}
 		}

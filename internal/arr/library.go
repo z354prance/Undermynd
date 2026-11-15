@@ -196,6 +196,8 @@ type Import struct {
 	Date   time.Time `json:"date"`
 	Detail string    `json:"detail,omitempty"` // "S01E02 - Episode title" for episodes
 	Year   int       `json:"year,omitempty"`
+	Poster string    `json:"poster,omitempty"` // /MediaCover/<id>/poster.jpg on the arr
+	Arr    string    `json:"arr,omitempty"`    // category name, filled in by the caller
 }
 
 // RecentImports reads the newest import events from the arr's history.
@@ -203,6 +205,8 @@ func (c *Client) RecentImports(ctx context.Context) ([]Import, error) {
 	var r struct {
 		Records []struct {
 			EventType string    `json:"eventType"`
+			SeriesID  int64     `json:"seriesId"`
+			MovieID   int64     `json:"movieId"`
 			Date      time.Time `json:"date"`
 			Series    struct {
 				Title string `json:"title"`
@@ -239,9 +243,9 @@ func (c *Client) RecentImports(ctx context.Context) ([]Import, error) {
 			if x.Episode.Title != "" {
 				d += " - " + x.Episode.Title
 			}
-			out = append(out, Import{Kind: "episode", Title: x.Series.Title, Date: x.Date, Detail: d})
+			out = append(out, Import{Kind: "episode", Title: x.Series.Title, Date: x.Date, Detail: d, Poster: cover(x.SeriesID)})
 		case "radarr":
-			out = append(out, Import{Kind: "movie", Title: x.Movie.Title, Date: x.Date, Year: x.Movie.Year})
+			out = append(out, Import{Kind: "movie", Title: x.Movie.Title, Date: x.Date, Year: x.Movie.Year, Poster: cover(x.MovieID)})
 		case "lidarr":
 			t := x.Artist.Name
 			if x.Album.Title != "" {
@@ -251,4 +255,11 @@ func (c *Client) RecentImports(ctx context.Context) ([]Import, error) {
 		}
 	}
 	return out, nil
+}
+
+func cover(id int64) string {
+	if id <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("/MediaCover/%d/poster.jpg", id)
 }
