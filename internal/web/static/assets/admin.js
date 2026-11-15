@@ -231,11 +231,11 @@
 
   function playbackPane(body){
     var P=S.playback||{};
-    body.appendChild(head('Playback (Tracearr and Emby)','Feeds the public page: Now Playing comes from Tracearr (Recently Added comes from your arrs’ imports). Emby is only used to hide whole libraries from Now Playing.'));
+    body.appendChild(head('Playback (Tracearr and Emby)','Feeds the public page: Now Playing and Recently Added come from Tracearr (music is added from Lidarr). Emby is only used to hide whole libraries from Now Playing.'));
     var c=el('div','card');var h=el('h4','','Tracearr ');h.appendChild(chip(!!P.tracearrUrl&&P.hasTracearrKey,P.tracearrUrl&&P.hasTracearrKey?'configured':'not set'));c.appendChild(h);
     var g=el('div','grid3');
     var tu=row(g,'Tracearr address',{value:P.tracearrUrl,ph:'http://10.0.0.8:3000'});
-    var tk=row(g,'Public API key',{type:'password',ph:P.hasTracearrKey?'set — leave blank to keep':'Tracearr → Settings → Public API',help:'read-only access to streams'});
+    var tk=row(g,'Public API key',{type:'password',ph:P.hasTracearrKey?'set — leave blank to keep':'Tracearr → Settings → Public API',help:'read-only access to streams and recently added'});
     c.appendChild(g);body.appendChild(c);
     var c2=el('div','card');var h2=el('h4','','Hidden libraries ');h2.appendChild(chip(!!P.hiddenLibraries,P.hiddenLibraries?'hiding '+P.hiddenLibraries:'none hidden'));c2.appendChild(h2);
     var g2=el('div','grid3');

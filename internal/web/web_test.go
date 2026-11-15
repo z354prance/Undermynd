@@ -458,4 +458,8 @@ func TestPlaybackFromTracearr(t *testing.T) {
 	if code, _ := e.do("GET", "/api/v1/playback/poster?path=%2Fapi%2Fv1%2Fimages%2Fproxy&signature=bad", nil, false); code != 404 {
 		t.Fatalf("unsigned poster = %d", code)
 	}
+	_, b = e.do("GET", "/api/v1/recently-added", nil, false)
+	if !strings.Contains(string(b), `"Film"`) || !strings.Contains(string(b), "playback/poster") {
+		t.Fatalf("recently added: %s", b)
+	}
 }

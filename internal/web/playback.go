@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -128,35 +129,74 @@ func (s *Server) playbackStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"status": st})
 }
 
-// v1Recent lists what Sonarr, Radarr and Lidarr imported lately, music included.
-func (s *Server) v1Recent(w http.ResponseWriter, r *http.Request) {
+// arrRecent turns the arrs' import history into Recently Added items.
+func (s *Server) arrRecent(musicOnly bool) []map[string]any {
 	items := []map[string]any{}
-	if s.Progress != nil {
-		for i, x := range s.Progress.Snapshot().Recent {
-			it := map[string]any{"id": "recent:" + itoa(i) + ":" + x.Title, "title": x.Title, "added_at": x.Date, "stage": "available"}
-			if x.Poster != "" {
-				if u := signedCover(x.Arr, x.Poster); u != "" {
-					it["poster_url"] = u
-				}
-			}
-			switch x.Kind {
-			case "episode":
-				it["kind"], it["show_title"], it["episodes"] = "series", x.Title, x.Episodes
-			case "movie":
-				it["kind"] = "movie"
-				if x.Year != 0 {
-					it["year"] = x.Year
-				}
-			default:
-				it["kind"] = x.Kind
-			}
-			items = append(items, it)
+	if s.Progress == nil {
+		return items
+	}
+	for i, x := range s.Progress.Snapshot().Recent {
+		isMusic := x.Kind != "movie" && x.Kind != "episode"
+		if musicOnly && !isMusic {
+			continue
 		}
+		it := map[string]any{"id": "recent:" + itoa(i) + ":" + x.Title, "title": x.Title, "added_at": x.Date, "stage": "available"}
+		switch x.Kind {
+		case "episode":
+			it["kind"], it["show_title"], it["episodes"] = "series", x.Title, x.Episodes
+		case "movie":
+			it["kind"] = "movie"
+			if x.Year != 0 {
+				it["year"] = x.Year
+			}
+		default:
+			it["kind"] = x.Kind
+		}
+		if u := signedCover(x.Arr, x.Poster); u != "" {
+			it["poster_url"] = u
+		}
+		items = append(items, it)
 	}
-	if len(items) > 6 {
-		items = items[:6]
+	return items
+}
+
+// v1Recent shows Tracearr's confirmed movie and show additions with music from
+// Lidarr merged in; without Tracearr it falls back to the arrs' import history.
+func (s *Server) v1Recent(w http.ResponseWriter, r *http.Request) {
+	c, ok := s.tracearr()
+	if !ok {
+		items := s.arrRecent(false)
+		if len(items) > 6 {
+			items = items[:6]
+		}
+		writeJSON(w, map[string]any{"items": items, "errors": []string{}, "configured": true})
+		return
 	}
-	writeJSON(w, map[string]any{"items": items, "errors": []string{}, "configured": true})
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+	res := c.RecentlyAdded(ctx)
+	type entry struct {
+		at time.Time
+		v  any
+	}
+	all := []entry{}
+	for _, it := range res.Items {
+		it.PosterURL = signedPoster(it.PosterURL)
+		all = append(all, entry{it.AddedAt, it})
+	}
+	for _, m := range s.arrRecent(true) {
+		at, _ := m["added_at"].(time.Time)
+		all = append(all, entry{at, m})
+	}
+	sort.SliceStable(all, func(i, j int) bool { return all[i].at.After(all[j].at) })
+	if len(all) > 6 {
+		all = all[:6]
+	}
+	items := make([]any, 0, len(all))
+	for _, e := range all {
+		items = append(items, e.v)
+	}
+	writeJSON(w, map[string]any{"items": items, "errors": res.Errors, "configured": true})
 }
 
 func (s *Server) v1Poster(w http.ResponseWriter, r *http.Request) {
