@@ -547,7 +547,7 @@ func (e *Engine) doDownload(ctx context.Context, j job.Job) {
 		if j.State == job.Submitted && now.Sub(j.StateChanged) < 2*time.Minute {
 			return
 		}
-		e.fail(j, "the item disappeared from the download client")
+		e.fail(j, "the download client no longer has this item (TorBox may have removed a failed download)")
 	case backend.Errored:
 		e.reSubmitOrFail(ctx, j, it.Error)
 	case backend.Complete:

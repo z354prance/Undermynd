@@ -248,6 +248,38 @@ func (t *TorBox) list(ctx context.Context) (map[string]tbItem, error) {
 	return m, nil
 }
 
+// lookup asks TorBox for one item by ID, with live data.
+func (t *TorBox) lookup(ctx context.Context, id string) (tbItem, bool, error) {
+	data, err := t.call(ctx, API, http.MethodGet, t.ep("mylist"), url.Values{"id": {id}, "bypass_cache": {"true"}}, nil, "")
+	if err != nil {
+		return tbItem{}, false, err
+	}
+	trim := strings.TrimSpace(string(data))
+	if trim == "" || trim == "null" || trim == "[]" || trim == "{}" {
+		return tbItem{}, false, nil
+	}
+	var it tbItem
+	if strings.HasPrefix(trim, "[") {
+		var list []tbItem
+		if err := json.Unmarshal(data, &list); err != nil {
+			return tbItem{}, false, fmt.Errorf("torbox lookup: %w", err)
+		}
+		for _, x := range list {
+			if x.ID.String() == id {
+				return x, true, nil
+			}
+		}
+		return tbItem{}, false, nil
+	}
+	if err := json.Unmarshal(data, &it); err != nil {
+		return tbItem{}, false, fmt.Errorf("torbox lookup: %w", err)
+	}
+	if it.ID.String() != id {
+		return tbItem{}, false, nil
+	}
+	return it, true, nil
+}
+
 func (t *TorBox) Status(ctx context.Context, id string) (Item, error) {
 	m, err := t.list(ctx)
 	if err != nil {
@@ -255,7 +287,16 @@ func (t *TorBox) Status(ctx context.Context, id string) (Item, error) {
 	}
 	it, ok := m[id]
 	if !ok {
-		return Item{Status: Missing}, nil
+		// The list can be capped or stale; ask for this one item before calling it gone.
+		one, found, err := t.lookup(ctx, id)
+		if err != nil {
+			return Item{}, err
+		}
+		if !found {
+			t.Logf("torbox: item %s is not in the account (%d items listed)", id, len(m))
+			return Item{Status: Missing}, nil
+		}
+		it = one
 	}
 	st := strings.ToLower(it.DownloadState)
 	t.mu.Lock()
@@ -286,7 +327,14 @@ func (t *TorBox) Files(ctx context.Context, id string) ([]File, error) {
 	}
 	it, ok := m[id]
 	if !ok {
-		return nil, errors.New("torbox: item not in the list")
+		one, found, err := t.lookup(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			return nil, errors.New("torbox: item not in the list")
+		}
+		it = one
 	}
 	out := make([]File, 0, len(it.Files))
 	for _, f := range it.Files {
