@@ -194,7 +194,8 @@ function wireMarkup(item, progress) {
         line = `<b class="ln act" style="--p:${p.toFixed(1)}%"><s class="fill" style="width:${p.toFixed(1)}%;background-size:${stretch}% 100%"></s>${mode === "run" && p > 0 ? `<u class="dot" style="left:${p.toFixed(1)}%"></u>` : ""}<em class="rest"></em></b>`;
       } else line = '<b class="ln todo"></b>';
     }
-    return `<div class="st ${kind}"><div class="wr"><i class="nd"></i>${line}</div><span class="lb">${name}</span></div>`;
+    const pctLabel = cur === i && ["run","stall","fail"].includes(mode) && percent > 0 ? ` ${Math.round(percent)}%` : "";
+    return `<div class="st ${kind}"><div class="wr"><i class="nd"></i>${line}</div><span class="lb">${name}${pctLabel}</span></div>`;
   }).join("");
   return `<div class="wire w-${mode}" aria-hidden="true">${cells}</div>`;
 }
@@ -224,7 +225,7 @@ function pipelineCardMarkup(item) {
       <span class="pipeline-stage st-${mode}" title="${escapeHTML(progress.label)}">${escapeHTML(pill)}</span>
     </div>
     <div class="pipeline-progress${waiting ? " unmeasured" : ""}${progress.problems.length || progress.paused ? " paused" : ""}" role="progressbar" aria-label="${escapeHTML(title)}: ${escapeHTML(progress.label)}" aria-valuemin="0" aria-valuemax="100" ${waiting ? 'aria-valuetext="Progress not reported"' : `aria-valuenow="${Math.round(progress.percent)}"`}>${wireMarkup(item, progress)}</div>
-    <p class="pipeline-detail${problem ? " is-problem p-" + mode : ""}" title="${escapeHTML(sentence)}"><span>${escapeHTML(sentence)}</span>${waiting ? "" : `<span class="pipeline-pct">${wirePercentText(item, progress)}</span>`}</p>
+    <p class="pipeline-detail${problem ? " is-problem p-" + mode : ""}" title="${escapeHTML(sentence)}"><span>${escapeHTML(sentence)}</span></p>
     <details class="pipeline-extra"><summary>Details</summary><dl class="playback-facts">${[
       ["Title", item.title || title], ["Stage", progress.label], ["Progress", waiting ? "Not reported" : `${Math.round(progress.percent)}%`],
       ["Transfer / processing", progress.detail], ["Source", progress.serviceNames.join(", ")], ["Attention", progress.problems.map(pretty).join(", ")]
@@ -299,8 +300,8 @@ function showProgressMarkup(show) {
     const state = total > 0 && imported >= total ? "complete" : imported > 0 ? `${total - imported} to go` : "not started";
     return `<div><span>Season ${Number(s.season_number)}</span><span>${imported} / ${total}</span><span class="ss ${imported >= total && total > 0 ? "ok" : imported > 0 ? "part" : "none"}">${state}</span></div>`;
   }).join("");
-  return `<div class="pipeline-card-heading"><div>${mediaCardBadge(show)}<h3 title="${escapeHTML(show.title)}">${escapeHTML(show.title)}</h3><p class="item-meta">${show.imported} / ${show.total} imported</p></div></div>
-    <div class="season-cells" role="img" aria-label="${escapeHTML(show.title)}: ${show.imported} of ${show.total} monitored episodes imported">${seasons.map(seasonCell).join("")}</div>
+  return `<div class="pipeline-card-heading"><div>${mediaCardBadge(show)}<h3 title="${escapeHTML(show.title)}">${escapeHTML(show.title)}</h3></div><span class="series-count">${show.imported} / ${show.total} imported</span></div>
+    <div class="series-row" role="img" aria-label="${escapeHTML(show.title)}: ${show.imported} of ${show.total} monitored episodes imported"><span class="series-label">seasons</span><span class="season-cells">${seasons.map(seasonCell).join("")}</span><span class="series-details">Details</span></div>
     <details class="season-breakdown" data-show="${escapeHTML(show.id)}"><summary>Season breakdown</summary><div class="show-season-list" tabindex="0" aria-label="Season import counts">${rows}</div></details>`;
 }
 // Only retire an ARR queue mirror for the same release in this lifecycle.

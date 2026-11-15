@@ -49,11 +49,11 @@
       const free = known ? Math.max(0, Math.min(100, 100*data.free_bytes/data.total_bytes)) : null;
       if (known) {
         const total = data.total_bytes, used = Math.max(0, total - data.free_bytes);
-        const groups = {movies:0, tv:0, music:0};
+        const groups = {movies:0, tv:0, music:0, books:0};
         let libraries = 0;
         for (const c of data.categories || []) {
           const n = Number(c.bytes) || 0, name = String(c.name).toLowerCase();
-          const key = name === "movies" ? "movies" : name === "music" ? "music" : (name === "tv" || name === "anime") ? "tv" : "";
+          const key = name === "movies" ? "movies" : name === "music" ? "music" : name === "books" ? "books" : (name === "tv" || name === "anime") ? "tv" : "";
           if (key) { groups[key] += n; libraries += n; }
         }
         const other = Math.max(0, used - libraries);
@@ -67,7 +67,7 @@
           seg.title = `${label}: ${size(bytes)}`;
           bar.append(seg);
         };
-        add("cap-movies", groups.movies, "Movies"); add("cap-tv", groups.tv, "TV"); add("cap-music", groups.music, "Music");
+        add("cap-movies", groups.movies, "Movies"); add("cap-tv", groups.tv, "TV"); add("cap-music", groups.music, "Music"); add("cap-books", groups.books, "Books");
         add("cap-other", other, "Other"); add("cap-free", data.free_bytes, "Free");
         const left = document.createElement("span"); left.className = "cap-label"; left.textContent = "storage";
         const right = document.createElement("span"); right.className = "cap-free-text"; right.textContent = `${free.toFixed(1)}% free`;
