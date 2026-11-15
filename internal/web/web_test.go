@@ -252,3 +252,23 @@ func TestPauseIntakeAndSystem(t *testing.T) {
 		t.Fatalf("system should report paused: %d %s", code, b)
 	}
 }
+
+// Renaming a category in the form must not drop the arr key that was saved under the old name.
+func TestRenamingACategoryKeepsItsArrKey(t *testing.T) {
+	e := newEnv(t)
+	e.signIn()
+	_, b := e.do("GET", "/admin/api/settings", nil, false)
+	var v map[string]any
+	_ = json.Unmarshal(b, &v)
+	cats := v["categories"].([]any)
+	c := cats[0].(map[string]any)
+	c["origName"] = c["name"]
+	c["name"] = "renamed"
+	if code, _ := e.do("PUT", "/admin/api/settings", v, true); code != 200 {
+		t.Fatal(code)
+	}
+	got := e.cfg.Get()
+	if got.Categories[0].Name != "renamed" || string(got.Categories[0].ArrAPIKey) != "TOP-SECRET-ARR-KEY" {
+		t.Fatalf("a renamed category must keep its key: %+v", got.Categories[0])
+	}
+}

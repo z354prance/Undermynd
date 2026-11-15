@@ -411,6 +411,9 @@ type categoryView struct {
 	HasArrAPIKey bool   `json:"hasArrApiKey"`
 	Transcode    bool   `json:"transcode"`
 	OnFail       string `json:"onTranscodeFail"`
+	// OrigName is the name the category had when the page loaded, so a rename
+	// keeps the saved key instead of dropping it.
+	OrigName string `json:"origName,omitempty"`
 }
 
 type settingsView struct {
@@ -500,8 +503,10 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		nc := config.Category{Name: name, Kind: c.Kind, ArrURL: strings.TrimSpace(c.ArrURL), Transcode: c.Transcode, OnTranscodeFail: c.OnFail}
 		if c.ArrAPIKey != "" {
 			nc.ArrAPIKey = secret.String(c.ArrAPIKey)
+		} else if old, ok := cur.Category(strings.TrimSpace(c.OrigName)); ok && c.OrigName != "" {
+			nc.ArrAPIKey = old.ArrAPIKey // blank means unchanged, even if the category was renamed
 		} else if old, ok := cur.Category(name); ok {
-			nc.ArrAPIKey = old.ArrAPIKey // blank means unchanged
+			nc.ArrAPIKey = old.ArrAPIKey
 		}
 		next.Categories = append(next.Categories, nc)
 	}
@@ -619,10 +624,11 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 // arrTest checks one arr connection. A blank key means the one already saved for that category.
 func (s *Server) arrTest(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Name   string `json:"name"`
-		Kind   string `json:"kind"`
-		URL    string `json:"url"`
-		APIKey string `json:"apiKey"`
+		Name     string `json:"name"`
+		OrigName string `json:"origName"`
+		Kind     string `json:"kind"`
+		URL      string `json:"url"`
+		APIKey   string `json:"apiKey"`
 	}
 	if !readJSON(w, r, &in) {
 		return
@@ -630,7 +636,7 @@ func (s *Server) arrTest(w http.ResponseWriter, r *http.Request) {
 	key := in.APIKey
 	if key == "" {
 		for _, c := range s.Cfg.Get().Categories {
-			if c.Name == in.Name {
+			if c.Name == in.Name || (in.OrigName != "" && c.Name == in.OrigName) {
 				key = string(c.ArrAPIKey)
 			}
 		}
