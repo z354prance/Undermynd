@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/job"
@@ -35,29 +36,14 @@ func (e *Engine) placeInLibrary(ctx context.Context, j job.Job, cat config.Categ
 		if _, err := os.Stat(src); errors.Is(err, fs.ErrNotExist) {
 			continue // placed on an earlier pass
 		}
-		base := filepath.Base(f)
-		rel, ok := library.Parse(base)
-		if !ok {
-			left = append(left, base+": the name has no episode number")
-			continue
-		}
-		folder, cands := library.Match(rel.Title, folders)
-		if folder == "" {
-			msg := fmt.Sprintf("no folder named %q", rel.Title)
-			if len(cands) > 0 {
-				msg += " (closest: " + strings.Join(cands, ", ") + ")"
-			}
-			left = append(left, msg)
-			continue
-		}
-		dst := filepath.Join(library.SeasonDir(filepath.Join(root, folder), rel.Season), library.Clean(base))
-		if _, err := os.Stat(dst); err == nil {
-			left = append(left, fmt.Sprintf("%s already exists in %s", filepath.Base(dst), folder))
-			continue
-		}
-		if err := moveFile(src, dst); err != nil {
+		dst, why, err := placeOne(root, folders, src)
+		if err != nil {
 			e.retry(j, err, 10, "place in library")
 			return
+		}
+		if why != "" {
+			left = append(left, why)
+			continue
 		}
 		placed++
 		e.Log.Printf("job %s placed %s", short(j.ID), dst)
@@ -85,6 +71,88 @@ func (e *Engine) placeInLibrary(ctx context.Context, j job.Job, cat config.Categ
 		return nil
 	})
 	e.Log.Printf("job %s %s", short(j.ID), why)
+}
+
+// placeOne moves one file into the library. It returns the new path, or a reason
+// the file was left where it is (an error only when the move itself failed).
+func placeOne(root string, folders []string, src string) (dst, why string, err error) {
+	base := filepath.Base(src)
+	rel, ok := library.Parse(base)
+	if !ok {
+		return "", base + ": the name has no episode number", nil
+	}
+	folder, cands := library.Match(rel.Title, folders)
+	if folder == "" {
+		msg := fmt.Sprintf("no folder named %q", rel.Title)
+		if len(cands) > 0 {
+			msg += " (closest: " + strings.Join(cands, ", ") + ")"
+		}
+		return "", msg, nil
+	}
+	dst = filepath.Join(library.SeasonDir(filepath.Join(root, folder), rel.Season), library.Clean(base))
+	if _, serr := os.Stat(dst); serr == nil {
+		return "", fmt.Sprintf("%s already exists in %s", filepath.Base(dst), folder), nil
+	}
+	if err := moveFile(src, dst); err != nil {
+		return "", "", err
+	}
+	return dst, "", nil
+}
+
+// SweepLibrary places the video files already sitting in a no-arr category's
+// complete folder (delivered before a library folder was set). Files newer than two
+// minutes are skipped, since a running job may still be handling them. Emptied
+// folders are removed; anything unplaceable stays.
+func (e *Engine) SweepLibrary(category string) (string, error) {
+	cat, ok := e.Cfg.Get().Category(category)
+	if !ok || cat.LibraryDir == "" {
+		return "", errors.New("that category has no library folder")
+	}
+	folders, err := library.Folders(cat.LibraryDir)
+	if err != nil {
+		return "", fmt.Errorf("library folder %s: %w", cat.LibraryDir, err)
+	}
+	top := e.Cfg.Env.CompleteRoot(category)
+	var files []string
+	_ = filepath.WalkDir(top, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && isVideo(p) && !strings.HasPrefix(d.Name(), ".") {
+			if fi, ierr := d.Info(); ierr == nil && e.Now().Sub(fi.ModTime()) > 2*time.Minute {
+				files = append(files, p)
+			}
+		}
+		return nil
+	})
+	placed := 0
+	var left []string
+	for _, src := range files {
+		dst, why, err := placeOne(cat.LibraryDir, folders, src)
+		if err != nil {
+			return "", err
+		}
+		if why != "" {
+			left = append(left, why)
+			continue
+		}
+		placed++
+		e.Log.Printf("sweep placed %s", dst)
+	}
+	// Remove job folders that are now empty (deepest first); never the category folder.
+	var dirs []string
+	_ = filepath.WalkDir(top, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && d.IsDir() && p != top {
+			dirs = append(dirs, p)
+		}
+		return nil
+	})
+	for i := len(dirs) - 1; i >= 0; i-- {
+		_ = os.Remove(dirs[i]) // fails harmlessly when not empty
+	}
+	msg := fmt.Sprintf("placed %d of %d file(s)", placed, len(files))
+	if l := dedupe(left); len(l) > 0 {
+		msg += "; left: " + strings.Join(l, "; ")
+	}
+	e.Log.Printf("sweep %s: %s", category, msg)
+	return msg, nil
 }
 
 func dedupe(in []string) []string {

@@ -587,3 +587,36 @@ func TestLibraryNeverOverwrites(t *testing.T) {
 		t.Fatalf("the new file should stay put with a reason: %s", got.Reason)
 	}
 }
+
+// Files delivered before a library folder was set can be placed afterwards.
+func TestSweepPlacesOlderFiles(t *testing.T) {
+	u, lib := libraryRig(t)
+	root := u.cfg.Env.CompleteRoot("manual")
+	old := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	put := func(dir, name string) string {
+		p := filepath.Join(root, dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_ = os.Chtimes(p, old, old)
+		return p
+	}
+	put("a", "[SubsPlease] Show Name - 03 (1080p) [AAAA1111].mkv")
+	stay := put("b", "[SubsPlease] Unknown Show - 01 (1080p) [BBBB2222].mkv")
+	msg, err := u.eng.SweepLibrary("manual")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists(filepath.Join(lib, "Show Name", "Season 1", "Show Name - 3 (1080p).mkv")) {
+		t.Fatalf("matching file not placed: %s", msg)
+	}
+	if !exists(stay) {
+		t.Fatal("unmatched file must stay")
+	}
+	if exists(filepath.Join(root, "a")) {
+		t.Fatal("emptied folder should be removed")
+	}
+}

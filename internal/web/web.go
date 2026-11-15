@@ -81,6 +81,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/api/system", s.admin(s.system))
 	mux.HandleFunc("POST /admin/api/intake", s.guard(s.admin(s.setIntake)))
 	mux.HandleFunc("POST /admin/api/arrs/test", s.guard(s.admin(s.arrTest)))
+	mux.HandleFunc("POST /admin/api/library/sweep", s.guard(s.admin(s.librarySweep)))
 	mux.HandleFunc("POST /admin/api/tdarr/test", s.guard(s.admin(s.tdarrTest)))
 	mux.HandleFunc("POST /admin/api/settings/client-password", s.guard(s.admin(s.newClientPassword)))
 	return secure(mux)
@@ -682,6 +683,21 @@ func (s *Server) arrTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]string{"app": app, "version": ver})
+}
+
+func (s *Server) librarySweep(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name string `json:"name"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	msg, err := s.Engine.SweepLibrary(in.Name)
+	if err != nil {
+		jsonErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, map[string]string{"result": msg})
 }
 
 func (s *Server) tdarrTest(w http.ResponseWriter, r *http.Request) {
