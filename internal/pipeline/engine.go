@@ -722,6 +722,7 @@ func (e *Engine) handBack(j job.Job) {
 		e.retry(j, err, 6, "move to complete")
 		return
 	}
+	e.openUpLog(dest)
 	_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
 		c.CompleteDir, c.StagingDir = dest, ""
 		c.Move(job.Ready, "moved to "+dest, e.Now())

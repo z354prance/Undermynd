@@ -96,6 +96,9 @@ func placeOne(root string, folders []string, src string) (dst, why string, err e
 	if err := moveFile(src, dst); err != nil {
 		return "", "", err
 	}
+	// Open up the show's season folder and the file, so the network share can manage them.
+	_ = os.Chmod(dst, 0o666)
+	_ = os.Chmod(filepath.Dir(dst), 0o777)
 	return dst, "", nil
 }
 
@@ -122,6 +125,7 @@ func (e *Engine) SweepLibrary(category string) (string, error) {
 		}
 		return nil
 	})
+	e.openUpLog(top) // fixes what was delivered before, as far as this process owns it
 	placed := 0
 	var left []string
 	for _, src := range files {
