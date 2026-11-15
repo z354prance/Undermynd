@@ -42,3 +42,23 @@ func TestCheckReportsTheArrAndCatchesABadKey(t *testing.T) {
 		t.Fatalf("a wrong key must say so, got %v", err)
 	}
 }
+
+func TestFailDownloadBlocklistsTheQueueEntry(t *testing.T) {
+	var deleted string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v3/queue":
+			w.Write([]byte(`{"records":[{"id":7,"downloadId":"ABC"},{"id":8,"downloadId":"other"}]}`))
+		case r.Method == http.MethodDelete:
+			deleted = r.URL.Path + "?" + r.URL.RawQuery
+		}
+	}))
+	defer srv.Close()
+	found, err := arr.New("sonarr", srv.URL, "k").FailDownload(context.Background(), "abc")
+	if err != nil || !found {
+		t.Fatalf("found=%v err=%v", found, err)
+	}
+	if deleted != "/api/v3/queue/7?removeFromClient=true&blocklist=true&skipRedownload=false" {
+		t.Fatalf("deleted %q", deleted)
+	}
+}

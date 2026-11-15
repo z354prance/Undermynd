@@ -73,6 +73,7 @@ type Job struct {
 	LastProgress time.Time `json:"lastProgress"`
 
 	ArrDeleted  bool   `json:"arrDeleted,omitempty"`  // the arr called delete on this item
+	ArrNotified bool   `json:"arrNotified,omitempty"` // the arr was told to blocklist the release
 	FailCleaned bool   `json:"failCleaned,omitempty"` // files and backend item removed after a failure
 	Flag        string `json:"flag,omitempty"`        // reconciler note shown in the UI
 

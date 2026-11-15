@@ -30,6 +30,11 @@ type ImportChecker interface {
 	Imported(ctx context.Context, downloadID string) (bool, error)
 }
 
+// DownloadFailer is implemented by an arr client that can be told a download failed.
+type DownloadFailer interface {
+	FailDownload(ctx context.Context, downloadID string) (bool, error)
+}
+
 type Engine struct {
 	Store *store.Store
 	Cfg   *config.Config
@@ -942,6 +947,20 @@ func (e *Engine) doFailed(ctx context.Context, j job.Job) {
 		}
 		j.FailCleaned = true
 		_, _ = e.Store.Update(j.ID, func(c *job.Job) error { c.FailCleaned, c.Attempts, c.NextRun = true, 0, time.Time{}; return nil })
+	}
+	// Do not wait for the arr's own failed-download handling (it may be switched off):
+	// tell it directly, so it blocklists this release and grabs a different one.
+	if !j.ArrDeleted && !j.ArrNotified && j.Source != "rss" && j.Source != "watch" {
+		cat, _ := e.Cfg.Get().Category(j.Category)
+		if f, ok := e.arrFor(cat).(DownloadFailer); ok {
+			if _, err := f.FailDownload(ctx, j.DownloadID()); err != nil {
+				e.Log.Printf("job %s: telling the arr it failed: %v", short(j.ID), err)
+				e.retry2(j, fmt.Errorf("telling the arr: %w", err))
+				return
+			}
+			e.Log.Printf("job %s: the arr was told to blocklist and search again", short(j.ID))
+			_, _ = e.Store.Update(j.ID, func(c *job.Job) error { c.ArrNotified, c.Attempts, c.NextRun = true, 0, time.Time{}; return nil })
+		}
 	}
 	// The arr sees the failure (state "error") until it handles it and calls delete.
 	if j.ArrDeleted || j.Source == "rss" || j.Source == "watch" {

@@ -119,3 +119,54 @@ func (c *Client) Check(ctx context.Context) (name, version string, err error) {
 	}
 	return st.AppName, st.Version, nil
 }
+
+// FailDownload tells the arr a download failed: it finds the queue entry for the
+// download ID and removes it with blocklist=true, so the arr blocklists the release
+// and searches for a different one. It reports false when the arr has no such entry
+// (it already dealt with it).
+func (c *Client) FailDownload(ctx context.Context, downloadID string) (bool, error) {
+	do := func(method, path string, out any) (int, error) {
+		req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+c.prefix()+path, nil)
+		if err != nil {
+			return 0, err
+		}
+		req.Header.Set("X-Api-Key", c.APIKey)
+		resp, err := c.HTTP.Do(req)
+		if err != nil {
+			return 0, err
+		}
+		defer resp.Body.Close()
+		if out != nil && resp.StatusCode == http.StatusOK {
+			return resp.StatusCode, json.NewDecoder(resp.Body).Decode(out)
+		}
+		return resp.StatusCode, nil
+	}
+	var q struct {
+		Records []struct {
+			ID         int64  `json:"id"`
+			DownloadID string `json:"downloadId"`
+		} `json:"records"`
+	}
+	code, err := do(http.MethodGet, "/queue?page=1&pageSize=1000", &q)
+	if err != nil {
+		return false, err
+	}
+	if code != http.StatusOK {
+		return false, fmt.Errorf("%s queue: HTTP %d", c.Kind, code)
+	}
+	found := false
+	for _, r := range q.Records {
+		if !strings.EqualFold(r.DownloadID, downloadID) {
+			continue
+		}
+		found = true
+		code, err := do(http.MethodDelete, fmt.Sprintf("/queue/%d?removeFromClient=true&blocklist=true&skipRedownload=false", r.ID), nil)
+		if err != nil {
+			return false, err
+		}
+		if code != http.StatusOK && code != http.StatusNoContent {
+			return false, fmt.Errorf("%s queue delete: HTTP %d", c.Kind, code)
+		}
+	}
+	return found, nil
+}
