@@ -52,7 +52,7 @@
   function app(){
     logoutBtn.hidden=false;logoutBtn.onclick=function(){api('POST','/logout').then(start)};
     root.replaceChildren();
-    var tabs=el('div','tabs');[['jobs','Jobs'],['arrs','Arrs & categories'],['clients','Download clients'],['transcode','Transcode'],['playback','Playback'],['rss','RSS'],['system','System']].forEach(function(p){var t=p[0];var b=el('button',t===tab?'on':'',p[1]);tabBtns[t]=b;b.onclick=function(){stopLive();tab=t;detailId=null;app()};tabs.appendChild(b)});
+    var tabs=el('div','tabs');[['jobs','Jobs'],['arrs','Arrs & categories'],['clients','Download clients'],['transcode','Transcode'],['playback','Playback'],['public','Public page'],['rss','RSS'],['system','System']].forEach(function(p){var t=p[0];var b=el('button',t===tab?'on':'',p[1]);tabBtns[t]=b;b.onclick=function(){stopLive();tab=t;detailId=null;app()};tabs.appendChild(b)});
     root.appendChild(tabs);var body=el('div');root.appendChild(body);
     if(tab==='jobs')jobsView(body);else settingsView(body);
   }
@@ -146,7 +146,7 @@
   }
   function pane(body){
     body.replaceChildren();
-    ({arrs:arrsPane,clients:clientsPane,transcode:transcodePane,playback:playbackPane,rss:rssPane,system:systemPane})[tab](body)
+    ({arrs:arrsPane,clients:clientsPane,transcode:transcodePane,playback:playbackPane,public:publicPane,rss:rssPane,system:systemPane})[tab](body)
   }
 
   function arrsPane(body){
@@ -248,6 +248,20 @@
     c2.appendChild(tb);c2.appendChild(tm);body.appendChild(c2);
     var ps=el('p','hint','last poll: checking…');body.appendChild(ps);api('GET','/playback/status').then(function(r){ps.textContent='last poll: '+r.status}).catch(function(){ps.textContent='last poll: unknown'});
     saveBar(body,function(m){save(function(b){b.playback={tracearrUrl:tu.value,tracearrKey:tk.value,embyUrl:eu.value,embyKey:ek.value,hiddenLibraries:hl.value}},m).then(function(){pane(body)})})
+  }
+
+  function publicPane(body){
+    var D=S.donations||{};
+    body.appendChild(head('Public page','What visitors see on the public status page.'));
+    var c=el('div','card');var h=el('h4','','Donate button ');h.appendChild(chip(!!(D.paypal_url||D.cashapp_url||D.custom_url),(D.paypal_url||D.cashapp_url||D.custom_url)?'shown':'hidden — no links'));c.appendChild(h);
+    var g=el('div','grid3');
+    var ti=row(g,'popover title',{value:D.title,ph:'Support this server'});
+    var pp=row(g,'PayPal link',{value:D.paypal_url,ph:'https://paypal.me/…'});
+    var ca=row(g,'Cash App link',{value:D.cashapp_url,ph:'https://cash.app/$…'});
+    var cl=row(g,'other link label',{value:D.custom_label,ph:'Ko-fi'});
+    var cu=row(g,'other link URL',{value:D.custom_url,ph:'https://'});
+    c.appendChild(g);c.appendChild(help('Links are public. Leave them all blank to hide the Donate button. HTTPS only.'));body.appendChild(c);
+    saveBar(body,function(m){save(function(b){b.donations={title:ti.value,paypal_url:pp.value,cashapp_url:ca.value,custom_label:cl.value,custom_url:cu.value}},m).then(function(){pane(body)})})
   }
 
   function rssPane(body){

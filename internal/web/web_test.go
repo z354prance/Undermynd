@@ -463,3 +463,24 @@ func TestPlaybackFromTracearr(t *testing.T) {
 		t.Fatalf("recently added: %s", b)
 	}
 }
+
+// Donation links are public, HTTPS-only, and hide the button when empty.
+func TestDonationsSettings(t *testing.T) {
+	e := newEnv(t)
+	s := e.cfg.Get()
+	s.Donations.PayPalURL = "https://paypal.me/x"
+	s.Donations.Title = "Thanks"
+	_ = e.cfg.Set(s)
+	_, b := e.do("GET", "/api/v1/donations", nil, false)
+	if !strings.Contains(string(b), "paypal.me/x") || !strings.Contains(string(b), "Thanks") {
+		t.Fatalf("donations: %s", b)
+	}
+	d := config.Donations{PayPalURL: "http://insecure.example"}
+	if err := web.ValidDonationsForTest(&d); err == nil {
+		t.Fatal("http link must be refused")
+	}
+	d = config.Donations{CustomURL: "https://ko-fi.com/x"}
+	if err := web.ValidDonationsForTest(&d); err == nil {
+		t.Fatal("a custom link needs a label")
+	}
+}

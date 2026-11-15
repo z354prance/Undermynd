@@ -113,6 +113,15 @@ type Playback struct {
 	HiddenLibraries string        `json:"hiddenLibraries"` // comma-separated Emby library IDs
 }
 
+// Donations are the links behind the public Donate button; blank links hide it.
+type Donations struct {
+	Title       string `json:"title"`
+	PayPalURL   string `json:"paypal_url"`
+	CashAppURL  string `json:"cashapp_url"`
+	CustomLabel string `json:"custom_label"`
+	CustomURL   string `json:"custom_url"`
+}
+
 type Feed struct {
 	Name            string `json:"name"`
 	URL             string `json:"url"`
@@ -145,6 +154,7 @@ type Settings struct {
 	Rules        []Rule     `json:"rules"`
 	Tdarr        Tdarr      `json:"tdarr"`
 	Playback     Playback   `json:"playback"`
+	Donations    Donations  `json:"donations"`
 	NZBGet       NZBGet     `json:"nzbget"`
 	TorBox       TorBox     `json:"torbox"`
 	Categories   []Category `json:"categories"`

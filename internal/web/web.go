@@ -537,7 +537,8 @@ type settingsView struct {
 		OutDir         string `json:"outDir"`
 		TimeoutMinutes int    `json:"timeoutMinutes"`
 	} `json:"tdarr"`
-	Playback struct {
+	Donations config.Donations `json:"donations"`
+	Playback  struct {
 		TracearrURL     string `json:"tracearrUrl"`
 		TracearrKey     string `json:"tracearrKey,omitempty"` // write-only
 		HasTracearrKey  bool   `json:"hasTracearrKey"`
@@ -588,6 +589,7 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	v.Tdarr.InDir, v.Tdarr.OutDir, v.Tdarr.TimeoutMinutes = c.Tdarr.InDir, c.Tdarr.OutDir, c.Tdarr.TimeoutMinutes
 	v.Tdarr.URL, v.Tdarr.HasAPIKey, v.Tdarr.LibraryID = c.Tdarr.URL, c.Tdarr.APIKey != "", c.Tdarr.LibraryID
 	v.Tdarr.MaxInFlight, v.Tdarr.StallMinutes = c.Tdarr.MaxInFlight, c.Tdarr.StallMinutes
+	v.Donations = c.Donations
 	v.Playback.TracearrURL, v.Playback.HasTracearrKey = c.Playback.TracearrURL, c.Playback.TracearrKey != ""
 	v.Playback.EmbyURL, v.Playback.HasEmbyKey, v.Playback.HiddenLibraries = c.Playback.EmbyURL, c.Playback.EmbyKey != "", c.Playback.HiddenLibraries
 	v.NZBGet.URL, v.NZBGet.Username, v.NZBGet.HasPassword, v.NZBGet.DestRoot = c.NZBGet.URL, c.NZBGet.Username, c.NZBGet.Password != "", c.NZBGet.DestRoot
@@ -694,6 +696,11 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		next.Rules = append(next.Rules, ru)
 	}
+	if err := validDonations(&in.Donations); err != nil {
+		jsonErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	next.Donations = in.Donations
 	next.Playback.TracearrURL, next.Playback.EmbyURL = strings.TrimSpace(in.Playback.TracearrURL), strings.TrimSpace(in.Playback.EmbyURL)
 	if in.Playback.TracearrKey != "" {
 		next.Playback.TracearrKey = secret.String(strings.TrimSpace(in.Playback.TracearrKey))
