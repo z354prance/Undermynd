@@ -23,6 +23,8 @@ type Item struct {
 	Error    string
 	// Inactive: the client has the item but is not working on it (TorBox: active=false, unfinished, not queued).
 	Inactive bool
+	// Stuck: the client reports the download complete (100%) but never hands over files.
+	Stuck bool
 }
 
 type File struct {

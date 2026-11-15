@@ -314,3 +314,9 @@ body .access-dialog .service-field-help { margin:0; }
 body :is(#searchResultsPanel,.request-dialog) > header button:focus:not(:focus-visible) { outline:none; }
 body :is(#searchResultsPanel,.request-dialog) > header button:focus-visible { outline:1px solid #45bba9; outline-offset:4px; }
 #pipelineList { align-items:stretch; } #pipelineList .pipeline-card { height:100%; } #pipelineList .pipeline-extra { margin-top:auto; }
+
+/* long titles on progress and series cards scroll back and forth, like Now Playing */
+:is(#pipelineList,#seriesOverviewList) h3.mq-box { container-type:inline-size; display:block; overflow:hidden; text-overflow:clip; white-space:nowrap; min-width:0; }
+:is(#pipelineList,#seriesOverviewList) h3.mq-box .mq { display:inline-block; white-space:nowrap; animation:mq 9s ease-in-out infinite alternate; }
+@media (prefers-reduced-motion:reduce) { :is(#pipelineList,#seriesOverviewList) h3.mq-box .mq { animation:none; } }
+#pipelineList .pipeline-card-heading > div, #seriesOverviewList .pipeline-card-heading > div { min-width:0; flex:1; }

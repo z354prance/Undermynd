@@ -330,7 +330,9 @@ func (t *TorBox) Status(ctx context.Context, id string) (Item, error) {
 		return Item{Status: Complete, Progress: 1}, nil
 	}
 	idle := !it.Active && !it.DownloadFinished && !strings.Contains(st, "queue")
-	return Item{Status: Downloading, Progress: p, Inactive: idle}, nil
+	// 100% (or "finished") with no files: TorBox's own unpack or repair has failed or hung.
+	stuck := p >= 0.999 || it.DownloadFinished
+	return Item{Status: Downloading, Progress: p, Inactive: idle, Stuck: stuck}, nil
 }
 
 func (t *TorBox) Files(ctx context.Context, id string) ([]File, error) {

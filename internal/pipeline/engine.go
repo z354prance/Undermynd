@@ -559,6 +559,9 @@ func (e *Engine) doSubmit(ctx context.Context, j job.Job) {
 // inactiveGrace is how long an inactive, motionless TorBox item is given before it is retried.
 const inactiveGrace = 10 * time.Minute
 
+// stuckGrace is how long a TorBox item may sit at 100% without files (unpack, repair) before it fails.
+const stuckGrace = 15 * time.Minute
+
 func (e *Engine) doDownload(ctx context.Context, j job.Job) {
 	it, err := e.backend(j).Status(ctx, j.RemoteID)
 	if err != nil {
@@ -589,6 +592,10 @@ func (e *Engine) doDownload(ctx context.Context, j job.Job) {
 		moved := it.Progress > j.Progress
 		// TorBox showing the item as inactive with nothing moving is a failure on its
 		// side ("Inactive / Processing"); do not wait the full stall time for it.
+		if !moved && it.Stuck && now.Sub(j.LastProgress) > stuckGrace {
+			e.failStalled(ctx, j, fmt.Sprintf("TorBox reached 100%% but did not finish within %d minutes", int(stuckGrace.Minutes())))
+			return
+		}
 		if !moved && it.Inactive && now.Sub(j.LastProgress) > inactiveGrace {
 			e.failStalled(ctx, j, fmt.Sprintf("TorBox shows it inactive with no progress for %d minutes", int(inactiveGrace.Minutes())))
 			return

@@ -92,8 +92,9 @@ function pipelineProgress(item) {
     if (records.length === 1 && isTorBoxarr(records[0].source)) {
       const transfer = records[0];
       if (percent === null && typeof transfer.progress === "number") percent = transfer.progress;
-      detail = `TorBox to Unraid - ${detail}`;
-      label = `Transfer: ${pretty(transfer.status || "unknown")}`;
+      const pulling = /pulling/i.test(transfer.status || "");
+      detail = `${pulling ? "TorBox to server" : "In TorBox"} · ${detail}`;
+      label = pulling ? "Transferring" : /queued/i.test(transfer.status || "") ? "Queued" : "Downloading";
       if (typeof transfer.speed === "number" && transfer.speed >= 0) detail += ` - ${formatBytes(transfer.speed)}/s`;
     }
     paused = records.some((d) => /paused|queued/i.test(d.status || ""));
@@ -231,7 +232,7 @@ function pipelineCardMarkup(item) {
   const sentence = problem || [progress.detail, progress.serviceNames.join(", ")].filter(Boolean).join(" · ");
   return `
     <div class="pipeline-card-heading">
-      <div>${mediaCardBadge(item)}<h3 title="${escapeHTML(title)}">${escapeHTML(title)}</h3><p class="item-meta">${escapeHTML(mediaLabel(item))}</p></div>
+      <div>${mediaCardBadge(item)}<h3 class="mq-box" title="${escapeHTML(title)}"><span class="mq">${escapeHTML(title)}</span></h3><p class="item-meta">${escapeHTML(mediaLabel(item))}</p></div>
       <span class="pipeline-stage st-${mode}" title="${escapeHTML(progress.label)}">${escapeHTML(pill)}</span>
     </div>
     <div class="pipeline-progress${waiting ? " unmeasured" : ""}${progress.problems.length || progress.paused ? " paused" : ""}" role="progressbar" aria-label="${escapeHTML(title)}: ${escapeHTML(progress.label)}" aria-valuemin="0" aria-valuemax="100" ${waiting ? 'aria-valuetext="Progress not reported"' : `aria-valuenow="${Math.round(progress.percent)}"`}>${wireMarkup(item, progress)}</div>
@@ -310,7 +311,7 @@ function showProgressMarkup(show) {
     const state = total > 0 && imported >= total ? "complete" : imported > 0 ? `${total - imported} to go` : "not started";
     return `<div><span>Season ${Number(s.season_number)}</span><span>${imported} / ${total}</span><span class="ss ${imported >= total && total > 0 ? "ok" : imported > 0 ? "part" : "none"}">${state}</span></div>`;
   }).join("");
-  return `<div class="pipeline-card-heading"><div>${mediaCardBadge(show)}<h3 title="${escapeHTML(show.title)}">${escapeHTML(show.title)}</h3></div><span class="series-count">${show.imported} / ${show.total} imported</span></div>
+  return `<div class="pipeline-card-heading"><div>${mediaCardBadge(show)}<h3 class="mq-box" title="${escapeHTML(show.title)}"><span class="mq">${escapeHTML(show.title)}</span></h3></div><span class="series-count">${show.imported} / ${show.total} imported</span></div>
     <div class="series-row" role="img" aria-label="${escapeHTML(show.title)}: ${show.imported} of ${show.total} monitored episodes imported"><span class="series-label">seasons</span><span class="season-cells">${seasons.map(seasonCell).join("")}</span><span class="series-details">Details</span></div>
     <details class="season-breakdown" data-show="${escapeHTML(show.id)}"><summary>Season breakdown</summary><div class="show-season-list" tabindex="0" aria-label="Season import counts">${rows}</div></details>`;
 }
