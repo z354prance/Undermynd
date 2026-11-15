@@ -67,6 +67,7 @@ func (s *Server) Handler() http.Handler {
 	// ---- public: no sign-in, reads only the public view
 	mux.HandleFunc("GET /{$}", s.page("public.html"))
 	mux.HandleFunc("GET /api/public/jobs", s.publicJobs)
+	mux.HandleFunc("GET /missing", s.page("missing.html"))
 	mux.HandleFunc("GET /api/public/library", s.publicLibrary)
 	mux.HandleFunc("GET /admin/api/library", s.admin(s.adminLibrary))
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
@@ -239,7 +240,7 @@ func (s *Server) publicLibrary(w http.ResponseWriter, r *http.Request) {
 		snap := s.Progress.Snapshot()
 		out.Seasons, out.UpdatedAt = snap.Seasons, snap.UpdatedAt
 		for i, m := range snap.Missing {
-			if i >= 200 {
+			if i >= 1000 {
 				break
 			}
 			out.Missing = append(out.Missing, publicMissing{Kind: m.Kind, Title: m.Title, Detail: m.Detail, Date: m.Date})

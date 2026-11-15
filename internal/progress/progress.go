@@ -233,8 +233,8 @@ func (t *Tracker) Refresh(ctx context.Context) {
 			}
 			return a.After(*b)
 		})
-		if len(all) > 500 {
-			all = all[:500]
+		if len(all) > 1000 {
+			all = all[:1000]
 		}
 		t.missing = all
 	}
