@@ -70,9 +70,12 @@
   var jobFilter={q:'',group:'all',source:'all'},lastRows=[],paused=false,es=null,tabBtns={};
   function stopLive(){clearInterval(timer);if(es){es.close();es=null}}
   function attentionCount(rows){return rows.filter(function(r){return r.attention&&r.state!=='cleaned'}).length}
-  var WSTAGES=['Requested','Found','Download','Transfer','Convert','Ready'];
+  var WTORBOX=['Requested','Found','Download','Transfer','Convert','Ready'],WLOCAL=['Requested','Found','Download','Convert','Ready'];
   function jobWire(j){
-    var m={received:[0,'wait'],submitted:[1,'wait'],downloading:[2,'run'],pulling:[3,'run'],downloaded:[4,'wait'],queued_transcode:[4,'wait'],transcoding:[4,'run'],verifying:[4,'run'],ready:[5,'wait'],imported:[6,'done'],cleaned:[6,'done'],failed:[{download:2,transfer:3,convert:4,ready:5}[j.failedAt]||2,'fail']}[j.state]||[1,'wait'];
+    // A local downloader writes straight to the server: no Transfer step.
+    var tb=j.backend==='torbox',WSTAGES=tb?WTORBOX:WLOCAL,ix=function(n){return WSTAGES.indexOf(n)};
+    var fa={download:'Download',transfer:tb?'Transfer':'Download',convert:'Convert',ready:'Ready'}[j.failedAt]||'Download';
+    var m={received:[0,'wait'],submitted:[1,'wait'],downloading:[ix('Download'),'run'],pulling:[ix(tb?'Transfer':'Download'),'run'],downloaded:[ix('Convert'),'wait'],queued_transcode:[ix('Convert'),'wait'],transcoding:[ix('Convert'),'run'],verifying:[ix('Convert'),'run'],ready:[ix('Ready'),'wait'],imported:[WSTAGES.length,'done'],cleaned:[WSTAGES.length,'done'],failed:[ix(fa),'fail']}[j.state]||[1,'wait'];
     var cur=m[0],mode=m[1],pct=Math.max(0,Math.min(100,Math.round((j.progress||0)*100)));
     if(mode==='run'&&pct===0)mode='wait';
     var w=el('div','wire w-'+mode);

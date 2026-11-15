@@ -170,34 +170,41 @@ function asciiMeter(percent) {
 }
 
 
-const WIRE_STAGES = ["Requested", "Found", "Download", "Transfer", "Convert", "Ready"];
-// Six steps: Download is the grab into TorBox (or the download client), Transfer
-// is the copy from TorBox to this server. A local client has no transfer of its own.
+// TorBox jobs have six steps: Download is the grab into TorBox, Transfer the copy
+// from TorBox to this server. A local downloader (qBittorrent, NZBGet) writes
+// straight to the server, so its jobs have no Transfer step.
+const WIRE_TORBOX = ["Requested", "Found", "Download", "Transfer", "Convert", "Ready"];
+const WIRE_LOCAL = ["Requested", "Found", "Download", "Convert", "Ready"];
 function wireState(item, progress) {
-  const pulling = pipelineRecords(item, "download", state.downloads).some(d => /pulling/i.test(d.status || ""));
-  let cur = {requested:0, wanted:1, downloading:2, downloaded:3, processing:4, importing:5, available:6, playing:6}[item.stage] ?? 1;
-  if (item.stage === "downloading" && pulling) cur = 3;
+  const downloads = pipelineRecords(item, "download", state.downloads);
+  const torbox = item.backend ? item.backend === "torbox" : downloads.some(d => isTorBoxarr(d.source));
+  const stages = torbox ? WIRE_TORBOX : WIRE_LOCAL;
+  const at = name => stages.indexOf(name);
+  const pulling = downloads.some(d => /pulling/i.test(d.status || ""));
+  let cur = {requested:at("Requested"), wanted:at("Found"), downloading:at("Download"), downloaded:torbox ? at("Transfer") : at("Convert"),
+    processing:at("Convert"), importing:at("Ready"), available:stages.length, playing:stages.length}[item.stage] ?? 1;
+  if (item.stage === "downloading" && pulling && torbox) cur = at("Transfer");
   const problems = (progress.problems || []).join(" ");
   let mode = "run";
-  if (cur >= 6) mode = "done";
+  if (cur >= stages.length) mode = "done";
   else if (/fail|error/i.test(problems)) mode = "fail";
   else if (/stall/i.test(problems)) mode = "stall";
-  else if (cur <= 1 || cur === 5 || progress.paused || progress.percent === null) mode = "wait";
+  else if (cur <= 1 || cur === at("Ready") || progress.paused || progress.percent === null) mode = "wait";
   let percent = progress.percent === null ? 0 : Math.max(0, Math.min(100, progress.percent));
   if (mode === "fail") {
-    // The server says which step failed; without that, a transfer problem is the usual cause.
-    const at = {download:2, transfer:3, convert:4, ready:5}[item.failed_at];
-    cur = at ?? (pipelineRecords(item, "processing", state.processing).some(j => j.state === "problem") ? 4 : 2);
-    if (progress.percent === null && cur === 2) percent = Math.max(0, Math.min(100, Number(item.progress) || 0));
+    // The server says which step failed; a local job has no transfer, so that counts as its download.
+    const failed = {download:"Download", transfer:torbox ? "Transfer" : "Download", convert:"Convert", ready:"Ready"}[item.failed_at];
+    cur = failed ? at(failed) : (pipelineRecords(item, "processing", state.processing).some(j => j.state === "problem") ? at("Convert") : at("Download"));
+    if (progress.percent === null && cur === at("Download")) percent = Math.max(0, Math.min(100, Number(item.progress) || 0));
   }
-  return {cur, mode, percent};
+  return {stages, cur, mode, percent};
 }
 function wireMarkup(item, progress) {
-  const {cur, mode, percent} = wireState(item, progress);
-  const cells = WIRE_STAGES.map((name, i) => {
+  const {stages, cur, mode, percent} = wireState(item, progress);
+  const cells = stages.map((name, i) => {
     const kind = cur > i ? "done" : cur === i ? "cur" : "todo";
     let line = "";
-    if (i < WIRE_STAGES.length - 1) {
+    if (i < stages.length - 1) {
       if (cur > i) line = '<b class="ln"></b>';
       else if (cur === i) {
         const p = mode === "run" || mode === "stall" || mode === "fail" ? percent : 0;

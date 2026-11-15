@@ -96,6 +96,7 @@ type v1Lifecycle struct {
 	Stage      string   `json:"stage"`
 	Problems   []string `json:"problems,omitempty"`
 	FailedAt   string   `json:"failed_at,omitempty"`
+	Backend    string   `json:"backend,omitempty"` // torbox, qbit or nzbget: torbox adds a Transfer step
 	Progress   float64  `json:"progress,omitempty"`
 	References []v1Ref  `json:"references"`
 }
@@ -114,7 +115,7 @@ func (s *Server) dashboardRecords() ([]v1Download, []v1Process, []v1Lifecycle) {
 				kind = map[string]string{"sonarr": "episode", "radarr": "movie", "lidarr": "album"}[c.Kind]
 			}
 		}
-		l := v1Lifecycle{ID: "job:" + j.ID, Kind: kind, Title: j.Name, References: []v1Ref{}}
+		l := v1Lifecycle{ID: "job:" + j.ID, Kind: kind, Title: j.Name, Backend: j.Backend, References: []v1Ref{}}
 		src := "qbittorrent"
 		switch {
 		case j.Backend == "torbox":
