@@ -36,11 +36,12 @@ type Poller struct {
 	Log      *log.Logger
 	Interval time.Duration
 	Now      func() time.Time
-	noCat    map[string]bool // folders already reported as having no category
+	noCat    map[string]bool   // folders already reported as having no category
+	last     map[string]string // the last status line logged per folder
 }
 
 func New(cfg *config.Config, sub Submitter, l *log.Logger) *Poller {
-	return &Poller{Cfg: cfg, Sub: sub, Log: l, Interval: 10 * time.Second, Now: time.Now, noCat: map[string]bool{}}
+	return &Poller{Cfg: cfg, Sub: sub, Log: l, Interval: 10 * time.Second, Now: time.Now, noCat: map[string]bool{}, last: map[string]string{}}
 }
 
 func (p *Poller) Run(ctx context.Context) {
@@ -88,11 +89,25 @@ func (p *Poller) Scan() {
 	}
 }
 
+// status logs a folder's state only when it changes, so a quiet folder stays quiet.
+func (p *Poller) status(dir, msg string) {
+	if p.last == nil {
+		p.last = map[string]string{}
+	}
+	if p.last[dir] == msg {
+		return
+	}
+	p.last[dir] = msg
+	p.Log.Printf("watch %s: %s", dir, msg)
+}
+
 func (p *Poller) scanDir(dir, cat string) {
 	ents, err := os.ReadDir(dir)
 	if err != nil {
+		p.status(dir, "cannot read the folder: "+err.Error())
 		return
 	}
+	candidates, ignored := 0, 0
 	for _, e := range ents {
 		name := e.Name()
 		if e.IsDir() || strings.HasPrefix(name, ".") {
@@ -100,14 +115,17 @@ func (p *Poller) scanDir(dir, cat string) {
 		}
 		ext := strings.ToLower(filepath.Ext(name))
 		if ext != ".torrent" && ext != ".nzb" && ext != ".magnet" {
+			ignored++
 			continue
 		}
+		candidates++
 		info, err := e.Info()
 		if err != nil || !info.Mode().IsRegular() || p.Now().Sub(info.ModTime()) < settle {
 			continue
 		}
 		p.one(dir, name, ext, cat, info.Size())
 	}
+	p.status(dir, fmt.Sprintf("watching with category %q: %d torrent/nzb/magnet file(s) found, %d other file(s) ignored", cat, candidates, ignored))
 }
 
 func (p *Poller) one(dir, name, ext, cat string, size int64) {
