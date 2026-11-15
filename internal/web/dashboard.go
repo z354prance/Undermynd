@@ -45,6 +45,7 @@ func (s *Server) dashboardRoutes(mux *http.ServeMux, files http.Handler) {
 	})
 	mux.HandleFunc("GET /api/v1/media-request/status", s.requestStatus)
 	mux.HandleFunc("GET /api/v1/media-request/search", s.requestSearch)
+	mux.HandleFunc("GET /api/v1/media-request/discover", s.requestDiscover)
 	mux.HandleFunc("POST /api/v1/media-request", s.requestCreate)
 	mux.HandleFunc("GET /api/v1/requests", s.requestsPending)
 	mux.HandleFunc("POST /api/v1/requests/{serviceID}/{requestID}/{action}", s.guard(s.admin(s.requestsDecide)))

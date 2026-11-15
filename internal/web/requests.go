@@ -210,3 +210,45 @@ func (s *Server) requestsTest(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, map[string]bool{"ok": true})
 }
+
+// Suggestions are the same for everyone, so Seerr is asked at most once every 10 minutes per list.
+var discoverCache struct {
+	sync.Mutex
+	at   map[string]time.Time
+	data map[string][]seerr.SearchResult
+	key  string
+}
+
+func (s *Server) requestDiscover(w http.ResponseWriter, r *http.Request) {
+	kind := r.URL.Query().Get("kind")
+	if kind == "" {
+		kind = "trending"
+	}
+	c := s.seerrPublic()
+	if c == nil {
+		jsonErr(w, http.StatusServiceUnavailable, "media requests are not enabled")
+		return
+	}
+	cfg := s.Cfg.Get().Requests
+	discoverCache.Lock()
+	if discoverCache.key != cfg.URL+"|"+strconv.FormatInt(cfg.UserID, 10) || discoverCache.data == nil {
+		discoverCache.key, discoverCache.at, discoverCache.data = cfg.URL+"|"+strconv.FormatInt(cfg.UserID, 10), map[string]time.Time{}, map[string][]seerr.SearchResult{}
+	}
+	if d, ok := discoverCache.data[kind]; ok && time.Since(discoverCache.at[kind]) < 10*time.Minute {
+		discoverCache.Unlock()
+		writeJSON(w, map[string]any{"results": d})
+		return
+	}
+	discoverCache.Unlock()
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	res, err := c.Discover(ctx, kind)
+	if err != nil {
+		jsonErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	discoverCache.Lock()
+	discoverCache.data[kind], discoverCache.at[kind] = res, time.Now()
+	discoverCache.Unlock()
+	writeJSON(w, map[string]any{"results": res})
+}

@@ -131,6 +131,44 @@ func (c *Client) Search(ctx context.Context, query string) ([]SearchResult, erro
 	return clean, nil
 }
 
+// Discover lists Seerr's suggestions: "trending", "movies" (popular) or "tv" (popular).
+func (c *Client) Discover(ctx context.Context, kind string) ([]SearchResult, error) {
+	path, mediaType := "", ""
+	switch kind {
+	case "trending":
+		path = "discover/trending"
+	case "movies":
+		path, mediaType = "discover/movies", "movie"
+	case "tv":
+		path, mediaType = "discover/tv", "tv"
+	default:
+		return nil, fmt.Errorf("unknown list")
+	}
+	var r struct {
+		Results []SearchResult `json:"results"`
+	}
+	if err := c.JSON(ctx, "GET", path+"?page=1", nil, &r); err != nil {
+		return nil, err
+	}
+	out := make([]SearchResult, 0, 20)
+	for _, it := range r.Results {
+		if it.MediaType == "" {
+			it.MediaType = mediaType
+		}
+		if it.ID <= 0 || (it.MediaType != "movie" && it.MediaType != "tv") {
+			continue
+		}
+		if !strings.HasPrefix(it.PosterPath, "/") || strings.Contains(it.PosterPath, "..") {
+			it.PosterPath = ""
+		}
+		out = append(out, it)
+		if len(out) == 20 {
+			break
+		}
+	}
+	return out, nil
+}
+
 // Request sends one request with no caller-controlled user, approval, quota, server or profile.
 func (c *Client) Request(ctx context.Context, mediaID int64, mediaType string) (int64, error) {
 	payload := map[string]any{"mediaId": mediaID, "mediaType": mediaType}

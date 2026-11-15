@@ -295,3 +295,4 @@ a.nav-item { text-decoration:none; color:inherit; display:inline-flex; align-ite
 .request-skeleton { height:96px; margin:0 4px 8px; border-left:2px solid var(--border); background:linear-gradient(90deg,#141614,#1b1e1b,#141614); background-size:200% 100%; animation:req-shimmer 1.2s linear infinite; }
 @keyframes req-shimmer { to { background-position:-200% 0; } }
 @media(max-width:540px) { #searchResultsPanel .media-search-form { flex-wrap:wrap; } #searchResultsPanel .media-search-form button { width:100%; } }
+.request-discover { padding-bottom:6px; }

@@ -2105,6 +2105,8 @@ $("requestSettingsForm").addEventListener("submit", async event => {
 });
 
 $("mediaSearchQuery").addEventListener("input", () => {
+  // Emptying the box brings the suggestions back; a search replaces them.
+  if (!$("mediaSearchQuery").value.trim() && $("mediaDiscover").hidden) loadDiscover();
   $("mediaSearchClear").hidden = !$("mediaSearchQuery").value && !$("mediaSearchResults").childElementCount;
 });
 $("mediaSearchClear").addEventListener("click", () => {
@@ -2119,6 +2121,44 @@ $("mediaSearchClear").addEventListener("click", () => {
   $("mediaSearchButton").disabled = !mediaRequestsEnabled;
   $("mediaSearchClear").hidden = true;
   $("mediaSearchQuery").focus();
+  loadDiscover();
+});
+function renderMediaResults(items, emptyText, intro) {
+  mediaSearchResults = items || [];
+  if (!$("searchResultsPanel").open) $("searchResultsPanel").show();
+  $("mediaSearchResults").innerHTML = mediaSearchResults.map((item,index) => {
+    const title = item.title || item.name || "Untitled";
+    const status = item.mediaInfo?.status;
+    const existing = [2,3,5].includes(status);
+    const label = {2:"Pending approval",3:"Processing",4:"Partly available",5:"Available"}[status] || "";
+    const year = (item.releaseDate || item.firstAirDate || "").slice(0,4);
+    const poster = /^\/[A-Za-z0-9_.-]+$/.test(item.posterPath || "") ? `https://image.tmdb.org/t/p/w185${item.posterPath}` : "";
+    return `<article class="request-result${existing ? " is-existing" : ""}" data-type="${item.mediaType}"><div class="request-art">${poster ? `<img class="request-poster" src="${escapeHTML(poster)}" alt="" loading="lazy">` : `<span class="request-art-empty">${item.mediaType === "tv" ? "TV" : "FILM"}</span>`}</div><div class="request-result-content"><h3 title="${escapeHTML(title)}">${escapeHTML(title)}</h3><p class="request-meta"><span class="request-kind">${item.mediaType === "tv" ? "TV show" : "Movie"}</span>${year ? ` · ${escapeHTML(year)}` : ""}${label ? ` <span class="request-status status-${status}">${label}</span>` : ""}</p><p class="request-overview">${escapeHTML(item.overview || "No description available.")}</p><button class="service-primary-button" type="button" data-request-index="${index}" ${existing ? "disabled" : ""}>${existing ? label : "Request"}</button></div></article>`;
+  }).join("");
+  if (!mediaSearchResults.length) $("mediaSearchResults").innerHTML = `<p class="empty-state">${escapeHTML(emptyText)}</p>`;
+  $("mediaRequestMessage").textContent = mediaSearchResults.length ? (intro || `${mediaSearchResults.length} results. Pick a title to request it.`) : emptyText;
+  const counts = {all:mediaSearchResults.length, movie:mediaSearchResults.filter(r => r.mediaType === "movie").length, tv:mediaSearchResults.filter(r => r.mediaType === "tv").length};
+  for (const b of $("mediaFilter").querySelectorAll("button")) { b.querySelector("span").textContent = `(${counts[b.dataset.filter]})`; b.classList.toggle("on", b.dataset.filter === "all"); }
+  $("mediaFilter").hidden = !!intro || counts.movie === 0 || counts.tv === 0;
+}
+let discoverKind = "trending";
+async function loadDiscover(kind = discoverKind) {
+  if (!mediaRequestsEnabled || $("mediaSearchQuery").value.trim()) return;
+  discoverKind = kind;
+  const generation = ++searchGeneration;
+  $("mediaDiscover").hidden = false;
+  for (const b of $("mediaDiscover").querySelectorAll("button")) b.classList.toggle("on", b.dataset.discover === kind);
+  $("mediaFilter").hidden = true;
+  $("mediaSearchResults").innerHTML = '<div class="request-skeleton"></div>'.repeat(3);
+  try {
+    const response = await serviceAPIRequest(`/api/v1/media-request/discover?kind=${encodeURIComponent(kind)}`);
+    if (generation !== searchGeneration) return;
+    renderMediaResults(response.results, "No suggestions right now. Try searching for a title.", {trending:"Trending right now. Pick a title to request it, or search above.", movies:"Popular movies. Pick a title to request it, or search above.", tv:"Popular TV shows. Pick a title to request it, or search above."}[kind]);
+  } catch (error) { if (generation === searchGeneration) { $("mediaSearchResults").replaceChildren(); $("mediaRequestMessage").textContent = mediaRequestIdleMessage; } }
+}
+$("mediaDiscover").addEventListener("click", event => {
+  const b = event.target.closest("button[data-discover]");
+  if (b) loadDiscover(b.dataset.discover);
 });
 $("mediaSearchForm").addEventListener("submit", async event => {
   event.preventDefault();
@@ -2131,23 +2171,8 @@ $("mediaSearchForm").addEventListener("submit", async event => {
   try {
     const response = await serviceAPIRequest(`/api/v1/media-request/search?query=${encodeURIComponent($("mediaSearchQuery").value.trim())}`);
     if (generation !== searchGeneration) return;
-    mediaSearchResults = response.results || [];
-
-    if (!$("searchResultsPanel").open) $("searchResultsPanel").show();
-    $("mediaSearchResults").innerHTML = mediaSearchResults.map((item,index) => {
-      const title = item.title || item.name || "Untitled";
-      const status = item.mediaInfo?.status;
-      const existing = [2,3,5].includes(status);
-      const label = {2:"Pending approval",3:"Processing",4:"Partly available",5:"Available"}[status] || "";
-      const year = (item.releaseDate || item.firstAirDate || "").slice(0,4);
-      const poster = /^\/[A-Za-z0-9_.-]+$/.test(item.posterPath || "") ? `https://image.tmdb.org/t/p/w185${item.posterPath}` : "";
-      return `<article class="request-result${existing ? " is-existing" : ""}" data-type="${item.mediaType}"><div class="request-art">${poster ? `<img class="request-poster" src="${escapeHTML(poster)}" alt="" loading="lazy">` : `<span class="request-art-empty">${item.mediaType === "tv" ? "TV" : "FILM"}</span>`}</div><div class="request-result-content"><h3 title="${escapeHTML(title)}">${escapeHTML(title)}</h3><p class="request-meta"><span class="request-kind">${item.mediaType === "tv" ? "TV show" : "Movie"}</span>${year ? ` · ${escapeHTML(year)}` : ""}${label ? ` <span class="request-status status-${status}">${label}</span>` : ""}</p><p class="request-overview">${escapeHTML(item.overview || "No description available.")}</p><button class="service-primary-button" type="button" data-request-index="${index}" ${existing ? "disabled" : ""}>${existing ? label : "Request"}</button></div></article>`;
-    }).join("");
-    if (!mediaSearchResults.length) $("mediaSearchResults").innerHTML = '<p class="empty-state">No movies or TV shows found. Try another title.</p>';
-    $("mediaRequestMessage").textContent = mediaSearchResults.length ? `${mediaSearchResults.length} results. Pick a title to request it.` : "No movies or TV shows found. Try another title.";
-    const counts = {all:mediaSearchResults.length, movie:mediaSearchResults.filter(r => r.mediaType === "movie").length, tv:mediaSearchResults.filter(r => r.mediaType === "tv").length};
-    for (const b of $("mediaFilter").querySelectorAll("button")) { b.querySelector("span").textContent = `(${counts[b.dataset.filter]})`; b.classList.toggle("on", b.dataset.filter === "all"); }
-    $("mediaFilter").hidden = counts.movie === 0 || counts.tv === 0;
+    renderMediaResults(response.results, "No movies or TV shows found. Try another title.");
+    $("mediaDiscover").hidden = true;
   } catch (error) { if (generation === searchGeneration) $("mediaRequestMessage").textContent = error.message; }
   finally { if (generation === searchGeneration) $("mediaSearchButton").disabled = !mediaRequestsEnabled; }
 });
@@ -2208,7 +2233,7 @@ async function refreshRecentlyAdded() {
 refreshRecentlyAdded();
 setInterval(refreshRecentlyAdded, 30000);
 $("closeSearchResults").addEventListener("click",()=>$("searchResultsPanel").close());
-$("openMediaRequest").addEventListener("click",()=>{if (!$("searchResultsPanel").open) $("searchResultsPanel").showModal(); $("mediaSearchQuery").focus();});
+$("openMediaRequest").addEventListener("click",()=>{if (!$("searchResultsPanel").open) $("searchResultsPanel").showModal(); $("mediaSearchQuery").focus(); if (!mediaSearchResults.length) loadDiscover();});
 document.addEventListener("keydown",event=>{if(event.key==="Escape" && !$("mediaRequestDialog").open) $("searchResultsPanel").close();});
 
 // Require both ends of a pointer gesture on the backdrop, not a drag from inside.

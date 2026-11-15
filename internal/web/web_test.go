@@ -495,6 +495,8 @@ func TestSeerrRequestBox(t *testing.T) {
 		switch {
 		case r.URL.Path == "/api/v1/auth/me":
 			io.WriteString(w, `{"id":7}`)
+		case r.URL.Path == "/api/v1/discover/movies":
+			io.WriteString(w, `{"results":[{"id":11,"title":"Popular Film","posterPath":"/p.jpg"}]}`)
 		case r.URL.Path == "/api/v1/search":
 			io.WriteString(w, `{"results":[{"id":1,"mediaType":"movie","title":"Film","posterPath":"/../x"},{"id":2,"mediaType":"person"}]}`)
 		case r.Method == "POST" && r.URL.Path == "/api/v1/request":
@@ -527,6 +529,12 @@ func TestSeerrRequestBox(t *testing.T) {
 	_, b := e.do("GET", "/api/v1/media-request/search?query=film", nil, false)
 	if !strings.Contains(string(b), "Film") || strings.Contains(string(b), "person") || strings.Contains(string(b), "../") || gotUser != "7" || gotKey != "SEERRKEY" {
 		t.Fatalf("search: %s user=%q", b, gotUser)
+	}
+	if _, b := e.do("GET", "/api/v1/media-request/discover?kind=movies", nil, false); !strings.Contains(string(b), "Popular Film") || !strings.Contains(string(b), `"mediaType":"movie"`) {
+		t.Fatalf("suggestions: %s", b)
+	}
+	if code, _ := e.do("GET", "/api/v1/media-request/discover?kind=nonsense", nil, false); code != 502 {
+		t.Fatalf("unknown list = %d", code)
 	}
 	if code, _ := e.do("POST", "/api/v1/media-request", map[string]any{"media_id": 1, "media_type": "tv"}, false); code != 400 {
 		t.Fatalf("a show needs all seasons confirmed: %d", code)

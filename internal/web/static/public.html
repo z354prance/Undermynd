@@ -538,6 +538,11 @@
               <button id="mediaSearchClear" class="service-secondary-button" type="button" hidden>Clear</button>
             </form>
             <p id="mediaRequestMessage" class="request-message" role="status" aria-live="polite">Checking request availability...</p>
+            <div id="mediaDiscover" class="request-filter request-discover" role="group" aria-label="Suggestions" hidden>
+              <button type="button" data-discover="trending" class="on">Trending</button>
+              <button type="button" data-discover="movies">Popular movies</button>
+              <button type="button" data-discover="tv">Popular TV</button>
+            </div>
             <div id="mediaFilter" class="request-filter" role="group" aria-label="Filter results" hidden>
               <button type="button" data-filter="all" class="on">All <span></span></button>
               <button type="button" data-filter="movie">Movies <span></span></button>
