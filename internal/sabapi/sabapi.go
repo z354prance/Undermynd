@@ -110,10 +110,10 @@ func (a *API) getConfig(w http.ResponseWriter) {
 	var cats []map[string]any
 	cats = append(cats, map[string]any{"name": "*", "order": 0, "pp": "3", "script": "None", "dir": "", "newzbin": "", "priority": -100})
 	for i, c := range a.Cfg.Get().Categories {
-		cats = append(cats, map[string]any{"name": c.Name, "order": i + 1, "pp": "", "script": "Default", "dir": "", "newzbin": "", "priority": -100})
+		cats = append(cats, map[string]any{"name": c.Name, "order": i + 1, "pp": "", "script": "Default", "dir": config.SafeName(c.Name), "newzbin": "", "priority": -100})
 	}
 	writeJSON(w, map[string]any{"config": map[string]any{
-		"misc":       map[string]any{"complete_dir": "", "download_dir": "", "port": "8081", "host": "0.0.0.0", "enable_tv_sorting": false, "enable_movie_sorting": false, "enable_date_sorting": false},
+		"misc":       map[string]any{"complete_dir": a.Cfg.Env.Complete(), "download_dir": a.Cfg.Env.Work(), "port": "8081", "host": "0.0.0.0", "enable_tv_sorting": false, "enable_movie_sorting": false, "enable_date_sorting": false},
 		"categories": cats,
 		"servers":    []any{},
 		"sorters":    []any{},
