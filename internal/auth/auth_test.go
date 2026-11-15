@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -110,5 +111,44 @@ func TestSecretsNeverPrinted(t *testing.T) {
 	s := secret.String("hunter2")
 	if strings.Contains(s.String(), "hunter2") {
 		t.Fatal("secret leaked through String()")
+	}
+}
+
+func TestSessionSurvivesRestartAndStoresOnlyHashes(t *testing.T) {
+	secret.SetKeyForTest(make([]byte, 32))
+	dir := t.TempDir()
+	a, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := a.Setup(a.SetupKey(), "a long enough password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _ := totpAt(res.TOTPSecret, time.Now(), 6)
+	if _, err := a.Confirm("a long enough password", code); err != nil {
+		t.Fatal(err)
+	}
+	a.Now = func() time.Time { return time.Now().Add(31 * time.Second) }
+	code, _ = totpAt(res.TOTPSecret, a.Now(), 6)
+	tok, err := a.Login("ip", "a long enough password", code)
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	b, err := New(dir) // a restart
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !b.Valid(tok) {
+		t.Fatal("a restart must not sign the admin out")
+	}
+	raw, _ := os.ReadFile(dir + "/sessions.json")
+	if strings.Contains(string(raw), tok) {
+		t.Fatal("the session file must hold hashes, never the token")
+	}
+	b.Logout(tok)
+	c, _ := New(dir)
+	if c.Valid(tok) {
+		t.Fatal("a signed-out session must stay signed out after a restart")
 	}
 }

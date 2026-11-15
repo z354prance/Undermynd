@@ -47,6 +47,7 @@ type account struct {
 type Auth struct {
 	mu       sync.Mutex
 	path     string
+	spath    string // where sign-in sessions are kept so a restart does not sign you out
 	acct     *account
 	setupKey string
 	sessions map[string]time.Time // sha256(token) -> expiry
@@ -65,8 +66,9 @@ type failure struct {
 // setup key (kept on disk and printed to the log) that first-run setup requires,
 // so nobody who merely reaches the page can claim the admin account.
 func New(configDir string) (*Auth, error) {
-	a := &Auth{path: configDir + "/admin.json", sessions: map[string]time.Time{}, fails: map[string]*failure{},
-		Now: time.Now, SessionTTL: 12 * time.Hour}
+	a := &Auth{path: configDir + "/admin.json", spath: configDir + "/sessions.json", sessions: map[string]time.Time{}, fails: map[string]*failure{},
+		Now: time.Now, SessionTTL: 30 * 24 * time.Hour}
+	a.loadSessions()
 	b, err := os.ReadFile(a.path)
 	switch {
 	case err == nil:
@@ -238,6 +240,7 @@ func (a *Auth) Login(client, password, code string) (string, error) {
 	}
 	tok := base64.RawURLEncoding.EncodeToString(raw)
 	a.sessions[hashCode(tok)] = now.Add(a.SessionTTL)
+	a.saveSessionsLocked()
 	return tok, nil
 }
 
@@ -262,6 +265,7 @@ func (a *Auth) Valid(token string) bool {
 func (a *Auth) Logout(token string) {
 	a.mu.Lock()
 	delete(a.sessions, hashCode(token))
+	a.saveSessionsLocked()
 	a.mu.Unlock()
 }
 
@@ -351,4 +355,39 @@ func totpValid(secretB32, code string, now time.Time) bool {
 func CodeAt(secretB32 string, t time.Time) string {
 	c, _ := totpAt(secretB32, t, 6)
 	return c
+}
+
+// Sessions are kept as hashes only, so the file cannot be used to sign in.
+func (a *Auth) loadSessions() {
+	b, err := os.ReadFile(a.spath)
+	if err != nil {
+		return
+	}
+	var m map[string]time.Time
+	if json.Unmarshal(b, &m) != nil {
+		return
+	}
+	now := a.Now()
+	for h, exp := range m {
+		if exp.After(now) {
+			a.sessions[h] = exp
+		}
+	}
+}
+
+func (a *Auth) saveSessionsLocked() {
+	now := a.Now()
+	for h, exp := range a.sessions {
+		if !exp.After(now) {
+			delete(a.sessions, h)
+		}
+	}
+	b, err := json.Marshal(a.sessions)
+	if err != nil {
+		return
+	}
+	tmp := a.spath + ".tmp"
+	if os.WriteFile(tmp, b, 0o600) == nil {
+		_ = os.Rename(tmp, a.spath)
+	}
 }
