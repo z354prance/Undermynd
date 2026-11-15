@@ -411,7 +411,7 @@ func TestStorageEndpointReadsTheMediaRoot(t *testing.T) {
 }
 
 // Now Playing hides a whole library, withholds streams it cannot place, and never leaks keys;
-// Recently Added comes from Tracearr and posters only load through a signed link.
+
 func TestPlaybackFromTracearr(t *testing.T) {
 	tr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer TRKEY" && !strings.HasPrefix(r.URL.Path, "/api/v1/images/") {
@@ -457,9 +457,5 @@ func TestPlaybackFromTracearr(t *testing.T) {
 	}
 	if code, _ := e.do("GET", "/api/v1/playback/poster?path=%2Fapi%2Fv1%2Fimages%2Fproxy&signature=bad", nil, false); code != 404 {
 		t.Fatalf("unsigned poster = %d", code)
-	}
-	_, b = e.do("GET", "/api/v1/recently-added", nil, false)
-	if !strings.Contains(string(b), `"Film"`) || !strings.Contains(string(b), "playback/poster") {
-		t.Fatalf("recently added: %s", b)
 	}
 }

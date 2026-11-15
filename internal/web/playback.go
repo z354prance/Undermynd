@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 	"time"
 
@@ -71,45 +70,30 @@ func (s *Server) v1Playback(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"sessions": sessions, "errors": []string{}})
 }
 
+// v1Recent lists what Sonarr, Radarr and Lidarr imported lately, music included.
 func (s *Server) v1Recent(w http.ResponseWriter, r *http.Request) {
-	c, ok := s.tracearr()
-	if !ok {
-		writeJSON(w, map[string]any{"items": []any{}, "errors": []string{"Recently added needs Tracearr; add it in Admin, Playback."}, "configured": false})
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
-	defer cancel()
-	res := c.RecentlyAdded(ctx)
-	for i := range res.Items {
-		res.Items[i].PosterURL = signedPoster(res.Items[i].PosterURL)
-	}
-	// Tracearr's feed is movies and shows; music comes from the Lidarr imports.
-	type entry struct {
-		at time.Time
-		v  any
-	}
-	all := []entry{}
-	for _, it := range res.Items {
-		all = append(all, entry{it.AddedAt, it})
-	}
+	items := []map[string]any{}
 	if s.Progress != nil {
 		for i, x := range s.Progress.Snapshot().Recent {
-			if x.Kind == "movie" || x.Kind == "episode" {
-				continue
+			it := map[string]any{"id": "recent:" + itoa(i) + ":" + x.Title, "title": x.Title, "added_at": x.Date, "stage": "available"}
+			switch x.Kind {
+			case "episode":
+				it["kind"], it["show_title"], it["episodes"] = "series", x.Title, x.Episodes
+			case "movie":
+				it["kind"] = "movie"
+				if x.Year != 0 {
+					it["year"] = x.Year
+				}
+			default:
+				it["kind"] = x.Kind
 			}
-			all = append(all, entry{x.Date, map[string]any{"id": "recent-music:" + itoa(i) + ":" + x.Title, "title": x.Title,
-				"kind": "album", "added_at": x.Date, "stage": "available"}})
+			items = append(items, it)
 		}
 	}
-	sort.SliceStable(all, func(i, j int) bool { return all[i].at.After(all[j].at) })
-	if len(all) > 6 {
-		all = all[:6]
+	if len(items) > 6 {
+		items = items[:6]
 	}
-	items := make([]any, 0, len(all))
-	for _, e := range all {
-		items = append(items, e.v)
-	}
-	writeJSON(w, map[string]any{"items": items, "errors": res.Errors, "configured": true})
+	writeJSON(w, map[string]any{"items": items, "errors": []string{}, "configured": true})
 }
 
 func (s *Server) v1Poster(w http.ResponseWriter, r *http.Request) {
