@@ -58,6 +58,9 @@ type Category struct {
 	ArrURL    string        `json:"arrUrl"`
 	ArrAPIKey secret.String `json:"arrApiKey"`
 	Transcode bool          `json:"transcode"`
+	// LibraryDir, for categories no arr handles, is a library of show folders the
+	// finished episodes are placed into, matched by title.
+	LibraryDir string `json:"libraryDir,omitempty"`
 	// OnTranscodeFail is "fail" (default: the arr blocklists and searches again) or "passthrough" (hand back the original).
 	OnTranscodeFail string `json:"onTranscodeFail"`
 }

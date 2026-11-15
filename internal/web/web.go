@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -415,6 +416,7 @@ type categoryView struct {
 	HasArrAPIKey bool   `json:"hasArrApiKey"`
 	Transcode    bool   `json:"transcode"`
 	OnFail       string `json:"onTranscodeFail"`
+	LibraryDir   string `json:"libraryDir"`
 	// OrigName is the name the category had when the page loaded, so a rename
 	// keeps the saved key instead of dropping it.
 	OrigName string `json:"origName,omitempty"`
@@ -469,7 +471,7 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	var v settingsView
 	for _, k := range c.Categories {
 		v.Categories = append(v.Categories, categoryView{Name: k.Name, Kind: k.Kind, ArrURL: k.ArrURL,
-			HasArrAPIKey: k.ArrAPIKey != "", Transcode: k.Transcode, OnFail: k.OnTranscodeFail})
+			HasArrAPIKey: k.ArrAPIKey != "", Transcode: k.Transcode, OnFail: k.OnTranscodeFail, LibraryDir: k.LibraryDir})
 	}
 	v.QBit.URL, v.QBit.Username, v.QBit.HasPassword, v.QBit.SaveDir = c.QBit.URL, c.QBit.Username, c.QBit.Password != "", c.QBit.SaveDir
 	v.Feeds, v.Rules, v.Watches = c.Feeds, c.Rules, c.Watches
@@ -505,6 +507,24 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		nc := config.Category{Name: name, Kind: c.Kind, ArrURL: strings.TrimSpace(c.ArrURL), Transcode: c.Transcode, OnTranscodeFail: c.OnFail}
+		if lib := strings.TrimSpace(c.LibraryDir); lib != "" {
+			lib = filepath.Clean(lib)
+			if !filepath.IsAbs(lib) {
+				jsonErr(w, http.StatusBadRequest, "category "+name+": the library folder must be a full path starting with /")
+				return
+			}
+			for _, bad := range []string{s.Cfg.Env.Complete(), s.Cfg.Env.Work()} {
+				if lib == bad || strings.HasPrefix(lib, bad+string(filepath.Separator)) {
+					jsonErr(w, http.StatusBadRequest, "category "+name+": the library folder cannot be inside the Complete or work folders")
+					return
+				}
+			}
+			if st, err := os.Stat(lib); err != nil || !st.IsDir() {
+				jsonErr(w, http.StatusBadRequest, "category "+name+": the library folder "+lib+" does not exist in the container")
+				return
+			}
+			nc.LibraryDir = lib
+		}
 		if c.ArrAPIKey != "" {
 			nc.ArrAPIKey = secret.String(c.ArrAPIKey)
 		} else if old, ok := cur.Category(strings.TrimSpace(c.OrigName)); ok && c.OrigName != "" {

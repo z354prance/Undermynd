@@ -504,3 +504,86 @@ func TestFilesMovedOutOfCompleteMeansImported(t *testing.T) {
 		t.Fatalf("expected cleaned after the arr moved the files, got %s (%s)", j.State, j.Reason)
 	}
 }
+
+func libraryRig(t *testing.T) (*urig, string) {
+	u := newURig(t)
+	lib := t.TempDir()
+	for _, d := range []string{"Show Name/Season 1", "Other Show/Season 1"} {
+		if err := os.MkdirAll(filepath.Join(lib, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := u.cfg.Get()
+	s.Categories = append(s.Categories, config.Category{Name: "manual", Kind: "rss", LibraryDir: lib})
+	if err := u.cfg.Set(s); err != nil {
+		t.Fatal(err)
+	}
+	return u, lib
+}
+
+func (u *urig) dropRelease(t *testing.T, tbID, release, file string) job.Job {
+	t.Helper()
+	nzb := []byte(`<?xml version="1.0"?><nzb><file subject="x"><segments><segment bytes="40" number="1">a@b</segment></segments></file></nzb>` + release)
+	j, err := u.eng.SubmitNZB(pipeline.SubmitNZBRequest{Source: "watch", Category: "manual", Name: release, NZB: nzb})
+	if err != nil {
+		t.Fatal(err)
+	}
+	u.tick(2)
+	u.tb.finish(tbID, map[string]string{release + "/" + file: strings.Repeat("e", 4000)})
+	u.tick(4)
+	got, _ := u.st.Get(j.ID)
+	return got
+}
+
+// A release that matches a show folder is renamed like the library and moved in.
+func TestLibraryPlacesAMatchingEpisode(t *testing.T) {
+	u, lib := libraryRig(t)
+	rel := "[SubsPlease] Show Name S2 - 07 (1080p) [ABCD1234]"
+	got := u.dropRelease(t, "101", rel, rel+".mkv")
+	if got.State != job.Cleaned {
+		t.Fatalf("expected cleaned, got %s (%s)", got.State, got.Reason)
+	}
+	want := filepath.Join(lib, "Show Name", "Season 2", "Show Name S2 - 7 (1080p).mkv")
+	if !exists(want) {
+		t.Fatalf("the episode should be placed at %s (%s)", want, got.Reason)
+	}
+	if exists(got.CompleteDir) {
+		t.Fatal("nothing should be left in the complete folder when everything was placed")
+	}
+}
+
+// A release with no clear show folder stays where it was delivered and the job ends.
+func TestLibraryLeavesWhatItCannotPlace(t *testing.T) {
+	u, lib := libraryRig(t)
+	rel := "[SubsPlease] Brand New Show - 01 (1080p) [ABCD1234]"
+	got := u.dropRelease(t, "101", rel, rel+".mkv")
+	if got.State != job.Cleaned {
+		t.Fatalf("the job must end, got %s (%s)", got.State, got.Reason)
+	}
+	if !strings.Contains(got.Reason, "left in") {
+		t.Fatalf("the reason should say where the file was left: %s", got.Reason)
+	}
+	if !exists(filepath.Join(got.CompleteDir, rel+".mkv")) {
+		t.Fatal("the unplaced file must stay in the complete folder, untouched")
+	}
+	if exists(filepath.Join(lib, "Brand New Show")) {
+		t.Fatal("no folder may be created on a guess")
+	}
+}
+
+// An episode that is already in the library is never overwritten.
+func TestLibraryNeverOverwrites(t *testing.T) {
+	u, lib := libraryRig(t)
+	dst := filepath.Join(lib, "Show Name", "Season 1", "Show Name - 3 (1080p).mkv")
+	if err := os.WriteFile(dst, []byte("original"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rel := "[SubsPlease] Show Name - 03 (1080p) [ABCD1234]"
+	got := u.dropRelease(t, "101", rel, rel+".mkv")
+	if b, _ := os.ReadFile(dst); string(b) != "original" {
+		t.Fatal("an existing library file must not be replaced")
+	}
+	if !strings.Contains(got.Reason, "already exists") || !exists(filepath.Join(got.CompleteDir, rel+".mkv")) {
+		t.Fatalf("the new file should stay put with a reason: %s", got.Reason)
+	}
+}

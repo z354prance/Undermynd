@@ -737,6 +737,10 @@ func (e *Engine) doReady(ctx context.Context, j job.Job) {
 	// RSS and watch-folder jobs were not grabbed by an arr, so none will import
 	// them: the finished files stay where they were delivered and the job ends.
 	if j.Source == "rss" || j.Source == "watch" {
+		if cat, ok := e.Cfg.Get().Category(j.Category); ok && cat.LibraryDir != "" {
+			e.placeInLibrary(ctx, j, cat)
+			return
+		}
 		if err := e.cleanupExcept(ctx, j, true); err != nil {
 			e.retry2(j, err)
 			return
