@@ -16,6 +16,9 @@ import (
 func TestStatusFindsItemMissingFromTheList(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/api/usenet/mylist", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("bypass_cache") != "true" {
+			t.Error("every list call must bypass TorBox's cache")
+		}
 		switch r.URL.Query().Get("id") {
 		case "":
 			_, _ = w.Write([]byte(`{"success":true,"data":[{"id":1,"download_state":"cached","download_finished":true,"files":[{"id":1,"name":"a.mkv","size":5}]}]}`))

@@ -224,12 +224,10 @@ func (t *TorBox) list(ctx context.Context) (map[string]tbItem, error) {
 		defer t.mu.Unlock()
 		return t.items, nil
 	}
-	fresh := t.items == nil || t.cachedAt.IsZero()
 	t.mu.Unlock()
-	q := url.Values{"limit": {"1000"}}
-	if fresh {
-		q.Set("bypass_cache", "true") // right after a create or delete, ask for live data
-	}
+	// Always ask for live data: TorBox otherwise serves a cached list, which can
+	// hide that a download has finished. Calls are already limited to one per ListTTL.
+	q := url.Values{"limit": {"1000"}, "bypass_cache": {"true"}}
 	data, err := t.call(ctx, API, http.MethodGet, t.ep("mylist"), q, nil, "")
 	if err != nil {
 		return nil, err
@@ -300,9 +298,10 @@ func (t *TorBox) Status(ctx context.Context, id string) (Item, error) {
 	}
 	st := strings.ToLower(it.DownloadState)
 	t.mu.Lock()
-	if !t.seen[st] {
-		t.seen[st] = true
-		t.Logf("torbox: saw download_state %q (progress %v, finished %v)", it.DownloadState, it.Progress, it.DownloadFinished)
+	key := fmt.Sprintf("%s|%s|%v|%d", id, st, it.DownloadFinished, len(it.Files))
+	if !t.seen[key] {
+		t.seen[key] = true
+		t.Logf("torbox: item %s state %q (progress %v, finished %v, %d files)", id, it.DownloadState, it.Progress, it.DownloadFinished, len(it.Files))
 	}
 	t.mu.Unlock()
 	p := it.Progress
