@@ -27,8 +27,10 @@ var (
 	lead    = regexp.MustCompile(`^\s*(\[[^\]]*\]\s*)+`)
 	tail    = regexp.MustCompile(`(\s*\[[^\]]*\])+\s*$`)
 	res     = regexp.MustCompile(`(?i)[\(\[ ](\d{3,4}p)[\)\] ]?`)
-	epDash  = regexp.MustCompile(`^(.*?)\s+-\s+(\d{1,4})(?:v\d+)?(?:\s|\(|\[|$)`)
-	epSxE   = regexp.MustCompile(`(?i)^(.*?)\s+-\s+S(\d{1,2})E(\d{1,3})(?:v\d+)?(?:\s|\(|\[|$)`)
+	epDash  = regexp.MustCompile(`(?i)^(.*?)\s+-\s+(?:EP?\.?\s?)?(\d{1,4})(?:v\d+)?(?:\s|\(|\[|$)`)
+	epNxM   = regexp.MustCompile(`(?i)^(.*?)\s+(?:-\s+)?(\d{1,2})x(\d{1,3})(?:v\d+)?(?:\s|\(|\[|$)`)
+	year    = regexp.MustCompile(`\s*[\(\[](?:19|20)\d\d[\)\]]\s*$`)
+	epSxE   = regexp.MustCompile(`(?i)^(.*?)\s+(?:-\s+)?S(\d{1,2})E(\d{1,3})(?:v\d+)?(?:\s|\(|\[|\.|$)`)
 	seasonA = regexp.MustCompile(`(?i)^(.*?)\s+S(\d{1,2})$`)
 	seasonB = regexp.MustCompile(`(?i)^(.*?)\s+(\d{1,2})(?:st|nd|rd|th)\s+Season$`)
 	seasonC = regexp.MustCompile(`(?i)^(.*?)\s+Season\s+(\d{1,2})$`)
@@ -42,12 +44,22 @@ func Parse(name string) (Release, bool) {
 	}
 	s = lead.ReplaceAllString(s, "")
 	s = tail.ReplaceAllString(s, "")
+	// Dotted or underscored names ("Show.Name.S02E06.1080p.WEB-GRP") read like spaced ones.
+	if strings.Count(s, ".")+strings.Count(s, "_") > strings.Count(s, " ") {
+		s = strings.Join(strings.Fields(strings.NewReplacer(".", " ", "_", " ").Replace(s)), " ")
+	}
 	r := Release{Season: 1}
 	if m := res.FindStringSubmatch(" " + s + " "); m != nil {
 		r.Res = strings.ToLower(m[1])
 	}
 	var title string
 	if m := epSxE.FindStringSubmatch(s); m != nil {
+		title = m[1]
+		r.Season, _ = strconv.Atoi(m[2])
+		r.Marked = true
+		r.Episode, _ = strconv.Atoi(m[3])
+		r.EpisodeS = m[3]
+	} else if m := epNxM.FindStringSubmatch(s); m != nil {
 		title = m[1]
 		r.Season, _ = strconv.Atoi(m[2])
 		r.Marked = true
@@ -61,6 +73,7 @@ func Parse(name string) (Release, bool) {
 		return Release{}, false
 	}
 	title = strings.TrimSpace(title)
+	title = strings.TrimSpace(year.ReplaceAllString(title, ""))
 	for _, re := range []*regexp.Regexp{seasonA, seasonB, seasonC} {
 		if m := re.FindStringSubmatch(title); m != nil {
 			if n, err := strconv.Atoi(m[2]); err == nil && n > 0 {
@@ -81,6 +94,7 @@ func Parse(name string) (Release, bool) {
 func Normalize(s string) string {
 	var b strings.Builder
 	space := true
+	s = strings.NewReplacer("&", " and ", "'", "", "\u2019", "").Replace(s)
 	for _, c := range strings.ToLower(s) {
 		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c > 127 {
 			b.WriteRune(c)
@@ -121,6 +135,18 @@ func Match(title string, folders []string) (folder string, candidates []string) 
 	}
 	if len(exact) == 1 {
 		return exact[0], nil
+	}
+	if len(exact) == 0 {
+		// "Show (2020)" and "Show" are the same show.
+		bare := Normalize(year.ReplaceAllString(title, ""))
+		for _, f := range folders {
+			if Normalize(year.ReplaceAllString(f, "")) == bare {
+				exact = append(exact, f)
+			}
+		}
+		if len(exact) == 1 {
+			return exact[0], nil
+		}
 	}
 	type scored struct {
 		name  string

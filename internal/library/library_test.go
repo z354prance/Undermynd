@@ -19,12 +19,19 @@ func TestParseSeasonMarkers(t *testing.T) {
 		season int
 		ep     int
 	}{
-		"[SubsPlease] Kuma Kuma Kuma Bear S2 - 05 (1080p) [AAAA1111].mkv": {"Kuma Kuma Kuma Bear", 2, 5},
-		"[SubsPlease] Some Show 2nd Season - 12v2 (1080p) [AAAA1111].mkv": {"Some Show", 2, 12},
-		"[SubsPlease] Some Show Season 3 - 01 (720p) [AAAA1111].mkv":      {"Some Show", 3, 1},
-		"[Group] Another Show - S02E03 (1080p) [AAAA1111].mkv":            {"Another Show", 2, 3},
-		"[SubsPlease] Title With - Dash - 24 (1080p) [AAAA1111].mkv":      {"Title With - Dash", 1, 24},
-		"[SubsPlease] Plain Show - 100 (1080p) [AAAA1111].mkv":            {"Plain Show", 1, 100},
+		"[SubsPlease] Kuma Kuma Kuma Bear S2 - 05 (1080p) [AAAA1111].mkv":            {"Kuma Kuma Kuma Bear", 2, 5},
+		"[SubsPlease] Some Show 2nd Season - 12v2 (1080p) [AAAA1111].mkv":            {"Some Show", 2, 12},
+		"[SubsPlease] Some Show Season 3 - 01 (720p) [AAAA1111].mkv":                 {"Some Show", 3, 1},
+		"[Group] Another Show - S02E03 (1080p) [AAAA1111].mkv":                       {"Another Show", 2, 3},
+		"[SubsPlease] Title With - Dash - 24 (1080p) [AAAA1111].mkv":                 {"Title With - Dash", 1, 24},
+		"[SubsPlease] Plain Show - 100 (1080p) [AAAA1111].mkv":                       {"Plain Show", 1, 100},
+		"Blue.Box.S02E06.1080p.WEB-DL.AAC2.0.H.264-GRP.mkv":                          {"Blue Box", 2, 6},
+		"[Group] Blue Box (2024) - 07 (1080p) [AAAA1111].mkv":                        {"Blue Box", 1, 7},
+		"[Group] Blue Box - EP07 (1080p) [AAAA1111].mkv":                             {"Blue Box", 1, 7},
+		"[Group] Blue Box - 2x06 (1080p) [AAAA1111].mkv":                             {"Blue Box", 2, 6},
+		"Blue_Box_S02E06v2_[AAAA1111].mkv":                                           {"Blue Box", 2, 6},
+		"[Group] Blue Box S2 - 06 [WEB 1080p].mkv":                                   {"Blue Box", 2, 6},
+		"[Trix] Blue Box S02E06 [WEB-DL 1080p AV1 Opus] (Tri Audio, Multi Subs).mkv": {"Blue Box", 2, 6},
 	}
 	for in, want := range cases {
 		r, ok := library.Parse(in)
@@ -61,6 +68,22 @@ func TestCleanMatchesTheRenameScript(t *testing.T) {
 	for in, want := range cases {
 		if got := library.Clean(in); got != want {
 			t.Errorf("%q\n got  %q\n want %q", in, got, want)
+		}
+	}
+}
+
+func TestCleanKeepsEpisodeWhenTagsFollow(t *testing.T) {
+	got := library.Clean("[Trix] Blue Box S02E06 [WEB-DL 1080p AV1 Opus] (Tri Audio, Multi Subs).mkv")
+	if got != "Blue Box S02E06.mkv" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestMatchIgnoresYearAndPunctuation(t *testing.T) {
+	folders := []string{"Blue Box (2024)", "Tom and Jerry", "Frierens Journey", "Other"}
+	for title, want := range map[string]string{"Blue Box": "Blue Box (2024)", "Tom & Jerry": "Tom and Jerry", "Frieren's Journey": "Frierens Journey"} {
+		if got, _ := library.Match(title, folders); got != want {
+			t.Errorf("%q -> %q, want %q", title, got, want)
 		}
 	}
 }
