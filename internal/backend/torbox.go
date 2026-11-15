@@ -145,6 +145,9 @@ func (t *TorBox) call(ctx context.Context, c Class, method, path string, q url.V
 		return nil, Permanent{"TorBox rejected the NZB as invalid"}
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
 		return nil, Permanent{"TorBox refused the API token"}
+	case method == http.MethodGet && strings.HasSuffix(path, "mylist") && resp.StatusCode == http.StatusNotFound && strings.Contains(code, "ITEM_NOT_FOUND"):
+		// An empty account answers the list with a 404; that is an empty list.
+		return json.RawMessage("[]"), nil
 	case resp.StatusCode >= 300 || (!env.Success && len(b) > 0 && env.Error != nil):
 		return nil, fmt.Errorf("torbox %s: HTTP %d %s %s", path, resp.StatusCode, code, env.Detail)
 	}
