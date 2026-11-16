@@ -759,6 +759,13 @@ func commonTop(files []backend.File) string {
 }
 
 func (e *Engine) handBack(j job.Job) {
+	// The last look before the arr sees the files: this is the file that will be imported,
+	// so a release that is smaller than it was grabbed as (or a transcode that scaled it
+	// down) stops here.
+	if why := e.qualityMismatch(context.Background(), j); why != "" {
+		e.fail(j, why)
+		return
+	}
 	root := e.Cfg.Env.CompleteRoot(j.Category)
 	dest := filepath.Join(root, config.SafeName(j.Name))
 	if _, err := os.Stat(dest); err == nil {

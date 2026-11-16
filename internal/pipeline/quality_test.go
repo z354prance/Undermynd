@@ -23,16 +23,26 @@ func sizedMKV(w, h int) []byte {
 
 type resArr struct {
 	failArr
-	res int
-	err error
+	res   int
+	err   error
+	calls int
+	// from is the call number (1 is the first) from which the arr reports res; earlier
+	// calls get 0 ("not said").
+	from int
 }
 
-func (r *resArr) GrabbedResolution(context.Context, string) (int, error) { return r.res, r.err }
+func (r *resArr) GrabbedResolution(context.Context, string) (int, error) {
+	r.calls++
+	if r.calls < r.from {
+		return 0, r.err
+	}
+	return r.res, r.err
+}
 
 func runQuality(t *testing.T, res int, w, h int, skip bool) (job.Job, *resArr) {
 	t.Helper()
 	u := newURig(t)
-	ra := &resArr{res: res}
+	ra := &resArr{res: res, from: 1}
 	u.eng.ArrFor = func(config.Category) pipeline.ImportChecker { return ra }
 	if skip {
 		s := u.cfg.Get()
@@ -80,5 +90,24 @@ func TestReleaseThatMatchesIsHandedBack(t *testing.T) {
 func TestQualityCheckOffAndArrErrorsNeverBlock(t *testing.T) {
 	if j, _ := runQuality(t, 1080, 640, 480, true); j.State != job.Ready {
 		t.Fatalf("with the check off the job must pass: %s (%s)", j.State, j.Reason)
+	}
+}
+
+// The check also runs on the file that is about to be handed to the arr, so a file that
+// got past the first look (or was scaled down on the way) is still stopped.
+func TestHandBackChecksTheFileTheArrWillImport(t *testing.T) {
+	u := newURig(t)
+	ra := &resArr{res: 1080, from: 2}
+	u.eng.ArrFor = func(config.Category) pipeline.ImportChecker { return ra }
+	id := u.addNZB("Show.S01E01.1080p")
+	u.tick(2)
+	u.tb.finish("101", map[string]string{"Show.S01E01.1080p/Show.S01E01.1080p.mkv": string(sizedMKV(640, 480))})
+	u.tick(4)
+	j, _ := u.st.Get(id)
+	if j.State == job.Ready || j.State == job.Imported || len(ra.told) != 1 {
+		t.Fatalf("the hand-back check must stop it: state %s (%s), arr told %d", j.State, j.Reason, len(ra.told))
+	}
+	if ra.calls < 2 {
+		t.Fatalf("expected a second look at hand-back, got %d lookups", ra.calls)
 	}
 }
