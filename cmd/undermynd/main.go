@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/z354prance/undermynd/internal/auth"
 	"github.com/z354prance/undermynd/internal/config"
+	"github.com/z354prance/undermynd/internal/logbuf"
 	"github.com/z354prance/undermynd/internal/pipeline"
 	"github.com/z354prance/undermynd/internal/progress"
 	"github.com/z354prance/undermynd/internal/qbitapi"
@@ -74,7 +76,8 @@ func healthcheck(addr string) {
 }
 
 func main() {
-	logger := log.New(os.Stdout, "undermynd ", log.LstdFlags)
+	logs := logbuf.New(2000)
+	logger := log.New(io.MultiWriter(os.Stdout, logs), "undermynd ", log.LstdFlags)
 	env := config.LoadEnv()
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		healthcheck(env.PublicAddr)
@@ -101,6 +104,7 @@ func main() {
 	machine.Handle("/sabnzbd/", sab.Handler())
 	machine.Handle("/", qb.Handler())
 	site := web.New(st, eng, cfg, au, logger)
+	site.Logs = logs
 
 	if am, err := web.NewAccess(env.ConfigDir, cfg); err != nil {
 		logger.Fatalf("access: %v", err)

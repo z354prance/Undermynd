@@ -25,6 +25,7 @@ import (
 	"github.com/z354prance/undermynd/internal/auth"
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/job"
+	"github.com/z354prance/undermynd/internal/logbuf"
 	"github.com/z354prance/undermynd/internal/pipeline"
 	"github.com/z354prance/undermynd/internal/progress"
 	"github.com/z354prance/undermynd/internal/rss"
@@ -47,6 +48,7 @@ type Server struct {
 	Cfg      *config.Config
 	Auth     *auth.Auth
 	Log      *log.Logger
+	Logs     *logbuf.Buffer // recent log lines for the admin Log tab
 	Progress interface{ Snapshot() progress.Snapshot }
 	Storage  *storage.Monitor
 	Access   *access.Manager
@@ -89,6 +91,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/api/jobs", s.admin(s.jobs))
 	mux.HandleFunc("GET /admin/api/jobs/{id}", s.admin(s.jobDetail))
 	mux.HandleFunc("POST /admin/api/jobs/{id}/{action}", s.guard(s.admin(s.jobAction)))
+	mux.HandleFunc("GET /admin/api/log", s.admin(s.logLines))
 	mux.HandleFunc("GET /admin/api/reencode", s.admin(s.reencodeScan))
 	mux.HandleFunc("POST /admin/api/reencode", s.guard(s.admin(s.reencodeQueue)))
 	mux.HandleFunc("GET /admin/api/settings", s.admin(s.getSettings))

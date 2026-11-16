@@ -104,6 +104,10 @@ If your layout differs, set `UNDERMYND_WORK` (staging, Tdarr hand-off, local cli
 Keep both inside one mount of one cache-only share so every move is a rename.
 
 
+## Log
+
+Admin → Log shows the last 2000 lines of the container log since Undermynd started, with a filter box (a job id, `tdarr`, `failed`) and a follow switch. The one-time setup key is never kept in it.
+
 ## Resolution check
 
 When a download finishes, Undermynd reads the real frame size of each video from its container header and asks the arr (Sonarr or Radarr, through the download's history) what quality it grabbed the release as. If the video is below that step (2160, 1080, 720, 480), such as a release labelled 1080p that is really 480p, the job fails and the arr is told to blocklist the release and search again. Wider-than-tall crops count by width, so a 1920x800 film is 1080p. If the arr cannot say, cannot be reached, or the frame size cannot be read, the download goes on as normal. Turn it off under Admin → System → Timing ("check resolution against the arr").

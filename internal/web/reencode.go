@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -77,4 +78,18 @@ func (s *Server) reencodeQueue(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Log.Printf("admin: queued %d file(s) for re-encoding (%d skipped)", queued, len(skipped))
 	writeJSON(w, map[string]any{"queued": queued, "skipped": skipped})
+}
+
+// logLines serves the newest container log lines, optionally narrowed to lines that
+// contain every word of q (a job id, "tdarr", "failed").
+func (s *Server) logLines(w http.ResponseWriter, r *http.Request) {
+	n := 300
+	if v, err := strconv.Atoi(r.URL.Query().Get("n")); err == nil && v > 0 && v <= 2000 {
+		n = v
+	}
+	lines := []string{}
+	if s.Logs != nil {
+		lines = s.Logs.Lines(r.URL.Query().Get("q"), n)
+	}
+	writeJSON(w, map[string]any{"lines": lines})
 }
