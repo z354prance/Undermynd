@@ -226,7 +226,7 @@ function playWire(percent) {
   const known = percent !== null && Number.isFinite(Number(percent));
   const p = known ? Math.max(0, Math.min(100, Number(percent))) : 0;
   const stretch = p > 0 ? Math.round(10000 / p) : 100;
-  return `<div class="wire wire-play${known ? "" : " unknown"}" aria-hidden="true"><i class="nd done"></i><b class="ln act" style="--p:${p.toFixed(1)}%"><s class="fill" style="width:${p.toFixed(1)}%;background-size:${stretch}% 100%"></s>${known && p > 0 ? `<u class="dot" style="left:${p.toFixed(1)}%"></u>` : ""}<em class="rest"></em></b><i class="nd end"></i><span class="pct">${known ? Math.round(p) + "%" : "—"}</span></div>`;
+  return `<div class="wire wire-play${known ? " w-run" : " unknown"}" aria-hidden="true"><i class="nd done"></i><b class="ln act" style="--p:${p.toFixed(1)}%"><s class="fill" style="width:${p.toFixed(1)}%;background-size:${stretch}% 100%"></s>${known && p > 0 ? `<u class="dot" style="left:${p.toFixed(1)}%"></u>` : ""}<em class="rest"></em></b><i class="nd end"></i><span class="pct">${known ? Math.round(p) + "%" : "—"}</span></div>`;
 }
 
 function pipelineCardMarkup(item) {
