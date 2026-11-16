@@ -109,8 +109,46 @@ func (e *Engine) tdarrInFlight() int {
 	return n
 }
 
-// transcodeFailed applies the category's failure policy.
+// tdarrWorkerOn returns the Tdarr worker that currently holds one of this job's files, or nil.
+// It matches on the job's own folder name, so a node that mounts the share at a different
+// path still finds its worker.
+func (e *Engine) tdarrWorkerOn(ctx context.Context, j job.Job) *tdarr.Worker {
+	cli := e.tdarrClient()
+	if cli == nil {
+		return nil
+	}
+	ws, err := cli.ActiveWorkers(ctx)
+	if err != nil {
+		return nil
+	}
+	prefix := filepath.ToSlash(e.tdarrIn(j.ID)) + "/"
+	inJob := "/" + j.ID + "/"
+	for i := range ws {
+		p := filepath.ToSlash(ws[i].File)
+		if strings.HasPrefix(p, prefix) || strings.Contains(p, inJob) {
+			return &ws[i]
+		}
+	}
+	return nil
+}
+
+// transcodeFailed applies the category's failure policy. It never acts while a Tdarr
+// worker is still encoding the file: handing back the original (or failing the grab, which
+// clears the Tdarr folders) would pull the file out from under the encode, and the arr
+// would import an untranscoded copy while Tdarr carries on.
 func (e *Engine) transcodeFailed(j job.Job, why string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	w := e.tdarrWorkerOn(ctx, j)
+	cancel()
+	if w != nil && !e.Now().After(j.StateChanged.Add(time.Duration(e.Cfg.Get().Tdarr.TimeoutMinutes)*time.Minute)) {
+		e.Log.Printf("job %s: %s, but Tdarr worker %s on %s is still on the file (%.0f%%); not handing it back", short(j.ID), why, w.Worker, w.Node, w.Percentage)
+		_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
+			c.Reason = "Tdarr is still encoding"
+			c.NextRun = e.Now().Add(30 * time.Second)
+			return nil
+		})
+		return
+	}
 	cat, _ := e.Cfg.Get().Category(j.Category)
 	if cat.OnTranscodeFail == "passthrough" {
 		if err := e.passthrough(j); err == nil {
@@ -206,7 +244,9 @@ func (e *Engine) doTranscode(ctx context.Context, j job.Job) {
 		return
 	}
 	if worker != nil {
-		moved := worker.Percentage/100 != j.TranscodeProgress
+		// Progress is the percentage moving or the encoder reporting frames. A hardware AV1
+		// encode can sit at one percentage for a long while, so the idle limit has a floor.
+		moved := worker.Percentage/100 != j.TranscodeProgress || worker.FPS > 0
 		_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
 			c.TranscodeProgress, c.TranscodeNode, c.TranscodeWorker = worker.Percentage/100, worker.Node, worker.Worker
 			if moved {
@@ -218,8 +258,12 @@ func (e *Engine) doTranscode(ctx context.Context, j job.Job) {
 			c.NextRun = next
 			return nil
 		})
-		if !moved && now.Sub(j.LastProgress) > time.Duration(s.Tdarr.StallMinutes)*time.Minute {
-			e.transcodeFailed(j, fmt.Sprintf("Tdarr made no progress for %d minutes", s.Tdarr.StallMinutes))
+		stall := s.Tdarr.StallMinutes
+		if stall < 60 {
+			stall = 60
+		}
+		if !moved && now.Sub(j.LastProgress) > time.Duration(stall)*time.Minute {
+			e.transcodeFailed(j, fmt.Sprintf("Tdarr made no progress for %d minutes", stall))
 		}
 		return
 	}

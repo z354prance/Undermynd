@@ -194,3 +194,30 @@ func TestTdarrInFlightCap(t *testing.T) {
 		t.Fatalf("first job should still be with Tdarr, got %s", j1.State)
 	}
 }
+
+// A hardware AV1 encode can sit at one percentage for a long time. While a Tdarr worker
+// holds the file, Undermynd must not pull it back to staging and hand the original to the
+// arr, whatever the category's failure policy says.
+func TestTdarrWorkerHoldingFileIsNeverHandedBack(t *testing.T) {
+	u, td, id, in := setupTranscode(t, "passthrough")
+	td.mu.Lock()
+	td.workers["w1"] = map[string]any{"_id": "w1", "idle": false, "file": in, "percentage": 12.0, "status": "Transcoding"}
+	td.mu.Unlock()
+	u.tick(90) // far past the old 10 minute stall limit, with the percentage flat
+	j, _ := u.st.Get(id)
+	if j.State == job.Ready || j.State == job.Failed || j.State == job.Imported {
+		t.Fatalf("a job with a live Tdarr worker must stay with Tdarr, got %s (%s)", j.State, j.Reason)
+	}
+	if _, err := os.Stat(in); err != nil {
+		t.Fatalf("the file must stay in the Tdarr input folder while it is encoded: %v", err)
+	}
+	// once the worker is gone and Tdarr reports an error, the category policy applies
+	td.mu.Lock()
+	delete(td.workers, "w1")
+	td.records[in] = map[string]any{"_id": in, "TranscodeDecisionMaker": "Transcode error"}
+	td.mu.Unlock()
+	u.tick(4)
+	if j, _ = u.st.Get(id); j.State != job.Ready {
+		t.Fatalf("after the worker ends in error, passthrough should hand back, got %s (%s)", j.State, j.Reason)
+	}
+}
