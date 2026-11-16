@@ -62,3 +62,21 @@ func TestFailDownloadBlocklistsTheQueueEntry(t *testing.T) {
 		t.Fatalf("deleted %q", deleted)
 	}
 }
+
+func TestGrabbedResolutionReadsTheGrabbedQuality(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v3/history", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("downloadId") != "nzo_1" {
+			t.Errorf("wrong download id: %s", r.URL.RawQuery)
+		}
+		_, _ = w.Write([]byte(`{"records":[{"eventType":"downloadFolderImported","quality":{"quality":{"resolution":480}}},{"eventType":"grabbed","quality":{"quality":{"resolution":1080}}}]}`))
+	})
+	s := httptest.NewServer(mux)
+	defer s.Close()
+	if got, err := arr.New("sonarr", s.URL, "k").GrabbedResolution(context.Background(), "nzo_1"); err != nil || got != 1080 {
+		t.Fatalf("got %d %v", got, err)
+	}
+	if got, _ := arr.New("lidarr", s.URL, "k").GrabbedResolution(context.Background(), "nzo_1"); got != 0 {
+		t.Fatalf("music has no resolution, got %d", got)
+	}
+}

@@ -604,6 +604,7 @@ type settingsView struct {
 	StallMinutes     int    `json:"stallMinutes"`
 	ReconcileSeconds int    `json:"reconcileSeconds"`
 	FlagImportHours  int    `json:"flagImportHours"`
+	QualityCheck     *bool  `json:"qualityCheck,omitempty"`
 
 	StorageScanMinutes int `json:"storageScanMinutes"`
 }
@@ -638,6 +639,8 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	v.TorBox.HasToken, v.TorBox.CreatePerHour, v.TorBox.PullersAtOnce, v.TorBox.LinkGapSeconds = c.TorBox.Token != "", c.TorBox.CreatePerHour, c.TorBox.PullersAtOnce, c.TorBox.LinkGapSeconds
 	v.ClientUser, v.StallMinutes, v.ReconcileSeconds, v.FlagImportHours = c.ClientUser, c.StallMinutes, c.ReconcileSeconds, c.FlagImportHours
 	v.StorageScanMinutes = c.StorageScanMinutes
+	qc := !c.SkipQualityCheck
+	v.QualityCheck = &qc
 	writeJSON(w, v)
 }
 
@@ -808,6 +811,9 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.StorageScanMinutes > 0 {
 		next.StorageScanMinutes = in.StorageScanMinutes
+	}
+	if in.QualityCheck != nil {
+		next.SkipQualityCheck = !*in.QualityCheck
 	}
 	if err := s.Cfg.Set(next); err != nil {
 		jsonErr(w, http.StatusInternalServerError, "could not save settings")

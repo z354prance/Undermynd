@@ -271,3 +271,33 @@ func albumCover(id int64) string {
 	}
 	return fmt.Sprintf("/MediaCover/Albums/%d/cover.jpg", id)
 }
+
+// GrabbedResolution is the vertical resolution (480, 720, 1080, 2160) of the quality the
+// arr grabbed a download as, or 0 when the arr does not say (music, unknown quality, no
+// history for the download).
+func (c *Client) GrabbedResolution(ctx context.Context, downloadID string) (int, error) {
+	if c.Kind != "sonarr" && c.Kind != "radarr" {
+		return 0, nil
+	}
+	q := url.Values{"page": {"1"}, "pageSize": {"100"}, "downloadId": {downloadID}}
+	var r struct {
+		Records []struct {
+			EventType string `json:"eventType"`
+			Quality   struct {
+				Quality struct {
+					Resolution int `json:"resolution"`
+				} `json:"quality"`
+			} `json:"quality"`
+		} `json:"records"`
+	}
+	if err := c.get(ctx, "/history?"+q.Encode(), &r); err != nil {
+		return 0, err
+	}
+	best := 0
+	for _, x := range r.Records {
+		if x.EventType == "grabbed" && x.Quality.Quality.Resolution > best {
+			best = x.Quality.Quality.Resolution
+		}
+	}
+	return best, nil
+}

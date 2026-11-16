@@ -104,6 +104,10 @@ If your layout differs, set `UNDERMYND_WORK` (staging, Tdarr hand-off, local cli
 Keep both inside one mount of one cache-only share so every move is a rename.
 
 
+## Resolution check
+
+When a download finishes, Undermynd reads the real frame size of each video from its container header and asks the arr (Sonarr or Radarr, through the download's history) what quality it grabbed the release as. If the video is below that step (2160, 1080, 720, 480), such as a release labelled 1080p that is really 480p, the job fails and the arr is told to blocklist the release and search again. Wider-than-tall crops count by width, so a 1920x800 film is 1080p. If the arr cannot say, cannot be reached, or the frame size cannot be read, the download goes on as normal. Turn it off under Admin → System → Timing ("check resolution against the arr").
+
 ## Re-encoding files already in the library
 
 The admin **Re-encode** tab lists videos in `Movies`, `Episodes` and `Anime` under the media share (`UNDERMYND_STORAGE_ROOT`, mounted at `/media`) that are not AV1 and arrived since a date you choose. The codec is read from the file's own header, so nothing needs ffprobe. Picked files are copied to staging, sent through the same Tdarr flow as a new grab, and the result is checked (valid container, read back as AV1) before it is written beside the original and moved over it. If Tdarr fails, produces anything that is not AV1, or the library file changes meanwhile, the library file is left as it was. These jobs never touch Sonarr or Radarr and are not shown on the public page; run a rescan in Sonarr or Radarr afterwards so it picks up the new files.

@@ -190,6 +190,10 @@ type Settings struct {
 	ClientUser     string        `json:"clientUser"`
 	ClientPassword secret.String `json:"clientPassword"`
 
+	// SkipQualityCheck turns off the check that a download's real video size matches the
+	// quality the arr grabbed it as.
+	SkipQualityCheck bool `json:"skipQualityCheck"`
+
 	StallMinutes     int `json:"stallMinutes"`
 	ReconcileSeconds int `json:"reconcileSeconds"`
 	FlagImportHours  int `json:"flagImportHours"`

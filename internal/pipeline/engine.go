@@ -731,6 +731,10 @@ func (e *Engine) doDownloaded(ctx context.Context, j job.Job) {
 	if err := e.removeBackendItem(ctx, j); err != nil {
 		e.Log.Printf("job %s: client item not confirmed removed yet (%v); continuing, cleanup will retry", short(j.ID), err)
 	}
+	if why := e.qualityMismatch(ctx, j); why != "" {
+		e.fail(j, why)
+		return
+	}
 	cat, _ := e.Cfg.Get().Category(j.Category)
 	if cat.Transcode && e.sendToTdarr(j) {
 		return
