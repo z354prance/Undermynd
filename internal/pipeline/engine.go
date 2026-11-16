@@ -59,6 +59,9 @@ type Engine struct {
 	nmu      sync.Mutex
 	notes    map[string]string
 
+	// LibraryRoots are the media folders re-encode jobs may read and replace files in.
+	LibraryRoots []string
+
 	pulling sync.Map // job ID -> running
 	wg      sync.WaitGroup
 	sem     chan struct{}
@@ -466,12 +469,24 @@ func (e *Engine) Tick(ctx context.Context) {
 func (e *Engine) step(ctx context.Context, j job.Job) {
 	switch j.State {
 	case job.Received:
+		if j.Source == "reencode" {
+			e.doReencodeStage(ctx, j)
+			return
+		}
 		e.doSubmit(ctx, j)
 	case job.Submitted, job.Downloading:
 		e.doDownload(ctx, j)
 	case job.Downloaded:
+		if j.Source == "reencode" {
+			e.sendToTdarr(j)
+			return
+		}
 		e.doDownloaded(ctx, j)
 	case job.Pulling:
+		if j.Source == "reencode" {
+			e.doReencodeStage(ctx, j)
+			return
+		}
 		e.doPulling(ctx, j)
 	case job.QueuedTranscode, job.Transcoding:
 		e.doTranscode(ctx, j)
@@ -766,6 +781,10 @@ func (e *Engine) handBack(j job.Job) {
 
 func (e *Engine) doReady(ctx context.Context, j job.Job) {
 	now := e.Now()
+	if j.Source == "reencode" {
+		e.doReencodeSwap(ctx, j)
+		return
+	}
 	// RSS and watch-folder jobs were not grabbed by an arr, so none will import
 	// them: the finished files stay where they were delivered and the job ends.
 	if j.Source == "rss" || j.Source == "watch" {
@@ -830,6 +849,9 @@ func (e *Engine) doReady(ctx context.Context, j job.Job) {
 }
 
 func (e *Engine) removeBackendItem(ctx context.Context, j job.Job) error {
+	if j.RemoteID == "" && len(j.PastRemoteIDs) == 0 {
+		return nil // nothing was ever sent to a client (a re-encode job, or a grab that never got that far)
+	}
 	b := e.backend(j)
 	// Items from earlier attempts: delete them, and do not hold up cleanup if one is already gone.
 	for _, old := range j.PastRemoteIDs {
@@ -980,7 +1002,7 @@ func (e *Engine) doFailed(ctx context.Context, j job.Job) {
 	// Do not wait for the arr's own failed-download handling (it may be switched
 	// off, or the item may already be gone from its queue): tell it directly, so it
 	// blocklists this release and grabs a different one, then end the job.
-	if j.ArrDeleted || j.Source == "rss" || j.Source == "watch" {
+	if j.ArrDeleted || j.Source == "rss" || j.Source == "watch" || j.Source == "reencode" {
 		e.endFailed(j, "failed job cleaned up; the arr has dealt with it")
 		return
 	}

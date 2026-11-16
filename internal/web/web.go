@@ -89,6 +89,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/api/jobs", s.admin(s.jobs))
 	mux.HandleFunc("GET /admin/api/jobs/{id}", s.admin(s.jobDetail))
 	mux.HandleFunc("POST /admin/api/jobs/{id}/{action}", s.guard(s.admin(s.jobAction)))
+	mux.HandleFunc("GET /admin/api/reencode", s.admin(s.reencodeScan))
+	mux.HandleFunc("POST /admin/api/reencode", s.guard(s.admin(s.reencodeQueue)))
 	mux.HandleFunc("GET /admin/api/settings", s.admin(s.getSettings))
 	mux.HandleFunc("PUT /admin/api/settings", s.guard(s.admin(s.putSettings)))
 	mux.HandleFunc("GET /admin/api/events", s.admin(s.events))
@@ -263,7 +265,7 @@ type publicJob struct {
 	Steps    []publicStep `json:"steps"`
 }
 
-var viaName = map[string]string{"sonarr": "Sonarr", "radarr": "Radarr", "lidarr": "Lidarr", "rss": "RSS", "watch": "Watch folder"}
+var viaName = map[string]string{"sonarr": "Sonarr", "radarr": "Radarr", "lidarr": "Lidarr", "rss": "RSS", "watch": "Watch folder", "reencode": "Re-encode"}
 
 var stageName = map[job.State]string{
 	job.Received: "Queued", job.Submitted: "Queued", job.Downloading: "Downloading", job.Pulling: "Copying",
@@ -276,7 +278,7 @@ var stageName = map[job.State]string{
 func (s *Server) publicJobs(w http.ResponseWriter, r *http.Request) {
 	out := []publicJob{}
 	for _, j := range s.Store.List() {
-		if j.State == job.Cleaned {
+		if j.State == job.Cleaned || j.Source == "reencode" {
 			continue
 		}
 		pj := publicJob{Title: j.Name, Group: job.Group(j.State), Progress: job.Overall(j), Stage: stageName[j.State],

@@ -102,3 +102,10 @@ Without a Tdarr address everything still works from the folders alone, but failu
 By default everything lives under the one `/data` mount: work files in `/data/undermynd`, hand-back folders in `/data/complete/<category>`.
 If your layout differs, set `UNDERMYND_WORK` (staging, Tdarr hand-off, local client) and `UNDERMYND_COMPLETE` (what the arrs import from).
 Keep both inside one mount of one cache-only share so every move is a rename.
+
+
+## Re-encoding files already in the library
+
+The admin **Re-encode** tab lists videos in `Movies`, `Episodes` and `Anime` under the media share (`UNDERMYND_STORAGE_ROOT`, mounted at `/media`) that are not AV1 and arrived since a date you choose. The codec is read from the file's own header, so nothing needs ffprobe. Picked files are copied to staging, sent through the same Tdarr flow as a new grab, and the result is checked (valid container, read back as AV1) before it is written beside the original and moved over it. If Tdarr fails, produces anything that is not AV1, or the library file changes meanwhile, the library file is left as it was. These jobs never touch Sonarr or Radarr and are not shown on the public page; run a rescan in Sonarr or Radarr afterwards so it picks up the new files.
+
+This is the only thing that writes to the media share, so the share has to be mounted read-write.

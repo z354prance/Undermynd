@@ -149,6 +149,11 @@ func (e *Engine) transcodeFailed(j job.Job, why string) {
 		})
 		return
 	}
+	if j.Source == "reencode" {
+		// The library file is untouched; there is nothing to hand back.
+		e.fail(j, why)
+		return
+	}
 	cat, _ := e.Cfg.Get().Category(j.Category)
 	if cat.OnTranscodeFail == "passthrough" {
 		if err := e.passthrough(j); err == nil {
@@ -161,6 +166,20 @@ func (e *Engine) transcodeFailed(j job.Job, why string) {
 
 // passthrough puts the untranscoded originals back into staging and hands them back.
 func (e *Engine) passthrough(j job.Job) error {
+	if j.Source == "reencode" {
+		// Tdarr says the file needs no change: leave the library file alone and finish.
+		if err := e.removeTdarrDirs(j); err != nil {
+			return err
+		}
+		if err := e.removeTree(e.Cfg.Env.StagingDir(j.ID), e.Cfg.Env.Work()); err != nil {
+			return err
+		}
+		_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
+			c.Move(job.Cleaned, "Tdarr says no change is needed; the library file was left alone", e.Now())
+			return nil
+		})
+		return nil
+	}
 	for _, f := range j.Files {
 		if !isVideo(f) {
 			continue

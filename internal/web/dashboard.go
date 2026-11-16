@@ -106,7 +106,7 @@ type v1Lifecycle struct {
 func (s *Server) dashboardRecords() ([]v1Download, []v1Process, []v1Lifecycle) {
 	downloads, procs, lifes := []v1Download{}, []v1Process{}, []v1Lifecycle{}
 	for _, j := range s.Store.List() {
-		if j.State == job.Cleaned {
+		if j.State == job.Cleaned || j.Source == "reencode" {
 			continue
 		}
 		kind := map[string]string{"sonarr": "episode", "radarr": "movie", "lidarr": "album"}[j.Source]

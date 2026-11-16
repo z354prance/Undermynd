@@ -125,6 +125,12 @@ func main() {
 	pt := progress.New(cfg, st, logger)
 	site.Progress = pt
 	site.Storage = storage.New(os.Getenv("UNDERMYND_STORAGE_ROOT"))
+	if root := os.Getenv("UNDERMYND_STORAGE_ROOT"); root != "" {
+		// The folders a re-encode may read and replace files in: the video libraries only.
+		for _, f := range []string{"Movies", "Episodes", "Anime"} {
+			eng.LibraryRoots = append(eng.LibraryRoots, filepath.Join(root, f))
+		}
+	}
 	site.Storage.Persist(filepath.Join(env.ConfigDir, "storage-scan.json"))
 	go site.Storage.Run(ctx, func() time.Duration { return time.Duration(cfg.Get().StorageScanMinutes) * time.Minute })
 	go pt.Run(ctx)

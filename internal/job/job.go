@@ -78,6 +78,11 @@ type Job struct {
 	FailCleaned   bool     `json:"failCleaned,omitempty"`   // files and backend item removed after a failure
 	Flag          string   `json:"flag,omitempty"`          // reconciler note shown in the UI
 
+	// Re-encode jobs (Source "reencode") work on a file already in the library.
+	Original     string `json:"original,omitempty"`     // the library file being re-encoded
+	OriginalSize int64  `json:"originalSize,omitempty"` // its size and modified time when it was queued,
+	OriginalMod  int64  `json:"originalMod,omitempty"`  // so a file that changed meanwhile is left alone
+
 	History []Transition `json:"history,omitempty"`
 }
 
