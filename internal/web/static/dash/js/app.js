@@ -423,10 +423,6 @@ function renderPlayback() {
         subtitleParts.push(session.media_title);
       }
 
-      if (session.username) {
-        subtitleParts.push(session.username);
-      }
-
       const duration = Number(session.duration_ms || 0);
       const progress = Number(session.progress_ms || 0);
       const percent =
@@ -450,6 +446,7 @@ function renderPlayback() {
               ["Artist",session.artist_name], ["Album",session.album_name], ["Track",session.track_number], ["Genres",session.genres?.join(", ")],
               ["Started",session.started_at ? new Date(session.started_at).toLocaleString() : ""]
             ].filter(([,value])=>value).map(([label,value])=>`<div><dt>${label}</dt><dd>${escapeHTML(value)}</dd></div>`).join("")}</dl></details>
+            ${session.username ? `<div class="playback-user">@${escapeHTML(session.username)}</div>` : ""}
             <div class="playback-time">${escapeHTML(formatPlaybackTime(progress))} / ${duration > 0 ? escapeHTML(formatPlaybackTime(duration)) : "Live / unknown"}</div>
           </div>
             <div class="progress-track" role="progressbar" aria-label="Playback progress" ${duration > 0 ? `aria-valuenow="${Math.round(percent)}" aria-valuemin="0" aria-valuemax="100"` : 'aria-valuetext="Progress unavailable"'}>

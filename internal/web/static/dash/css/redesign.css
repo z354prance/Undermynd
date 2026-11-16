@@ -320,3 +320,6 @@ body :is(#searchResultsPanel,.request-dialog) > header button:focus-visible { ou
 :is(#pipelineList,#seriesOverviewList) h3.mq-box .mq { display:inline-block; white-space:nowrap; animation:mq 9s ease-in-out infinite alternate; }
 @media (prefers-reduced-motion:reduce) { :is(#pipelineList,#seriesOverviewList) h3.mq-box .mq { animation:none; } }
 #pipelineList .pipeline-card-heading > div, #seriesOverviewList .pipeline-card-heading > div { min-width:0; flex:1; }
+
+/* viewer name: its own line under Details, inside the poster's height so the card does not grow */
+#playbackList .playback-user { color:var(--dimprompt); font-size:.92em; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; min-width:0; }
