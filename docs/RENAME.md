@@ -1,10 +1,10 @@
-# Pending rename: Undermynd → Hyvemynd
+# Pending rename: Undermynd → HyveMynd
 
 Decided 2026-11-16. Not done yet, on purpose: the rename is clean-up work for the end of the arr consolidation roadmap, after the native engine is in place.
 
 Undermynd is growing from a download-and-transcode layer into one app that replaces Radarr, Sonarr, Lidarr, Prowlarr, Seerr, Houndarr and Recyclarr. The new name reflects that: many workers, one mind.
 
-- Name: **Hyvemynd** (final casing still to confirm: `Hyvemynd` to match Overmynd/Undermynd, or `HyveMynd`).
+- Name: **HyveMynd** (display name). Lowercase `hyvemynd` for the repo, image and paths; `HYVEMYND_*` for environment variables.
 - Keep the same repository and evolve the code in place. Do not start a new repo.
 
 ## Until then
