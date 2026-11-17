@@ -1,10 +1,10 @@
-# Roadmap: folding the arr stack into Undermynd (v25, Nov 17, 2026)
+# Roadmap: folding the arr stack into Undermynd (v26, Nov 17, 2026)
 
 Goal: one app that does what Radarr, Sonarr, Lidarr, Prowlarr, Seerr, Houndarr and Recyclarr do today, so nothing else has to run or be configured. It will be renamed HyveMynd at the end.
 
 How to use this doc: the **milestones table** is the plan. Each milestone is one or a few pull requests, has a clear exit test, and lists what it depends on. Decisions and gates explain why the order is what it is. This file is kept in the repo (`docs/ROADMAP.md`) and in the Undermynd project (`design/roadmap-arr-consolidation.md`) with the same content. Supporting project docs: `design/metadata-sources.md`, `design/anime-pipeline.md`; in the repo: `docs/RENAME.md`.
 
-v13 restructured the plan into milestones. v14 to v17 answered every gate that blocks the start. v18 recorded Stage A progress. v19 recorded B1 merged and added B0 (Go upgrade). v20 closed A1. v21 closed B1 and B0. v22 recorded B2 merged. v23 recorded the B3 spike results. v24 recorded B4 (metadata layer) merged. v25 records C1 built.
+v13 restructured the plan into milestones. v14 to v17 answered every gate that blocks the start. v18 recorded Stage A progress. v19 recorded B1 merged and added B0 (Go upgrade). v20 closed A1. v21 closed B1 and B0. v22 recorded B2 merged. v23 recorded the B3 spike results. v24 recorded B4 (metadata layer) merged. v25 recorded C1 built. v26 records the C1 fixes from the real scan and C2 built.
 
 ---
 
@@ -97,7 +97,7 @@ Sizes: **S** one build session, **M** two to four, **L** about a week of session
 | ID | Milestone | Size | Depends on | Exit test |
 |---|---|---|---|---|
 | C1 | Library import: scan the anime library, match each folder to TMDB with the user confirming, detect each series' numbering mode and episode order from its files (absolute or seasons; TMDB default order, an episode group, or a season offset, as with Blue Box), sending anything unclear to a person, and record which episodes already exist | M | B4 | Season cells show real counts for anime, for absolute and season-laid-out shows alike, including Blue Box season 2. **Built (this PR):** `internal/animelib`, Library anime tab, show page, Import anime folders screen (designs on the C1 canvas). Real-run check: scan the library, confirm, compare season cells with the folders |
-| C2 | Catalog-based placement: match by alias instead of folder name; place each episode in the series' own mode; "needs a person" queue with reasons and a manual resolve action; dry-run | M | C1, A1 | Name corpus passes; an absolute show and a season show each get new episodes in their own layout; nothing ever overwritten |
+| C2 | Catalog-based placement: match by alias instead of folder name; place each episode in the series' own mode; "needs a person" queue with reasons and a manual resolve action; dry-run | M | C1, A1 | Name corpus passes; an absolute show and a season show each get new episodes in their own layout; nothing ever overwritten  **Built** (`animelib.Placer`): placement mode setting (folder names, folder names with catalog dry run (the default), catalog); dry-run comparison table; "files that need you" in Library with place / remember title / add new show / replace (old kept as `.replaced`) / keep both / place before TMDB lists it; hourly retry; release group recorded per file. Real-run check: leave the dry run on for a few days, then switch when nothing is "worse" |
 | C3 | Monitoring: monitor a series, ordered group preference per show, 1080p default; generate per-show nyaa search feeds through the existing RSS poller | M | C2 | Two of the user's hand-made feeds replaced with generated ones for a week with no misses |
 | C4 | Missing and gap filling: per-episode search from the next group when one skips; air dates stop early "missing"; never re-download an episode another group already supplied; group and resolution shown per episode | M | C3 | Student Council holes filled automatically |
 | C5 | Optional speed-up: skip the Tdarr round trip when the source already matches the target codec | S | none | A Trix AV1 release is placed without a Tdarr run |
@@ -224,6 +224,7 @@ The redesign doc says Settings, Library and Requests/Access are not designed yet
 - v16: requests need no sign-in; every request waits for admin approval. Stage E is one milestone. A4 done.
 - v17: G3 answered: TMDB plus anime-offline-database plus ID mapping.
 - v18: A1 merged (PR #2), A2 done (PR #3, Clone bug fixed), A3 done (README status, this file added to `docs/`). Merge rule recorded.
+- v26: C1 real scan of 948 folders: fixes for unchecked folders counted as waiting, older file names (`S01E01-Title`), readings ranked by files with their own episode, exact-title matches for shows the lists lack, thousands separators, list ties settled by title, extra episodes past a season's end. C2 built, starting in a dry run.
 - v25: B4 real-run check passed. C1 built: folder import with a confirm queue, per-show numbering and episode order picked by how well each fits the files, half-hourly folder check, Library anime tab and show page. Group per episode shows for files Undermynd places from now on (C2); files already in the library have names without the group.
 - v24: B4 merged: `internal/metadata`, migration 3, Metadata settings tab, `/credits`. The real-source check found a new show whose release spelling only an AniList-only list entry had; list entries without an AniDB id now contribute titles when they share one with TMDB.
 - v23: B3 done: spike results recorded; G3 refined (TMDB primary for titles too, offline database optional, mapping through TVDB, per-series episode order); B4 and C1 widened accordingly.

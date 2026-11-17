@@ -190,6 +190,9 @@ func main() {
 				return roots
 			}}
 		go site.Anime.Run(ctx)
+		site.Placer = &animelib.Placer{Cat: site.Metadata.Catalog, Meta: site.Metadata, Blobs: blobs, Log: logger, Now: time.Now}
+		eng.Placer = site.Placer
+		go site.Placer.Run(ctx)
 	}
 	rp := rss.New(cfg, eng, logger)
 	rp.State = blobs

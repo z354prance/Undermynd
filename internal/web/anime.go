@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/z354prance/undermynd/internal/animelib"
 	"github.com/z354prance/undermynd/internal/catalog"
 	"github.com/z354prance/undermynd/internal/metadata"
 )
@@ -390,4 +391,62 @@ func (s *Server) animeSearch(w http.ResponseWriter, r *http.Request) {
 		res = []metadata.Candidate{}
 	}
 	writeJSON(w, res)
+}
+
+func (s *Server) placementReady(w http.ResponseWriter) bool {
+	if s.Placer == nil {
+		jsonErr(w, http.StatusConflict, "catalog placement needs the database (UNDERMYND_STORE is set to json)")
+		return false
+	}
+	return true
+}
+
+func (s *Server) placementStatus(w http.ResponseWriter, r *http.Request) {
+	if !s.placementReady(w) {
+		return
+	}
+	dry := s.Placer.DryRun()
+	counts := map[string]int{}
+	for _, e := range dry {
+		counts[e.Verdict]++
+	}
+	if len(dry) > 100 {
+		dry = dry[:100]
+	}
+	writeJSON(w, map[string]any{"mode": s.Placer.Mode(), "queue": s.Placer.Queue(), "dryRun": dry, "counts": counts})
+}
+
+func (s *Server) placementMode(w http.ResponseWriter, r *http.Request) {
+	if !s.placementReady(w) {
+		return
+	}
+	var in struct {
+		Mode string `json:"mode"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	if err := s.Placer.SetMode(in.Mode); err != nil {
+		jsonErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, map[string]string{"mode": s.Placer.Mode()})
+}
+
+func (s *Server) placementResolve(w http.ResponseWriter, r *http.Request) {
+	if !s.placementReady(w) {
+		return
+	}
+	var in animelib.Resolution
+	if !readJSON(w, r, &in) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	defer cancel()
+	dst, err := s.Placer.Resolve(ctx, r.PathValue("id"), in)
+	if err != nil {
+		jsonErr(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, map[string]string{"placed": dst})
 }
