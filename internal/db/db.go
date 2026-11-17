@@ -212,6 +212,38 @@ var migrations = []string{
 		JOIN episodes e ON e.id = fe.episode_id JOIN series s ON s.id = e.series_id WHERE s.kind = 'anime');
 	DELETE FROM series WHERE kind = 'anime';
 	DELETE FROM kv WHERE name IN ('anime-import.json', 'placement-mode.json', 'placement-queue.json', 'placement-dryrun.json');`,
+
+	// 6: followed shows (roadmap C3): settings per show folder of the simple
+	// importer, and the releases nyaa has offered for followed shows.
+	`CREATE TABLE shows (
+		folder          TEXT PRIMARY KEY,
+		followed        INTEGER NOT NULL DEFAULT 0,
+		groups          TEXT NOT NULL DEFAULT '[]',
+		quality         TEXT NOT NULL DEFAULT '1080p',
+		titles          TEXT NOT NULL DEFAULT '[]',
+		from_episode    INTEGER NOT NULL DEFAULT 0,
+		anilist_id      INTEGER NOT NULL DEFAULT 0,
+		anilist         TEXT NOT NULL DEFAULT '',
+		anilist_checked TEXT NOT NULL DEFAULT '',
+		checked         TEXT NOT NULL DEFAULT '',
+		check_error     TEXT NOT NULL DEFAULT '',
+		added           TEXT NOT NULL
+	);
+	CREATE TABLE show_releases (
+		folder   TEXT NOT NULL REFERENCES shows(folder) ON DELETE CASCADE,
+		title    TEXT NOT NULL,
+		link     TEXT NOT NULL,
+		grp      TEXT NOT NULL,
+		res      TEXT NOT NULL,
+		season   INTEGER NOT NULL,
+		marked   INTEGER NOT NULL,
+		episode  INTEGER NOT NULL,
+		size     INTEGER NOT NULL DEFAULT 0,
+		seeders  INTEGER NOT NULL DEFAULT 0,
+		seen     TEXT NOT NULL,
+		grabbed  TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (folder, title)
+	);`,
 }
 
 // Version is the schema version this build expects.

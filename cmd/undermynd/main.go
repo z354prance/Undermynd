@@ -28,6 +28,7 @@ import (
 	"github.com/z354prance/undermynd/internal/qbitapi"
 	"github.com/z354prance/undermynd/internal/rss"
 	"github.com/z354prance/undermynd/internal/sabapi"
+	"github.com/z354prance/undermynd/internal/shows"
 	"github.com/z354prance/undermynd/internal/state"
 	"github.com/z354prance/undermynd/internal/storage"
 	"github.com/z354prance/undermynd/internal/store"
@@ -182,6 +183,14 @@ func main() {
 	rp := rss.New(cfg, eng, logger)
 	rp.State = blobs
 	site.RSS = rp
+	if dbh != nil {
+		hc := &http.Client{Timeout: 60 * time.Second}
+		site.Shows = &shows.Service{Store: &shows.Store{DB: dbh, Now: time.Now}, Nyaa: shows.Nyaa{HTTP: hc}, AniList: shows.AniList{HTTP: hc},
+			HTTP: hc, Cfg: cfg, Engine: eng, Log: logger, Now: time.Now, Grace: 24 * time.Hour, Every: 20 * time.Minute}
+		eng.FolderTitles = site.Shows.FolderTitles
+		rp.Claim = site.Shows.Claims
+		go site.Shows.Run(ctx)
+	}
 	go rp.Run(ctx)
 	go watch.New(cfg, eng, logger).Run(ctx)
 

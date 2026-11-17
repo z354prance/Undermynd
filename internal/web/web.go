@@ -31,6 +31,7 @@ import (
 	"github.com/z354prance/undermynd/internal/progress"
 	"github.com/z354prance/undermynd/internal/rss"
 	"github.com/z354prance/undermynd/internal/secret"
+	"github.com/z354prance/undermynd/internal/shows"
 	"github.com/z354prance/undermynd/internal/storage"
 	"github.com/z354prance/undermynd/internal/store"
 )
@@ -55,7 +56,10 @@ type Server struct {
 	Access   *access.Manager
 	// Metadata is nil when state is kept in JSON files (no database).
 	Metadata *metadata.Service
-	RSS      interface {
+	// Shows follows show folders of the simple importer (the Anime page); nil
+	// without the database.
+	Shows *shows.Service
+	RSS   interface {
 		Status() []rss.FeedStatus
 		Download(ctx context.Context, feed string, index int, title, category string) (string, error)
 		CheckNow(context.Context)
@@ -145,6 +149,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /admin/api/metadata/test", s.guard(s.admin(s.metadataTest)))
 	mux.HandleFunc("GET /admin/api/metadata/status", s.admin(s.metadataStatus))
 	mux.HandleFunc("POST /admin/api/metadata/lists/refresh", s.guard(s.admin(s.metadataListsRefresh)))
+	mux.HandleFunc("GET /admin/api/shows", s.admin(s.showsList))
+	mux.HandleFunc("GET /admin/api/shows/one", s.admin(s.showsOne))
+	mux.HandleFunc("PUT /admin/api/shows/one", s.guard(s.admin(s.showsSave)))
+	mux.HandleFunc("POST /admin/api/shows/{action}", s.guard(s.admin(s.showsAction)))
+	mux.HandleFunc("GET /admin/api/shows/search", s.admin(s.showsSearch))
+	mux.HandleFunc("GET /admin/api/shows/discover", s.admin(s.showsDiscover))
 	mux.HandleFunc("POST /admin/api/tdarr/test", s.guard(s.admin(s.tdarrTest)))
 	mux.HandleFunc("POST /admin/api/settings/client-password", s.guard(s.admin(s.newClientPassword)))
 	return secure(mux)
