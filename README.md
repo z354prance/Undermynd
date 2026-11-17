@@ -77,6 +77,15 @@ Behind a reverse proxy set `UNDERMYND_TRUST_PROXY=true` so the real client IP is
 - The arr history check is confirmed against Sonarr and Radarr; Lidarr is untested. Set `UNDERMYND_LOG_REQUESTS=1` to log every call the arrs make to the fake client.
 - The release folder in `complete/` is named after the release (not the job ID) so the arrs can parse it.
 
+## Metadata
+
+Undermynd keeps its own catalog of shows, episodes and the other titles each show is known by, filled from:
+
+- **TMDB**, with your own free API key (Admin → Settings → Metadata). Both the short API key and the long read access token work.
+- **Two optional anime lists**, downloaded once a week: the [anime-offline-database](https://github.com/manami-project/anime-offline-database) for other titles, and [Kometa Anime-IDs](https://github.com/Kometa-Team/Anime-IDs) to connect them to TMDB through TVDB. Set either address to `off` to skip it.
+
+TMDB answers are cached in the database, requests are spaced out, and each show is refreshed about once a day. Attribution is on `/credits`. Nothing in the download path depends on metadata yet; the native anime library (roadmap stage C) is the first user.
+
 ## Database and backups
 
 State (jobs, RSS items already seen, tracked shows, access requests) lives in SQLite at `/config/undermynd.db`. Settings, the admin login and the encryption key stay as files in `/config`, so you can always sign in even if the database has a problem.

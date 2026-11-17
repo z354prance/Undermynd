@@ -43,6 +43,7 @@ func newEnv(t *testing.T) *env {
 	s := cfg.Get()
 	s.Categories = []config.Category{{Name: "radarr", Kind: "radarr", ArrURL: "http://radarr", ArrAPIKey: "TOP-SECRET-ARR-KEY"}}
 	s.QBit.Password = "TOP-SECRET-QBIT-PW"
+	s.Metadata.TMDBKey = "TOP-SECRET-TMDB-KEY"
 	_ = cfg.Set(s)
 	st, _ := store.Open(filepath.Join(e.ConfigDir, "jobs.json"))
 	au, err := auth.New(e.ConfigDir)
@@ -159,8 +160,30 @@ func TestSettingsNeverReturnSecrets(t *testing.T) {
 		t.Fatal(code)
 	}
 	got := e.cfg.Get()
-	if string(got.Categories[0].ArrAPIKey) != "TOP-SECRET-ARR-KEY" || string(got.QBit.Password) != "TOP-SECRET-QBIT-PW" {
+	if string(got.Categories[0].ArrAPIKey) != "TOP-SECRET-ARR-KEY" || string(got.QBit.Password) != "TOP-SECRET-QBIT-PW" || string(got.Metadata.TMDBKey) != "TOP-SECRET-TMDB-KEY" {
 		t.Fatal("blank secret fields must keep the stored secret")
+	}
+	if !strings.Contains(string(b), `"hasTmdbKey":true`) {
+		t.Fatalf("should say whether the TMDB key is set: %s", b)
+	}
+	// A new key is trimmed; a bad list address is refused.
+	md := v["metadata"].(map[string]any)
+	md["tmdbKey"] = "  new-key\n"
+	if code, _ = e.do("PUT", "/admin/api/settings", v, true); code != 200 || string(e.cfg.Get().Metadata.TMDBKey) != "new-key" {
+		t.Fatalf("new key: %d %q", code, e.cfg.Get().Metadata.TMDBKey)
+	}
+	md["tmdbKey"], md["animeTitlesUrl"] = "", "ftp://example"
+	if code, _ = e.do("PUT", "/admin/api/settings", v, true); code != 400 {
+		t.Fatalf("a non-http list address must be refused, got %d", code)
+	}
+}
+
+// The credits page (TMDB attribution) is public.
+func TestCreditsPage(t *testing.T) {
+	e := newEnv(t)
+	code, b := e.do("GET", "/credits", nil, false)
+	if code != 200 || !strings.Contains(string(b), "not endorsed or certified by TMDB") {
+		t.Fatalf("credits: %d", code)
 	}
 }
 

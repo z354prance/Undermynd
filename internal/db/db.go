@@ -166,6 +166,32 @@ var migrations = []string{
 		decided   TEXT NOT NULL DEFAULT ''
 	);
 	CREATE INDEX requests_status ON requests(status, created);`,
+
+	// 3: metadata (roadmap B4): each series' episode order, a TMDB response
+	// cache, and the anime title and ID lists.
+	`ALTER TABLE series ADD COLUMN episode_order TEXT NOT NULL DEFAULT '';
+	CREATE TABLE meta_cache (
+		key     TEXT PRIMARY KEY,
+		body    BLOB NOT NULL,
+		fetched TEXT NOT NULL
+	);
+	CREATE TABLE anime_titles (
+		anidb_id   INTEGER NOT NULL DEFAULT 0,
+		anilist_id INTEGER NOT NULL DEFAULT 0,
+		title      TEXT NOT NULL,
+		norm       TEXT NOT NULL
+	);
+	CREATE INDEX anime_titles_norm ON anime_titles(norm);
+	CREATE INDEX anime_titles_anidb ON anime_titles(anidb_id);
+	CREATE TABLE anime_ids (
+		anidb_id      INTEGER PRIMARY KEY,
+		tvdb_id       INTEGER NOT NULL DEFAULT 0,
+		tvdb_season   INTEGER NOT NULL DEFAULT 0,
+		tvdb_epoffset INTEGER NOT NULL DEFAULT 0,
+		anilist_id    INTEGER NOT NULL DEFAULT 0,
+		mal_id        INTEGER NOT NULL DEFAULT 0
+	);
+	CREATE INDEX anime_ids_tvdb ON anime_ids(tvdb_id);`,
 }
 
 // Version is the schema version this build expects.

@@ -1,10 +1,10 @@
-# Roadmap: folding the arr stack into Undermynd (v23, Nov 17, 2026)
+# Roadmap: folding the arr stack into Undermynd (v24, Nov 17, 2026)
 
 Goal: one app that does what Radarr, Sonarr, Lidarr, Prowlarr, Seerr, Houndarr and Recyclarr do today, so nothing else has to run or be configured. It will be renamed HyveMynd at the end.
 
 How to use this doc: the **milestones table** is the plan. Each milestone is one or a few pull requests, has a clear exit test, and lists what it depends on. Decisions and gates explain why the order is what it is. This file is kept in the repo (`docs/ROADMAP.md`) and in the Undermynd project (`design/roadmap-arr-consolidation.md`) with the same content. Supporting project docs: `design/metadata-sources.md`, `design/anime-pipeline.md`; in the repo: `docs/RENAME.md`.
 
-v13 restructured the plan into milestones. v14 to v17 answered every gate that blocks the start. v18 recorded Stage A progress. v19 recorded B1 merged and added B0 (Go upgrade). v20 closed A1. v21 closed B1 and B0. v22 recorded B2 merged. v23 records the B3 spike results.
+v13 restructured the plan into milestones. v14 to v17 answered every gate that blocks the start. v18 recorded Stage A progress. v19 recorded B1 merged and added B0 (Go upgrade). v20 closed A1. v21 closed B1 and B0. v22 recorded B2 merged. v23 recorded the B3 spike results. v24 records B4 (metadata layer) merged.
 
 ---
 
@@ -89,7 +89,7 @@ Sizes: **S** one build session, **M** two to four, **L** about a week of session
 | B1 | SQLite: driver, migration framework, job store backend behind the same interface; one-time import of `jobs.json`, RSS seen items, tracked shows and access requests, keeping `.bak` copies; WAL and busy timeout; daily `VACUUM INTO` backup to `/config/backups`, keep the last 7 | M | A2 | A2 contract tests and all pipeline tests pass on SQLite; restart mid-job resumes; a real TorBox + Tdarr grab completes; restoring a backup works. **Done** (PR #5). Real-run check passed Nov 16: import with `.bak` files, backup written, container restarted mid-transcode, jobs resumed, finished and were imported by Sonarr |
 | B2 | Catalog schema: series (with numbering mode), seasons, episodes (season/episode and absolute), movies, files, aliases, releases, requests; jobs can point at an episode or movie | M | B1 | Unit tests; schema migration up from B1. **Merged (PR #10).** Real-run check: after updating, the log shows schema version 2 and a backup taken before the upgrade |
 | B3 | Metadata spike to confirm G3 on Blue Box, Seitokai, One Piece, Boku no Hero Academia and a current SubsPlease show | S | none | **Done Nov 17** (run in CI on an unmerged spike branch). All 5 found on TMDB; alias coverage needs TMDB plus the offline database; mapping reaches TMDB through TVDB for 4 of 5; One Piece is numbered absolutely by TMDB; **Blue Box season 2 is part of TMDB season 1**, so per-series episode order is needed. The Emby check moves to C6 |
-| B4 | Metadata layer: TMDB client (search, details, alternative titles, seasons, episode groups, `/find`), offline anime database import (optional, cached), Kometa ID mapping, cache tables, per-source limiter, background refresh, TMDB key setting, Credits page | M | B2, B3 | Add a show by TMDB id; aliases from TMDB and the offline database stored; both numberings stored; an episode group can be chosen; refresh picks up a new episode |
+| B4 | Metadata layer: TMDB client (search, details, alternative titles, seasons, episode groups, `/find`), offline anime database import (optional, cached), Kometa ID mapping, cache tables, per-source limiter, background refresh, TMDB key setting, Credits page | M | B2, B3 | Add a show by TMDB id; aliases from TMDB and the offline database stored; both numberings stored; an episode group can be chosen; refresh picks up a new episode. **Merged (PR #12).** Also run against the real TMDB and lists in CI: all 5 test shows identified first by the right TMDB show, every feed title finds its show, Blue Box's "Seasons" group gives 25 + 12, One Piece `1158` is S23E1158, Hero Academia `90` is S5E2. Real-run check for the user: set the key in Settings → Metadata, press test, then download the lists |
 | B5 | Media-server interface extracted from `access` and `playback`; Emby and Jellyfin implementations; list libraries; optional refresh setting | S | none | Access flow and playback unchanged; Emby tests pass; Jellyfin marked untested if not run |
 | B6 | Settings screen rebuilt around categories, with the per-category owner switch (arr or native) | M | design | Every current setting reachable; switch exists but only "arr" is selectable until a native mode ships |
 
@@ -160,7 +160,7 @@ B4 -> H1 -> H2 -> [Lidarr off]
 everything -> I2 (rename)
 ```
 
-Recommended sequence for one builder: B4 → B3 → B4 → C1 to C4 → B5 → D1 → E1 → D2 → F1 to F6 → G → H → I. B6 (settings screen) can go anywhere after B1, but before the first category switch. C5 and C6 whenever wanted.
+Recommended sequence for one builder: C1 → B3 → B4 → C1 to C4 → B5 → D1 → E1 → D2 → F1 to F6 → G → H → I. B6 (settings screen) can go anywhere after B1, but before the first category switch. C5 and C6 whenever wanted.
 
 ## 7. Design track
 
@@ -224,6 +224,7 @@ The redesign doc says Settings, Library and Requests/Access are not designed yet
 - v16: requests need no sign-in; every request waits for admin approval. Stage E is one milestone. A4 done.
 - v17: G3 answered: TMDB plus anime-offline-database plus ID mapping.
 - v18: A1 merged (PR #2), A2 done (PR #3, Clone bug fixed), A3 done (README status, this file added to `docs/`). Merge rule recorded.
+- v24: B4 merged: `internal/metadata`, migration 3, Metadata settings tab, `/credits`. The real-source check found a new show whose release spelling only an AniList-only list entry had; list entries without an AniDB id now contribute titles when they share one with TMDB.
 - v23: B3 done: spike results recorded; G3 refined (TMDB primary for titles too, offline database optional, mapping through TVDB, per-series episode order); B4 and C1 widened accordingly.
 - v22: B2 merged: migration 2 and `internal/catalog` (series, episodes with both numberings, movies, aliases, files, missing and season counts, job targets, requests table). Migration test from every earlier version added.
 - v21: B1 done (real-run check passed), B0 done (Go 1.27, SQLite driver v1.62.0). Also fixed: usenet grabs listed twice in Sonarr (PR #7).

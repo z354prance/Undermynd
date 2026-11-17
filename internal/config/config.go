@@ -65,6 +65,14 @@ type Category struct {
 	OnTranscodeFail string `json:"onTranscodeFail"`
 }
 
+// Metadata is where show information comes from (roadmap B4).
+type Metadata struct {
+	TMDBKey secret.String `json:"tmdbKey"` // TMDB API key (v3) or read access token (v4)
+	// Anime list sources; empty means the defaults. "off" turns a list off.
+	AnimeTitlesURL string `json:"animeTitlesUrl,omitempty"`
+	AnimeIDsURL    string `json:"animeIdsUrl,omitempty"`
+}
+
 type QBit struct {
 	URL      string        `json:"url"`
 	Username string        `json:"username"`
@@ -185,6 +193,7 @@ type Settings struct {
 	TorBox       TorBox     `json:"torbox"`
 	Categories   []Category `json:"categories"`
 	QBit         QBit       `json:"qbit"`
+	Metadata     Metadata   `json:"metadata"`
 
 	// Login the arrs use against the fake client API.
 	ClientUser     string        `json:"clientUser"`
