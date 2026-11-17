@@ -400,13 +400,13 @@ func (p *Placer) Record(src, catalogDst, catalogWhy, folderDst, folderWhy string
 		}
 	}
 	switch {
-	case folderDst == "" && catalogDst == "":
+	case e.FolderDst == "" && e.CatalogDst == "":
 		e.Verdict = "both-left"
-	case folderDst == "":
+	case e.FolderDst == "":
 		e.Verdict = "better"
-	case catalogDst == "":
+	case e.CatalogDst == "":
 		e.Verdict = "worse"
-	case filepath.Dir(folderDst) == filepath.Dir(catalogDst):
+	case filepath.Dir(e.FolderDst) == filepath.Dir(e.CatalogDst):
 		e.Verdict = "same"
 	default:
 		e.Verdict = "different"
