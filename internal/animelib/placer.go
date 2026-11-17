@@ -97,7 +97,8 @@ type DryRunEntry struct {
 	FolderWhy  string    `json:"folderWhy,omitempty"`
 	CatalogDst string    `json:"catalogDst,omitempty"`
 	CatalogWhy string    `json:"catalogWhy,omitempty"`
-	Verdict    string    `json:"verdict"` // same, better, different, worse, both-left
+	Verdict    string    `json:"verdict"`            // same, better, different, worse, both-left
+	ByFolder   bool      `json:"byFolder,omitempty"` // the show is not in the catalog, so folder names would place it too
 }
 
 // Placer puts finished anime downloads into the library using the catalog.
@@ -371,6 +372,9 @@ func mustAliases(c *catalog.Catalog, id int64) []string {
 // Preview says where the catalog would put a file, or why it would not.
 func (p *Placer) Preview(src, root string) (dst, why string) {
 	pl := p.decideFile(src, root)
+	if pl.kind == KindUnknown {
+		return "", ByFolderName
+	}
 	if pl.kind != "" {
 		return "", pl.reason
 	}
@@ -379,10 +383,22 @@ func (p *Placer) Preview(src, root string) (dst, why string) {
 
 func (p *Placer) decideFile(src, root string) plan { return p.decide(src, root) }
 
+// ByFolderName is Preview's answer for a show not in the catalog: it would be
+// placed by folder name, as before.
+const ByFolderName = "by folder name: the show is not in the catalog"
+
 // Record keeps a dry-run comparison: where the folder names put the file and
 // where the catalog would have.
 func (p *Placer) Record(src, catalogDst, catalogWhy, folderDst, folderWhy string) {
 	e := DryRunEntry{At: p.Now(), Name: filepath.Base(src), FolderDst: folderDst, FolderWhy: folderWhy, CatalogDst: catalogDst, CatalogWhy: catalogWhy}
+	if catalogWhy == ByFolderName {
+		e.ByFolder = true
+		if folderDst != "" {
+			e.CatalogDst, e.CatalogWhy = folderDst, ""
+		} else {
+			e.CatalogWhy = "not in the catalog, and " + folderWhy
+		}
+	}
 	switch {
 	case folderDst == "" && catalogDst == "":
 		e.Verdict = "both-left"
@@ -408,8 +424,19 @@ func (p *Placer) Record(src, catalogDst, catalogWhy, folderDst, folderWhy string
 // Place puts a finished download in the library by the catalog. A file it
 // cannot place with certainty waits for a person and stays where it is; why
 // says so. err is only for a move that failed.
-func (p *Placer) Place(src, jobID, root string) (dst, why string, err error) {
+func (p *Placer) Place(src, jobID, root string, byFolder func() (string, string, error)) (dst, why string, err error) {
 	pl := p.decideFile(src, root)
+	if pl.kind == KindUnknown && byFolder != nil {
+		// A show that is not in the catalog (a folder never imported) is
+		// placed by folder name, as before the catalog.
+		dst, why, err := byFolder()
+		if err != nil || why == "" {
+			if why == "" && err == nil {
+				p.Log.Printf("placement: %s placed by folder name (the show is not in the catalog)", filepath.Base(src))
+			}
+			return dst, why, err
+		}
+	}
 	if pl.kind != "" {
 		p.enqueue(src, jobID, root, pl)
 		return "", pl.reason + " (waiting in Library)", nil

@@ -264,7 +264,7 @@
         q.forEach(function(it){box.appendChild(pendingCard(it,series))})}
       var c=d.counts||{},total=0;Object.keys(c).forEach(function(k){total+=c[k]});
       box.appendChild(el('h3','osec','Placement'));
-      var modeHelp={folders:'New episodes are placed by folder name, as before the catalog.','dry-run':'New episodes are still placed by folder name; the catalog records where it would have put each one, below, so it can be trusted before it takes over.',catalog:'New episodes are placed by the catalog: each show\'s own numbering and season folders, matched by every title it is known by. Anything unsure waits above.'};
+      var modeHelp={folders:'New episodes are placed by folder name, as before the catalog.','dry-run':'New episodes are still placed by folder name; the catalog records where it would have put each one, below, so it can be trusted before it takes over.',catalog:'New episodes are placed by the catalog: each show\'s own numbering and season folders, matched by every title it is known by. Shows that are not imported are placed by folder name, as before. Anything unsure waits above.'};
       var tb=el('div','toolbar');var sel=el('select');sel.setAttribute('aria-label','placement mode');[['dry-run','folder names, with catalog dry run'],['catalog','catalog'],['folders','folder names only']].forEach(function(o){var op=new Option(o[1],o[0]);op.selected=d.mode===o[0];sel.appendChild(op)});
       var msg=el('span','msg');sel.onchange=function(){api('PUT','/anime/placement/mode',{mode:sel.value}).then(function(){app()}).catch(function(e){msg.className='msg err';msg.textContent=e.message})};
       tb.appendChild(el('span','reason','place new episodes by'));tb.appendChild(sel);
@@ -275,7 +275,7 @@
         box.appendChild(help('same: the same show and season folder. better: the catalog places a file folder names left. different: another folder (check these). worse: the catalog would leave a file folder names placed.'));
         var t=el('table','atable'),hr=el('tr');['when','file','folder names','catalog would',''].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tbd=el('tbody');
         d.dryRun.slice(0,40).forEach(function(e){var tr=el('tr');tr.appendChild(el('td','mono',ago(e.at)+' ago'));tr.appendChild(el('td','mono',e.name));
-          tr.appendChild(el('td','mono'+(e.folderDst?'':' warnt'),e.folderDst||('left: '+e.folderWhy)));tr.appendChild(el('td','mono'+(e.catalogDst?'':' warnt'),e.catalogDst||('waits: '+e.catalogWhy)));
+          tr.appendChild(el('td','mono'+(e.folderDst?'':' warnt'),e.folderDst||('left: '+e.folderWhy)));tr.appendChild(el('td','mono'+(e.catalogDst?'':' warnt'),e.byFolder?(e.catalogDst?'same, by folder name (show not imported)':'left: '+e.catalogWhy):(e.catalogDst||('waits: '+e.catalogWhy))));
           var vc=el('td');vc.appendChild(el('span','chip2 '+({same:'',better:'blue',different:'warn',worse:'bad','both-left':'dim'}[e.verdict]||''),e.verdict.replace('-',' ')));tr.appendChild(vc);tbd.appendChild(tr)});
         t.appendChild(tbd);box.appendChild(t)}
     }).catch(function(e){if(e.status===401)fail(e);else if(e.status!==409)box.appendChild(el('div','err',e.message))})}
@@ -357,7 +357,9 @@
       if(st.confirming)host.appendChild(el('div','notice show','Adding the ready shows to the library…'));
       if(st.error)host.appendChild(el('div','err',st.error));if(st.message&&!st.confirming)host.appendChild(el('div','msg ok',st.message));
       if(!st.running&&!st.folders.length&&d.hasKey)host.appendChild(el('div','empty','Not scanned yet. Scan folders to begin.'));
-      if(by['needs you'].length){host.appendChild(el('h3','osec','Needs you · '+by['needs you'].length));by['needs you'].forEach(function(f){host.appendChild(folderCard(f,load))})}
+      if(by['needs you'].length){var air=by['needs you'].filter(function(f){return f.airing}).length;host.appendChild(el('h3','osec','Needs you · '+by['needs you'].length+(air?' · '+air+' still airing, listed first':'')));
+        if(air)host.appendChild(help('Shows still airing come first: they are the ones new episodes will arrive for. The rest can wait, or be skipped; a folder that is not imported is still placed by folder name, as before.'));
+        by['needs you'].slice().sort(function(a,b){return (b.airing?1:0)-(a.airing?1:0)}).forEach(function(f){host.appendChild(folderCard(f,load))})}
       if(by.failed.length){host.appendChild(el('h3','osec','Failed · '+by.failed.length));by.failed.forEach(function(f){host.appendChild(folderCard(f,load))})}
       if(by.ready.length){host.appendChild(el('h3','osec','Ready · '+by.ready.length));by.ready.forEach(function(f){host.appendChild(folderCard(f,load))})}
       if(by.skipped.length){host.appendChild(el('h3','osec','Skipped · '+by.skipped.length));by.skipped.forEach(function(f){host.appendChild(folderCard(f,load))})}
@@ -371,7 +373,7 @@
   function folderCard(f,reload){
     var c=el('section','card fcard'+(f.state==='needs you'?' needs':f.state==='failed'?' failedc':''));
     var h=el('div','nh');var hl=el('div','fhead');hl.appendChild(el('span','chip2 '+({ready:'',skipped:'dim',failed:'bad'}[f.state]!=null?{ready:'',skipped:'dim',failed:'bad'}[f.state]:'warn'),f.state));
-    hl.appendChild(el('span','fname',f.name));hl.appendChild(el('span','reason',f.files+' file'+(f.files===1?'':'s')));h.appendChild(hl);var acts=el('div','acts rhoriz');h.appendChild(acts);c.appendChild(h);
+    hl.appendChild(el('span','fname',f.name));if(f.airing)hl.appendChild(el('span','chip2 blue','airing'));hl.appendChild(el('span','reason',f.files+' file'+(f.files===1?'':'s')));h.appendChild(hl);var acts=el('div','acts rhoriz');h.appendChild(acts);c.appendChild(h);
     var msg=el('div','msg');var chosen=0;
     if(f.match){var m=el('div','fmatch');m.appendChild(el('span','dimt','→ '));var tl=el('a','','TMDB '+f.match.tmdbId);tl.href='https://www.themoviedb.org/tv/'+f.match.tmdbId;tl.target='_blank';tl.rel='noopener';m.appendChild(tl);
       m.appendChild(el('span','',' '+f.match.name+(f.match.year?' ('+f.match.year+')':'')));m.appendChild(el('span','reason',' · via '+(f.picked?'your choice':f.match.via)));c.appendChild(m)}

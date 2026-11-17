@@ -278,3 +278,29 @@ func Extras(files []DiskFile, eps []catalog.Episode, fit Fit) (n int, ok bool) {
 	}
 	return n, true
 }
+
+// Copies counts files that share an episode with another file that carries
+// the same season and number in its name: second copies, not a numbering mix.
+func Copies(files []DiskFile, fit Fit) int {
+	type key struct{ season, episode int }
+	byEp := map[int][]key{}
+	for i, j := range fit.m {
+		byEp[j] = append(byEp[j], key{files[i].Season, files[i].Episode})
+	}
+	n := 0
+	for _, ks := range byEp {
+		if len(ks) < 2 {
+			continue
+		}
+		same := true
+		for _, k := range ks[1:] {
+			if k != ks[0] {
+				same = false
+			}
+		}
+		if same {
+			n += len(ks) - 1
+		}
+	}
+	return n
+}
