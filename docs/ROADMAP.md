@@ -1,10 +1,10 @@
-# Roadmap: folding the arr stack into Undermynd (v20, Nov 16, 2026)
+# Roadmap: folding the arr stack into Undermynd (v21, Nov 16, 2026)
 
 Goal: one app that does what Radarr, Sonarr, Lidarr, Prowlarr, Seerr, Houndarr and Recyclarr do today, so nothing else has to run or be configured. It will be renamed HyveMynd at the end.
 
 How to use this doc: the **milestones table** is the plan. Each milestone is one or a few pull requests, has a clear exit test, and lists what it depends on. Decisions and gates explain why the order is what it is. This file is kept in the repo (`docs/ROADMAP.md`) and in the Undermynd project (`design/roadmap-arr-consolidation.md`) with the same content. Supporting project docs: `design/metadata-sources.md`, `design/anime-pipeline.md`; in the repo: `docs/RENAME.md`.
 
-v13 restructured the plan into milestones. v14 to v17 answered every gate that blocks the start. v18 recorded Stage A progress. v19 recorded B1 merged and added B0 (Go upgrade). v20 closes A1 and corrects what it found.
+v13 restructured the plan into milestones. v14 to v17 answered every gate that blocks the start. v18 recorded Stage A progress. v19 recorded B1 merged and added B0 (Go upgrade). v20 closed A1. v21 closes B1 (real-run check passed) and B0 (Go 1.27).
 
 ---
 
@@ -38,7 +38,7 @@ v13 restructured the plan into milestones. v14 to v17 answered every gate that b
 - From Overmynd: public request box (no sign-in, rate-limited) backed by Seerr, with admin approve/decline; Emby/Jellyfin access flow; Tracearr playback; storage monitor; season progress (`internal/progress`, from the arrs).
 - State (jobs, RSS seen items, tracked shows, access requests) is in SQLite since B1, with daily backups; old JSON files are imported once and kept as `.bak`. The TorBox limiter and storage scan stay as small files.
 - CI starts the built container and checks that it creates the database and a backup.
-- Go 1.24, which is out of upstream support; the SQLite driver is pinned at v1.46.1, the newest that builds with it (B0).
+- Built with Go 1.27 (current release) and `modernc.org/sqlite` v1.62.0 since B0.
 
 ## 3. Target shape
 
@@ -85,8 +85,8 @@ Sizes: **S** one build session, **M** two to four, **L** about a week of session
 ### Stage B: Foundations
 | ID | Milestone | Size | Depends on | Exit test |
 |---|---|---|---|---|
-| B0 | Move to a supported Go version (1.26), then update the SQLite driver to its newest release | S | B1 | CI green; container smoke test passes; no behaviour change |
-| B1 | SQLite: driver, migration framework, job store backend behind the same interface; one-time import of `jobs.json`, RSS seen items, tracked shows and access requests, keeping `.bak` copies; WAL and busy timeout; daily `VACUUM INTO` backup to `/config/backups`, keep the last 7 | M | A2 | A2 contract tests and all pipeline tests pass on SQLite; restart mid-job resumes; a real TorBox + Tdarr grab completes; restoring a backup works. **Merged (PR #5); waiting on the user's real-run check** |
+| B0 | Move to a supported Go version (1.27), then update the SQLite driver to its newest release | S | B1 | CI green; container smoke test passes; no behaviour change. **Done** |
+| B1 | SQLite: driver, migration framework, job store backend behind the same interface; one-time import of `jobs.json`, RSS seen items, tracked shows and access requests, keeping `.bak` copies; WAL and busy timeout; daily `VACUUM INTO` backup to `/config/backups`, keep the last 7 | M | A2 | A2 contract tests and all pipeline tests pass on SQLite; restart mid-job resumes; a real TorBox + Tdarr grab completes; restoring a backup works. **Done** (PR #5). Real-run check passed Nov 16: import with `.bak` files, backup written, container restarted mid-transcode, jobs resumed, finished and were imported by Sonarr |
 | B2 | Catalog schema: series (with numbering mode), seasons, episodes (season/episode and absolute), movies, files, aliases, releases, requests; jobs can point at an episode or movie | M | B1 | Unit tests; schema migration up from B1 |
 | B3 | Metadata spike to confirm G3 on Blue Box, Seitokai, One Piece, Boku no Hero Academia and a current SubsPlease show: TMDB structure and absolute mapping (One Piece in particular), offline database aliases, ID mapping coverage to TMDB, and how Emby reads a season-laid-out anime test folder (sets C6's naming) | S | none | Result in `design/metadata-sources.md`; the user is told only if the plan has to change |
 | B4 | Metadata layer: TMDB client, weekly offline anime database import, ID mapping, cache tables, per-source limiter, background refresh, Credits page | M | B2, B3 | Add a show by TMDB id; aliases and both numberings stored; refresh picks up a new episode |
@@ -160,7 +160,7 @@ B4 -> H1 -> H2 -> [Lidarr off]
 everything -> I2 (rename)
 ```
 
-Recommended sequence for one builder: B1 (real-run check) → B0 → B2 → B3 → B4 → C1 to C4 → B5 → D1 → E1 → D2 → F1 to F6 → G → H → I. B6 (settings screen) can go anywhere after B1, but before the first category switch. C5 and C6 whenever wanted.
+Recommended sequence for one builder: B2 → B3 → B4 → C1 to C4 → B5 → D1 → E1 → D2 → F1 to F6 → G → H → I. B6 (settings screen) can go anywhere after B1, but before the first category switch. C5 and C6 whenever wanted.
 
 ## 7. Design track
 
@@ -224,6 +224,7 @@ The redesign doc says Settings, Library and Requests/Access are not designed yet
 - v16: requests need no sign-in; every request waits for admin approval. Stage E is one milestone. A4 done.
 - v17: G3 answered: TMDB plus anime-offline-database plus ID mapping.
 - v18: A1 merged (PR #2), A2 done (PR #3, Clone bug fixed), A3 done (README status, this file added to `docs/`). Merge rule recorded.
+- v21: B1 done (real-run check passed), B0 done (Go 1.27, SQLite driver v1.62.0). Also fixed: usenet grabs listed twice in Sonarr (PR #7).
 - v20: A1 closed. Lesson recorded: test parsing against the file names inside a release, not only feed titles.
 - v19: B1 merged (PR #5): SQLite store, state blobs, backups, container smoke test in CI. Added B0: move to a supported Go version. The build machine cannot reach the Go module proxy, so new dependencies are resolved by a temporary CI job.
 
