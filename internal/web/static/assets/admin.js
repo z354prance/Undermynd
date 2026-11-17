@@ -290,10 +290,10 @@
     body.appendChild(help('Each show folder in your anime library is matched to a TMDB show, and its files to episodes. Nothing on disk is moved or renamed. Folders that are sure are ready; anything unsure waits for you, with the reason.'));
     var host=el('div');body.appendChild(host);var polling=false;
     function load(){api('GET','/anime/import').then(draw).catch(function(e){if(e.status===401)fail(e);else host.replaceChildren(el('div','err',e.message))})}
-    function draw(d){var st=d.status,by={ready:[],'needs you':[],imported:[],skipped:[],failed:[]};st.folders.forEach(function(f){(by[f.state]=by[f.state]||[]).push(f)});
+    function draw(d){var st=d.status,by={ready:[],'needs you':[],imported:[],skipped:[],failed:[],waiting:[]};st.folders.forEach(function(f){(by[f.state]=by[f.state]||[]).push(f)});
       host.replaceChildren();var tb=el('div','toolbar');
       tb.appendChild(el('span','chip2',st.folders.length+' folders'));tb.appendChild(el('span','chip2',by.ready.length+' ready'));tb.appendChild(el('span','chip2 '+(by['needs you'].length?'warn':'dim'),by['needs you'].length+' need you'));
-      tb.appendChild(el('span','chip2 dim',by.imported.length+' imported'));if(by.skipped.length)tb.appendChild(el('span','chip2 dim',by.skipped.length+' skipped'));if(by.failed.length)tb.appendChild(el('span','chip2 bad',by.failed.length+' failed'));
+      tb.appendChild(el('span','chip2 dim',by.imported.length+' imported'));if(by.skipped.length)tb.appendChild(el('span','chip2 dim',by.skipped.length+' skipped'));if(by.failed.length)tb.appendChild(el('span','chip2 bad',by.failed.length+' failed'));if(by.waiting.length)tb.appendChild(el('span','chip2 dim',by.waiting.length+' not checked yet'));
       tb.appendChild(el('span','sp'));var sb=el('button',st.folders.length?'':'go',st.folders.length?'rescan':'scan folders');sb.disabled=st.running||st.confirming||!d.hasKey;
       sb.onclick=function(){sb.disabled=true;api('POST','/anime/import/scan').then(load).catch(function(e){alert(e.message);load()})};tb.appendChild(sb);host.appendChild(tb);
       if(!d.hasKey)host.appendChild(el('div','empty','Add a TMDB key under Metadata first.'));

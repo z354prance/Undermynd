@@ -106,10 +106,19 @@ func Parse(name string) (Release, bool) {
 	return r, true
 }
 
-// Normalize makes titles comparable: lower case, letters and digits only.
+// digitGroup is a thousands separator inside a number: "5,000" reads as "5000".
+var digitGroup = regexp.MustCompile(`(\d)[,.](\d{3})\b`)
+
+// NormalizeVersion changes whenever Normalize does, so stored forms can be
+// worked out again.
+const NormalizeVersion = 2
+
+// Normalize makes titles comparable: lower case, letters and digits only, and
+// numbers without thousands separators.
 func Normalize(s string) string {
 	var b strings.Builder
 	space := true
+	s = digitGroup.ReplaceAllString(digitGroup.ReplaceAllString(s, "$1$2"), "$1$2")
 	s = strings.NewReplacer("&", " and ", "'", "", "\u2019", "").Replace(s)
 	for _, c := range strings.ToLower(s) {
 		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c > 127 {
