@@ -272,3 +272,42 @@ body.ui .main select{background:#0b0c0b url("data:image/svg+xml,%3Csvg xmlns='ht
 .rebar input[type=datetime-local] { margin-left:6px; }
 .rehead { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:10px; }
 .rerow { grid-template-columns:auto minmax(0,1fr); align-items:center; column-gap:12px; }
+
+/* anime library (C1) */
+.chip2.blue{color:#70b9ed;border-color:#2c4a63}
+.warnt{color:#e5d875}.dimt{color:#767676}
+.lc.miss{border-color:#e5d875;box-shadow:0 0 0 1px #e5d875 inset}
+.crumbs{margin:0 0 10px;color:#767676;font-size:12px}
+.crumbs .link{font-size:12px}
+body.ui table.atable{margin:4px 0 8px}
+body.ui table.atable td{vertical-align:middle;padding:10px 14px 10px 0}
+body.ui table.atable td:first-child{min-width:0}
+body.ui table.atable td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+body.ui table.atable .lcells{justify-content:flex-start;max-width:380px}
+body.ui table.eps td.mono{overflow-wrap:anywhere}
+body.ui table.eps tr.ep-upcoming td{color:#767676}
+.ncard.warnc{border-left-color:#e5d875}
+.ncard.warnc .nh{align-items:center}
+.aliases{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.alias{padding:2px 8px;border:1px solid #30322f;border-radius:3px;font-size:12px;color:#b5b8b3}
+body.ui .card.fcard{margin:0 0 12px;display:flex;flex-direction:column;gap:10px}
+body.ui .card.fcard.needs{border-left:2px solid #e5d875}
+body.ui .card.fcard.failedc{border-left:2px solid #f27b89}
+.fcard .nh{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}
+.fhead{display:flex;gap:12px;align-items:center;flex-wrap:wrap;min-width:0}
+.fname{color:#e5e8e2;overflow-wrap:anywhere}
+.freason{color:#e5d875}
+.fcard.failedc .freason{color:#f27b89}
+.fopts{border:0;padding:0;margin:0;display:flex;flex-direction:column;gap:8px}
+.fopts legend{color:#8e918d;font-size:11px;padding:0;margin-bottom:6px}
+.opt{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid #232523;border-radius:4px}
+.opt.on{border-color:#45bba9;background:rgba(69,187,169,.06)}
+body.ui .opt input[type=radio]{height:auto;margin-top:3px;accent-color:#45bba9}
+body.ui .opt label{margin:0;color:#e5e8e2;flex:1;cursor:pointer;font-size:13px}
+.fdet summary{cursor:pointer;color:#8e918d;font-size:12px}
+.fdet .mono{font-size:12px;color:#8e918d;padding-left:14px}
+.fpick{display:flex;gap:10px;flex-wrap:wrap}
+body.ui .fpick select{max-width:520px;flex:1 1 320px}
+body.ui .fpick input{flex:1 1 240px;max-width:360px}
+.fres{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+.notice.show{display:block}

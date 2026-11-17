@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -326,4 +327,46 @@ func (s *Service) tick(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// Orders lists the episode orders a TMDB show offers: its own seasons first
+// (id ""), then its episode groups.
+func (s *Service) Orders(ctx context.Context, tmdbID int64) ([]EpisodeGroupSummary, error) {
+	tv, err := s.TMDB.TV(ctx, tmdbID, false)
+	if err != nil {
+		return nil, err
+	}
+	out := []EpisodeGroupSummary{{ID: "", Name: "TMDB seasons"}}
+	return append(out, tv.EpisodeGroups.Results...), nil
+}
+
+// Plan returns the episodes a TMDB show would have in an order, without
+// touching the catalog. Answers come from the cache when it has them.
+func (s *Service) Plan(ctx context.Context, tmdbID int64, order string) ([]catalog.Episode, error) {
+	tv, err := s.TMDB.TV(ctx, tmdbID, false)
+	if err != nil {
+		return nil, err
+	}
+	return s.episodes(ctx, tv, order, false)
+}
+
+// Search lists TMDB shows for a typed query or a TMDB id.
+func (s *Service) Search(ctx context.Context, q string) ([]Candidate, error) {
+	q = strings.TrimSpace(q)
+	if id, err := strconv.ParseInt(q, 10, 64); err == nil && id > 0 {
+		tv, err := s.TMDB.TV(ctx, id, false)
+		if err != nil {
+			return nil, err
+		}
+		return []Candidate{{TMDBID: tv.ID, Name: tv.Name, Original: tv.OriginalName, Year: yearOf(tv.FirstAirDate), Via: "TMDB id"}}, nil
+	}
+	res, err := s.TMDB.SearchTV(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	var out []Candidate
+	for _, r := range res {
+		out = append(out, Candidate{TMDBID: r.ID, Name: r.Name, Original: r.OriginalName, Year: yearOf(r.FirstAirDate), Animation: r.Animation(), Via: "TMDB search"})
+	}
+	return out, nil
 }

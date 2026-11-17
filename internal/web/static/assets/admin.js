@@ -55,7 +55,7 @@
     document.body.classList.add('wide');
     var shell=el('div','shell'),side=el('nav','side');
     var brand=el('a','brand');brand.href='/admin';var bi=el('img');bi.src='/assets/logo.svg';bi.alt='';brand.appendChild(bi);brand.appendChild(el('span','',  '~/undermynd'));side.appendChild(brand);
-    function nav(t,label){var b=el('button',t===tab?'on':'',label);tabBtns[t]=b;b.onclick=function(){stopLive();tab=t;detailId=null;app()};side.appendChild(b)}
+    function nav(t,label){var b=el('button',t===tab?'on':'',label);tabBtns[t]=b;b.onclick=function(){stopLive();tab=t;detailId=null;animeShow=null;animeImport=false;app()};side.appendChild(b)}
     nav('overview','Overview');nav('jobs','Jobs');nav('requests','Requests');nav('library','Library');nav('reencode','Re-encode');
     [['Connections',[['arrs','Arrs & categories'],['clients','Download clients'],['transcode','Transcode'],['metadata','Metadata']]],['Public site',[['playback','Playback'],['public','Public page']]],['Automation',[['rss','Feeds']]],['Server',[['system','Settings'],['log','Log']]]].forEach(function(g){
       side.appendChild(el('div','sgroup',g[0]));
@@ -213,8 +213,144 @@
       if(!list.length){host.appendChild(el('div','empty','Nothing is waiting for approval.'));return}
       var box=el('div','jlist');list.forEach(function(r){box.appendChild(reqRow(r,draw,false))});host.appendChild(box)})}
     draw();timer=setInterval(draw,15000)}
+  var libSub='anime',animeShow=null,animeImport=false;
   function libraryView(body){
-    body.appendChild(el('h2','ptitle','Library'));var host=el('div');host.style.marginTop='18px';body.appendChild(host);
+    if(animeImport)return animeImportView(body);
+    if(animeShow)return animeShowView(body,animeShow);
+    var head=el('div','ohead');head.appendChild(el('h2','ptitle','Library'));var pills=el('div','pills');
+    [['anime','Anime'],['arrs','TV & movies (arrs)']].forEach(function(p){var b=el('button','fpill'+(libSub===p[0]?' on':''),p[1]);b.onclick=function(){libSub=p[0];app()};pills.appendChild(b)});
+    head.appendChild(pills);body.appendChild(head);var host=el('div');body.appendChild(host);
+    if(libSub==='arrs')arrLibrary(host);else animeLibrary(host);
+  }
+  function seasonCells(r){
+    var cells=el('div','lcells');
+    r.seasons.forEach(function(x){var miss=(r.missingBySeason||{})[x.season]||0,pct=x.total?100*x.have/x.total:0;
+      var c=el('span','lc '+(x.total&&x.have>=x.total?'done':x.have?'part':'none')+(miss?' miss':''));
+      c.title='Season '+x.season+': '+x.have+' / '+x.total+(miss?' · '+miss+' aired and missing':'');
+      var f=el('i');f.style.height=pct+'%';c.appendChild(f);c.appendChild(el('b','',String(x.season)));cells.appendChild(c)});
+    return cells;
+  }
+  function animeLibrary(host){
+    host.appendChild(help('Anime is kept by Undermynd from its own catalog. Season cells fill as episodes arrive; a yellow outline means an episode has aired and is not on disk. Numbering is how each show is laid out in its folder.'));
+    api('GET','/anime/series').then(function(d){
+      if(d.needs){var n=el('div','ncard warnc');var nh=el('div','nh');nh.appendChild(el('span','',d.needs+' anime folder'+(d.needs>1?'s are':' is')+' waiting for you to confirm a match or an episode order.'));
+        var b=el('button','go','review folders');b.onclick=function(){animeImport=true;app()};nh.appendChild(b);n.appendChild(nh);host.appendChild(n)}
+      var tb=el('div','toolbar'),miss=0,eps=0;d.series.forEach(function(r){miss+=r.missing;eps+=r.have});
+      tb.appendChild(el('span','chip2',d.series.length+' shows'));tb.appendChild(el('span','chip2',eps+' episodes on disk'));
+      tb.appendChild(el('span','chip2 '+(miss?'warn':'dim'),miss+' missing'));
+      if(d.scanned&&d.scanned[0]!=='0')tb.appendChild(el('span','chip2 dim','folders scanned '+ago(d.scanned)+' ago'));
+      tb.appendChild(el('span','sp'));var ib=el('button',d.series.length?'':'go','import anime folders');ib.onclick=function(){animeImport=true;app()};tb.appendChild(ib);host.appendChild(tb);
+      if(!d.roots||!d.roots.length){host.appendChild(el('div','empty','No anime library folder is set. Give your anime category a library folder under Arrs & categories.'));return}
+      if(!d.hasKey){host.appendChild(el('div','empty','Add a TMDB key under Metadata, then import your anime folders.'));return}
+      if(!d.series.length){host.appendChild(el('div','empty','No anime in the catalog yet. Import your anime folders to start.'));return}
+      var t=el('table','atable'),hr=el('tr');['show','numbering','episode order','seasons','have','missing','latest aired'].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tbd=el('tbody');
+      d.series.forEach(function(r){var tr=el('tr');var c1=el('td');var a=el('button','link',r.title);a.onclick=function(){animeShow=r.id;app()};c1.appendChild(a);c1.appendChild(el('div','reason',r.folder));tr.appendChild(c1);
+        var c2=el('td');c2.appendChild(el('span','chip2 '+(r.numbering==='absolute'?'blue':'dim'),r.numbering));tr.appendChild(c2);
+        tr.appendChild(el('td','mono',r.orderName));var c4=el('td');c4.appendChild(seasonCells(r));tr.appendChild(c4);
+        tr.appendChild(el('td','num',r.have+' / '+r.total));tr.appendChild(el('td','num'+(r.missing?' warnt':' dimt'),String(r.missing)));
+        tr.appendChild(el('td','mono',r.latestAired?r.latestAired+' · '+r.latestDate:(r.upcoming?'not aired yet':'')));tbd.appendChild(tr)});
+      t.appendChild(tbd);host.appendChild(t);
+      host.appendChild(el('p','hint','Missing counts only episodes that have aired. Episodes TMDB has not dated are never counted. Files are checked every half hour.'));
+    }).catch(function(e){if(e.status===401)fail(e);else host.appendChild(el('div','err',e.message))})}
+  function animeShowView(body,id){
+    var back=el('div','crumbs');var bl=el('button','link','Library');bl.onclick=function(){animeShow=null;app()};back.appendChild(bl);back.appendChild(el('span','dimt',' / anime'));body.appendChild(back);
+    var host=el('div');body.appendChild(host);
+    api('GET','/anime/series/'+id).then(function(d){var r=d.series;
+      var head=el('div','ohead');var ht=el('div');ht.appendChild(el('h2','ptitle',r.title));ht.appendChild(el('div','reason',[r.year||'',r.upcoming?'airing':''].filter(Boolean).join(' · ')));head.appendChild(ht);
+      var hc=el('div','pills');if(r.missing)hc.appendChild(el('span','chip2 warn',r.missing+' missing'));hc.appendChild(el('span','chip2 '+(r.numbering==='absolute'?'blue':'dim'),r.numbering));head.appendChild(hc);host.appendChild(head);
+      var cols=el('div','ocols');var left=el('div'),right=el('div');cols.appendChild(left);cols.appendChild(right);host.appendChild(cols);
+      var seasons={};d.episodes.forEach(function(e){(seasons[e.season]=seasons[e.season]||[]).push(e)});
+      Object.keys(seasons).map(Number).sort(function(a,b){return (a||999)-(b||999)}).forEach(function(sn){var list=seasons[sn],have=0,aired=0;
+        list.forEach(function(e){if(e.state==='have')have++;if(e.state==='have'||e.state==='missing')aired++});
+        left.appendChild(el('h3','osec',(sn?'Season '+sn:'Specials')+' · '+have+' of '+list.length+' · '+aired+' aired'));
+        var t=el('table','atable eps'),hr=el('tr');['episode','absolute','aired','file','name in the library'].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tb=el('tbody');
+        list.forEach(function(e){var tr=el('tr','ep-'+e.state);tr.appendChild(el('td','num','E'+String(e.number).padStart(2,'0')));tr.appendChild(el('td','num dimt',e.absolute?String(e.absolute):''));tr.appendChild(el('td','num',e.airDate||'no date'));
+          var fc=el('td'),nc=el('td','mono');
+          if(e.files&&e.files.length){e.files.forEach(function(f){fc.appendChild(el('span','chip2',[f.group,f.resolution].filter(Boolean).join(' · ')||'on disk'));nc.appendChild(el('div','',f.name))})}
+          else{fc.appendChild(el('span','chip2 '+(e.state==='missing'?'warn':'dim'),e.state==='missing'?'missing':e.state==='upcoming'?'not aired':'no date'));nc.appendChild(el('span','dimt','no file'))}
+          tr.appendChild(fc);tr.appendChild(nc);tb.appendChild(tr)});
+        t.appendChild(tb);left.appendChild(t)});
+      var info=el('div','card');info.appendChild(el('h4','','show'));
+      function kv(k,v){var x=el('div','kv');x.appendChild(el('span','k',k));var vv=el('span','v');if(typeof v==='string')vv.textContent=v;else vv.appendChild(v);x.appendChild(vv);info.appendChild(x)}
+      var tl=el('a','','TMDB '+d.tmdbId);tl.href='https://www.themoviedb.org/tv/'+d.tmdbId;tl.target='_blank';tl.rel='noopener';kv('TMDB',tl);if(d.tvdbId)kv('TVDB',String(d.tvdbId));
+      kv('folder',r.folder);kv('numbering',r.numbering==='absolute'?'absolute (episodes counted across seasons)':'seasons (each season starts at 1)');kv('episode order',r.orderName);kv('refreshed',ago(d.updated)+' ago');
+      var msg=el('div','msg');
+      function act(label,a,cls,confirmText){var b=el('button',cls||'',label);b.onclick=function(){if(confirmText&&!confirm(confirmText))return;b.disabled=true;msg.className='msg';msg.textContent='working…';
+        api('POST','/anime/series/'+id+'/'+a).then(function(res){if(a==='remove'){animeShow=null;app();return}
+          msg.className='msg ok';msg.textContent=res.recorded||res.removed?res.recorded+' new file(s) recorded, '+res.removed+' gone':'up to date';setTimeout(app,900)}).catch(function(e){b.disabled=false;msg.className='msg err';msg.textContent=e.message})};info.appendChild(b)}
+      act('refresh from TMDB','refresh','go');act('rescan folder','rescan');act('remove from library','remove','bad','Take '+r.title+' out of the library? Nothing on disk is touched, and the folder goes back to the import list.');info.appendChild(msg);
+      if(d.files)info.appendChild(help('The episode order can only change before files are recorded, so no file is ever moved to a different episode by accident. To change it, remove the show and import it again.'));
+      right.appendChild(info);
+      var al=el('div','card');al.appendChild(el('h4','','other titles'));var ab=el('div','aliases');d.aliases.forEach(function(a){ab.appendChild(el('span','alias',a))});al.appendChild(ab);al.appendChild(help('New releases are matched against all of these. From TMDB, the anime lists and the folder name.'));right.appendChild(al);
+      if(r.missing){var mc=el('div','card');mc.appendChild(el('h4','','missing'));mc.appendChild(help(r.missing+' episode'+(r.missing>1?'s have':' has')+' aired with no file in the folder. Searching for them by themselves comes with gap filling (roadmap C4).'));right.appendChild(mc)}
+    }).catch(function(e){if(e.status===401)fail(e);else host.appendChild(el('div','err',e.message))})}
+  function animeImportView(body){
+    var back=el('div','crumbs');var bl=el('button','link','Library');bl.onclick=function(){animeImport=false;app()};back.appendChild(bl);back.appendChild(el('span','dimt',' / import anime folders'));body.appendChild(back);
+    body.appendChild(el('h2','ptitle','Import anime folders'));
+    body.appendChild(help('Each show folder in your anime library is matched to a TMDB show, and its files to episodes. Nothing on disk is moved or renamed. Folders that are sure are ready; anything unsure waits for you, with the reason.'));
+    var host=el('div');body.appendChild(host);var polling=false;
+    function load(){api('GET','/anime/import').then(draw).catch(function(e){if(e.status===401)fail(e);else host.replaceChildren(el('div','err',e.message))})}
+    function draw(d){var st=d.status,by={ready:[],'needs you':[],imported:[],skipped:[],failed:[]};st.folders.forEach(function(f){(by[f.state]=by[f.state]||[]).push(f)});
+      host.replaceChildren();var tb=el('div','toolbar');
+      tb.appendChild(el('span','chip2',st.folders.length+' folders'));tb.appendChild(el('span','chip2',by.ready.length+' ready'));tb.appendChild(el('span','chip2 '+(by['needs you'].length?'warn':'dim'),by['needs you'].length+' need you'));
+      tb.appendChild(el('span','chip2 dim',by.imported.length+' imported'));if(by.skipped.length)tb.appendChild(el('span','chip2 dim',by.skipped.length+' skipped'));if(by.failed.length)tb.appendChild(el('span','chip2 bad',by.failed.length+' failed'));
+      tb.appendChild(el('span','sp'));var sb=el('button',st.folders.length?'':'go',st.folders.length?'rescan':'scan folders');sb.disabled=st.running||st.confirming||!d.hasKey;
+      sb.onclick=function(){sb.disabled=true;api('POST','/anime/import/scan').then(load).catch(function(e){alert(e.message);load()})};tb.appendChild(sb);host.appendChild(tb);
+      if(!d.hasKey)host.appendChild(el('div','empty','Add a TMDB key under Metadata first.'));
+      if(!d.roots||!d.roots.length)host.appendChild(el('div','empty','No anime library folder is set. Give your anime category a library folder under Arrs & categories.'));
+      if(st.running)host.appendChild(el('div','notice show','Scanning '+st.done+' of '+(st.total||'?')+' folders… the first scan looks every show up on TMDB, so a big library takes a few minutes.'));
+      if(st.confirming)host.appendChild(el('div','notice show','Adding the ready shows to the library…'));
+      if(st.error)host.appendChild(el('div','err',st.error));if(st.message&&!st.confirming)host.appendChild(el('div','msg ok',st.message));
+      if(!st.running&&!st.folders.length&&d.hasKey)host.appendChild(el('div','empty','Not scanned yet. Scan folders to begin.'));
+      if(by['needs you'].length){host.appendChild(el('h3','osec','Needs you · '+by['needs you'].length));by['needs you'].forEach(function(f){host.appendChild(folderCard(f,load))})}
+      if(by.failed.length){host.appendChild(el('h3','osec','Failed · '+by.failed.length));by.failed.forEach(function(f){host.appendChild(folderCard(f,load))})}
+      if(by.ready.length){host.appendChild(el('h3','osec','Ready · '+by.ready.length));by.ready.forEach(function(f){host.appendChild(folderCard(f,load))})}
+      if(by.skipped.length){host.appendChild(el('h3','osec','Skipped · '+by.skipped.length));by.skipped.forEach(function(f){host.appendChild(folderCard(f,load))})}
+      if(by.imported.length){host.appendChild(el('h3','osec','Imported · '+by.imported.length));var il=el('div','jlist');by.imported.forEach(function(f){var r=el('div','jrow lrow');var n=el('div','jname');var a=el('button','link',f.match?f.match.name:f.name);a.onclick=function(){animeImport=false;animeShow=f.seriesId;app()};n.appendChild(a);n.appendChild(el('div','reason',f.path));r.appendChild(n);r.appendChild(el('span','chip2','imported'));il.appendChild(r)});host.appendChild(il)}
+      if(by.ready.length&&!st.running){var bar=el('div','savebar');var cb=el('button','go','confirm all '+by.ready.length+' ready');cb.disabled=st.confirming;cb.onclick=function(){cb.disabled=true;api('POST','/anime/import/confirm-ready').then(load).catch(function(e){alert(e.message);load()})};bar.appendChild(cb);
+        bar.appendChild(el('span','msg','adds each show to the library and records its files; you can undo a show from its page'));host.appendChild(bar)}
+      if((st.running||st.confirming)&&!polling){polling=true;clearInterval(timer);timer=setInterval(function(){api('GET','/anime/import').then(function(x){if(!x.status.running&&!x.status.confirming){clearInterval(timer);polling=false}draw(x)}).catch(function(){})},2000)}
+    }
+    load();
+  }
+  function folderCard(f,reload){
+    var c=el('section','card fcard'+(f.state==='needs you'?' needs':f.state==='failed'?' failedc':''));
+    var h=el('div','nh');var hl=el('div','fhead');hl.appendChild(el('span','chip2 '+({ready:'',skipped:'dim',failed:'bad'}[f.state]!=null?{ready:'',skipped:'dim',failed:'bad'}[f.state]:'warn'),f.state));
+    hl.appendChild(el('span','fname',f.name));hl.appendChild(el('span','reason',f.files+' file'+(f.files===1?'':'s')));h.appendChild(hl);var acts=el('div','acts rhoriz');h.appendChild(acts);c.appendChild(h);
+    var msg=el('div','msg');var chosen=0;
+    if(f.match){var m=el('div','fmatch');m.appendChild(el('span','dimt','→ '));var tl=el('a','','TMDB '+f.match.tmdbId);tl.href='https://www.themoviedb.org/tv/'+f.match.tmdbId;tl.target='_blank';tl.rel='noopener';m.appendChild(tl);
+      m.appendChild(el('span','',' '+f.match.name+(f.match.year?' ('+f.match.year+')':'')));m.appendChild(el('span','reason',' · via '+(f.picked?'your choice':f.match.via)));c.appendChild(m)}
+    if(f.reason)c.appendChild(el('div','freason',f.reason));
+    var opts=f.options||[];
+    if(f.match&&opts.length&&f.state!=='skipped'){
+      if(f.state==='ready'){var o=opts[0];var kvd=el('div','kv');kvd.appendChild(el('span','k','numbering'));kvd.appendChild(el('span','v',o.numbering+' · '+(o.order?'TMDB group "'+o.orderName+'"':'TMDB seasons')+' · all '+o.mapped+' files map'));c.appendChild(kvd)}
+      else{var fs=el('fieldset','fopts');fs.appendChild(el('legend','','how the files are numbered'));
+        opts.slice(0,6).forEach(function(o,i){var id='o'+Math.random().toString(36).slice(2);var row=el('div','opt'+(i===0?' on':''));var inp=el('input');inp.type='radio';inp.name='n'+f.path;inp.id=id;inp.checked=i===0;
+          inp.onchange=function(){chosen=i;fs.querySelectorAll('.opt').forEach(function(x){x.classList.remove('on')});row.classList.add('on')};
+          var lb=el('label');lb.htmlFor=id;lb.appendChild(el('div','',(o.order?'TMDB episode group "'+o.orderName+'"':'TMDB seasons')+' · '+o.numbering));
+          var full=o.mapped===f.files&&o.distinct===f.files;lb.appendChild(el('div','reason',full?'all '+o.mapped+' files map'+(i===0?' · recommended':''):o.mapped+' of '+f.files+' files map'+(o.distinct<o.mapped?', '+(o.mapped-o.distinct)+' on an episode another file has':'')));
+          row.appendChild(inp);row.appendChild(lb);fs.appendChild(row)});c.appendChild(fs)}}
+    if(f.unmapped&&f.unmapped.length&&f.state!=='ready'){var um=el('details','fdet');um.appendChild(el('summary','','files that match no episode ('+f.unmapped.length+(f.unmapped.length>=10?'+':'')+')'));f.unmapped.forEach(function(u){um.appendChild(el('div','mono',u))});c.appendChild(um)}
+    if(f.unparsed&&f.unparsed.length){var up=el('details','fdet');up.appendChild(el('summary','',f.unparsed.length+(f.unparsed.length>=10?'+':'')+' video file(s) with no episode number are left out'));f.unparsed.forEach(function(u){up.appendChild(el('div','mono',u))});c.appendChild(up)}
+    if(f.state==='needs you'||f.state==='failed'){
+      var pick=el('div','fpick');var cands=(f.candidates||[]).filter(function(x){return !f.match||x.tmdbId!==f.match.tmdbId});
+      if(cands.length||!f.match){var sel=el('select');sel.setAttribute('aria-label','other TMDB shows');sel.appendChild(new Option(f.match?'or pick another show…':'pick the show…',''));
+        cands.forEach(function(x){sel.appendChild(new Option(x.name+(x.year?' ('+x.year+')':'')+' · TMDB '+x.tmdbId+' · '+x.via,String(x.tmdbId)))});
+        sel.onchange=function(){if(sel.value)choose(Number(sel.value))};pick.appendChild(sel)}
+      var q=el('input');q.type='search';q.placeholder='search TMDB: title or id';q.setAttribute('aria-label','search TMDB');var res=el('div','fres');
+      q.onkeydown=function(e){if(e.key!=='Enter')return;e.preventDefault();res.replaceChildren(el('span','reason','searching…'));
+        api('GET','/anime/search?q='+encodeURIComponent(q.value)).then(function(list){res.replaceChildren();if(!list.length)res.appendChild(el('span','reason','nothing found'));
+          list.slice(0,8).forEach(function(x){var b=el('button','link',x.name+(x.year?' ('+x.year+')':'')+' · TMDB '+x.tmdbId+(x.animation?'':' · not animation'));b.onclick=function(){choose(x.tmdbId)};res.appendChild(b)})}).catch(function(e){res.replaceChildren(el('span','msg err',e.message))})};
+      pick.appendChild(q);c.appendChild(pick);c.appendChild(res)}
+    function choose(id){msg.className='msg';msg.textContent='checking that show against the files…';api('POST','/anime/import/choose',{path:f.path,tmdbId:id}).then(reload).catch(function(e){msg.className='msg err';msg.textContent=e.message})}
+    function a(label,cls,fn){var b=el('button',cls,label);b.onclick=function(){fn(b)};acts.appendChild(b);return b}
+    if(f.state==='ready'||(f.state==='needs you'&&f.match&&opts.length)){a(f.state==='ready'?'confirm':(opts[0].order?'confirm with "'+opts[0].orderName+'"':'confirm'),'go',function(b){b.disabled=true;msg.className='msg';msg.textContent='adding…';
+      api('POST','/anime/import/confirm',{path:f.path,option:chosen}).then(function(r){msg.className='msg ok';msg.textContent=r.recorded+' file(s) recorded';setTimeout(reload,700)}).catch(function(e){b.disabled=false;msg.className='msg err';msg.textContent=e.message})})}
+    if(f.state==='skipped')a('bring back','',function(){api('POST','/anime/import/skip',{path:f.path,skip:false}).then(reload)});
+    else a('skip','',function(){api('POST','/anime/import/skip',{path:f.path,skip:true}).then(reload)});
+    c.appendChild(msg);return c;
+  }
+  function arrLibrary(host){
     api('GET','/library').then(function(d){
       var errs=d.errors||[];if(errs.length){host.appendChild(el('h3','osec','Problems · '+errs.length));var c=el('div','ncard');errs.slice(0,10).forEach(function(e){c.appendChild(el('div','reason',e))});host.appendChild(c)}
       var seasons=d.seasons||[],shows={};seasons.forEach(function(x){(shows[x.showId]=shows[x.showId]||{name:x.Show||x.show,list:[]}).list.push(x)});

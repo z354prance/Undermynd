@@ -593,3 +593,58 @@ func (c *Catalog) JobTarget(jobID string) (Target, error) {
 	}
 	return t, rows.Err()
 }
+
+// SeriesByFolder finds the series kept in a folder.
+func (c *Catalog) SeriesByFolder(folder string) (Series, error) {
+	return scanSeries(c.DB.QueryRow(`SELECT `+seriesCols+` FROM series WHERE folder = ? AND folder != ''`, folder))
+}
+
+// RemoveSeries forgets a series with its episodes, titles and file records.
+// Nothing on disk is touched.
+func (c *Catalog) RemoveSeries(id int64) error {
+	tx, err := c.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM files WHERE id IN (SELECT fe.file_id FROM file_episodes fe JOIN episodes e ON e.id = fe.episode_id WHERE e.series_id = ?)`, id); err != nil {
+		return err
+	}
+	res, err := tx.Exec(`DELETE FROM series WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return tx.Commit()
+}
+
+// SeriesFile is a recorded file with the episode it holds.
+type SeriesFile struct {
+	File
+	EpisodeID int64
+}
+
+// SeriesFiles lists every file recorded for a series' episodes.
+func (c *Catalog) SeriesFiles(seriesID int64) ([]SeriesFile, error) {
+	rows, err := c.DB.Query(`SELECT f.id, f.path, f.size, f.release_group, f.resolution, f.codec, f.added, fe.episode_id
+		FROM files f JOIN file_episodes fe ON fe.file_id = f.id JOIN episodes e ON e.id = fe.episode_id
+		WHERE e.series_id = ? ORDER BY f.id`, seriesID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SeriesFile
+	for rows.Next() {
+		var f SeriesFile
+		var added string
+		if err := rows.Scan(&f.ID, &f.Path, &f.Size, &f.ReleaseGroup, &f.Resolution, &f.Codec, &added, &f.EpisodeID); err != nil {
+			return nil, err
+		}
+		f.Added = parseTime(added)
+		f.EpisodeIDs = []int64{f.EpisodeID}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
