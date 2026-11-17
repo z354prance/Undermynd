@@ -5,21 +5,27 @@
 One container that owns the whole download-to-library path for Sonarr, Radarr and Lidarr.
 
 - Acts as their **qBittorrent** download client, so a grab keeps the same download ID from request to import.
-- Hands the grab to a local qBittorrent (TorBox, NZBGet, a fake SABnzbd and a Tdarr hand-off are also built; RSS is next), keeps only the media files, moves them atomically into the complete folder, confirms the arr's import, then cleans up everything it created.
-- A public status page for your users, and a sign-in-protected admin side, in one app on one address.
+- Hands the grab to TorBox, a local qBittorrent or NZBGet (usenet arrives through a fake SABnzbd), sends videos through a Tdarr hand-off, keeps only the media files, moves them atomically into the complete folder, confirms the arr's import, then cleans up everything it created.
+- Anime with no arr at all: RSS feeds and a watch folder feed the same pipeline, and finished episodes are placed straight into your show folders.
+- A public status page with requests, for your users, and a sign-in-protected admin side, in one app on one address.
 - Standard library only. One static binary of about 7 MB, about 7 MB of memory at idle.
 
 ## Status
 
-| Phase | Scope | State |
+| Area | Scope | State |
 |---|---|---|
-| 1 Core | Job table and state machine, fake qBittorrent API, local qBittorrent backend, staging, hand-back, import confirmation, cleanup, status page, admin sign-in | **built and tested** |
-| 2 TorBox | Usenet and torrents (limiter, batched polling, resumable pull, tracked delete) | built and tested against a stand-in; not yet run against real TorBox |
-| 3 Transcode | Folder hand-off to a dedicated Tdarr library, verification gate | folder hand-off built and tested against a simulated Tdarr; not yet run against real Tdarr |
-| 4 Usenet | Fake SABnzbd, TorBox usenet backend, NZBGet fallback | built and tested against stand-ins; not yet run against real TorBox, NZBGet or an arr |
-| 5 RSS | Feeds, regex rules, first-poll baseline, dedupe, magnet/torrent/NZB items | built and tested against a stand-in feed |
-| 6 Hardening | Notifications, API tokens, more admin actions | partly (reconciler, retries and cleanup are in) |
-| 7 Overmynd merge | Requests, access requests, playback | not started |
+| Core | Job table and state machine, fake qBittorrent API, local qBittorrent backend, staging, hand-back, import confirmation, cleanup, status page, admin sign-in | built, tested, in daily use |
+| TorBox | Usenet and torrents (limiter, batched polling, resumable pull, tracked delete) | built, tested, running against real TorBox |
+| Transcode | Folder hand-off to a dedicated Tdarr library, progress, stall detection, verification gate | built, tested, running against real Tdarr |
+| Usenet | Fake SABnzbd, TorBox usenet backend, NZBGet fallback | built and tested; TorBox usenet in real use; NZBGet tested against a stand-in only |
+| Import confirmation | Arr history check (`downloadId` + import event) | confirmed against real Sonarr and Radarr |
+| RSS and watch folder | Feeds, regex rules, first-poll baseline, dedupe, manual download, watch folder | built, in real use |
+| Anime library | Places episodes in show folders by name, never guesses or overwrites; handles SubsPlease, Trix and Judas-style names | built, in real use |
+| Re-encode | Converts library files to AV1 through the Tdarr flow | built |
+| Overmynd merge | Requests (through Seerr), access requests, playback, storage | built |
+| Hardening | Reconciler, retries, cleanup, log viewer | partly (notifications and API tokens not yet) |
+
+**Where it is going:** Undermynd is growing into one app that replaces Radarr, Sonarr, Lidarr, Prowlarr, Seerr, Houndarr and Recyclarr, and will be renamed HyveMynd at the end (`docs/RENAME.md`). The plan is in `docs/ROADMAP.md`. Current stage: A (stabilise), then B (SQLite and a title catalog).
 
 The design is in `docs/`.
 
@@ -68,8 +74,8 @@ Behind a reverse proxy set `UNDERMYND_TRUST_PROXY=true` so the real client IP is
 
 ## Known gaps
 
-- The arr history check (`downloadId` + import event) is written from the arr API as documented and tested against a stand-in; confirm it against your real Sonarr, Radarr and Lidarr. Set `UNDERMYND_LOG_REQUESTS=1` to log every call the arrs make to the fake client and compare.
-- The job file is a small JSON file written atomically after every change, not SQLite, because this build uses only the standard library.
+- The arr history check is confirmed against Sonarr and Radarr; Lidarr is untested. Set `UNDERMYND_LOG_REQUESTS=1` to log every call the arrs make to the fake client.
+- The job file is a small JSON file written atomically after every change. It moves to SQLite in roadmap milestone B1.
 - The release folder in `complete/` is named after the release (not the job ID) so the arrs can parse it.
 
 ## Branding

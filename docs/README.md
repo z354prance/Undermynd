@@ -1,3 +1,6 @@
-# Design
+# Docs
 
-The full design write-up (architecture, state machine, folder layout, TorBox, Tdarr, RSS, security, build plan) is kept in the project's design doc and will be exported here as `design.md`.
+- `ROADMAP.md`: where the project is going, as milestones with exit tests.
+- `RENAME.md`: the planned rename to HyveMynd, done last.
+
+The detailed design notes (metadata sources, anime pipeline, dashboard design) live in the Undermynd project's design docs; `ROADMAP.md` names them.
