@@ -392,11 +392,13 @@
       if(cands.length||!f.match){var sel=el('select');sel.setAttribute('aria-label','other TMDB shows');sel.appendChild(new Option(f.match?'or pick another show…':'pick the show…',''));
         cands.forEach(function(x){sel.appendChild(new Option(x.name+(x.year?' ('+x.year+')':'')+' · TMDB '+x.tmdbId+' · '+x.via,String(x.tmdbId)))});
         sel.onchange=function(){if(sel.value)choose(Number(sel.value))};pick.appendChild(sel)}
-      var q=el('input');q.type='search';q.placeholder='search TMDB: title or id';q.setAttribute('aria-label','search TMDB');var res=el('div','fres');
-      q.onkeydown=function(e){if(e.key!=='Enter')return;e.preventDefault();res.replaceChildren(el('span','reason','searching…'));
+      if(f.match&&!opts.length){var use=el('button','go','use '+f.match.name+(f.match.year?' ('+f.match.year+')':''));use.onclick=function(){use.disabled=true;choose(f.match.tmdbId)};pick.appendChild(use)}
+      var q=el('input');q.type='search';q.placeholder='search TMDB: title or id, then Enter';q.setAttribute('aria-label','search TMDB');var res=el('div','fres');
+      var qb=el('button','','search');qb.onclick=function(){q.onkeydown({key:'Enter',preventDefault:function(){}})};
+      q.onkeydown=function(e){if(e.key!=='Enter')return;e.preventDefault();if(!q.value.trim())return;res.replaceChildren(el('span','reason','searching…'));
         api('GET','/anime/search?q='+encodeURIComponent(q.value)).then(function(list){res.replaceChildren();if(!list.length)res.appendChild(el('span','reason','nothing found'));
-          list.slice(0,8).forEach(function(x){var b=el('button','link',x.name+(x.year?' ('+x.year+')':'')+' · TMDB '+x.tmdbId+(x.animation?'':' · not animation'));b.onclick=function(){choose(x.tmdbId)};res.appendChild(b)})}).catch(function(e){res.replaceChildren(el('span','msg err',e.message))})};
-      pick.appendChild(q);c.appendChild(pick);c.appendChild(res)}
+          list.slice(0,8).forEach(function(x){var b=el('button','link','use '+x.name+(x.year?' ('+x.year+')':'')+' · TMDB '+x.tmdbId+(x.animation===false&&x.via!=='TMDB id'?' · not animation':''));b.onclick=function(){choose(x.tmdbId)};res.appendChild(b)})}).catch(function(e){res.replaceChildren(el('span','msg err',e.message))})};
+      pick.appendChild(q);pick.appendChild(qb);c.appendChild(pick);c.appendChild(res)}
     function choose(id){msg.className='msg';msg.textContent='checking that show against the files…';api('POST','/anime/import/choose',{path:f.path,tmdbId:id}).then(reload).catch(function(e){msg.className='msg err';msg.textContent=e.message})}
     function a(label,cls,fn){var b=el('button',cls,label);b.onclick=function(){fn(b)};acts.appendChild(b);return b}
     if(f.state==='ready'||(f.state==='needs you'&&f.match&&opts.length)){a(f.state==='ready'?'confirm':(opts[0].order?'confirm with "'+opts[0].orderName+'"':'confirm'),'go',function(b){b.disabled=true;msg.className='msg';msg.textContent='adding…';
