@@ -278,3 +278,51 @@ func (l *Lists) TitlesForTVDB(ctx context.Context, tvdbID int64) ([]string, erro
 	}
 	return out, rows.Err()
 }
+
+// TitlesForUnlinked returns the titles of list entries that have no AniDB id (so
+// no ID mapping reaches them; usually brand-new shows) but share at least one
+// title with titles. That is how a new show's romaji spelling is found when
+// TMDB lacks it.
+func (l *Lists) TitlesForUnlinked(ctx context.Context, titles []string) ([]string, error) {
+	var out []string
+	seen := map[int64]bool{}
+	for _, t := range titles {
+		norm := library.Normalize(t)
+		if norm == "" {
+			continue
+		}
+		rows, err := l.DB.QueryContext(ctx, `SELECT DISTINCT anilist_id FROM anime_titles WHERE norm = ? AND anidb_id = 0 AND anilist_id > 0`, norm)
+		if err != nil {
+			return nil, err
+		}
+		var ids []int64
+		for rows.Next() {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			if !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+		rows.Close()
+		for _, id := range ids {
+			r2, err := l.DB.QueryContext(ctx, `SELECT title FROM anime_titles WHERE anilist_id = ? AND anidb_id = 0 ORDER BY rowid`, id)
+			if err != nil {
+				return nil, err
+			}
+			for r2.Next() {
+				var s string
+				if err := r2.Scan(&s); err != nil {
+					r2.Close()
+					return nil, err
+				}
+				out = append(out, s)
+			}
+			r2.Close()
+		}
+	}
+	return out, nil
+}
