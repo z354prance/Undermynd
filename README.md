@@ -75,8 +75,16 @@ Behind a reverse proxy set `UNDERMYND_TRUST_PROXY=true` so the real client IP is
 ## Known gaps
 
 - The arr history check is confirmed against Sonarr and Radarr; Lidarr is untested. Set `UNDERMYND_LOG_REQUESTS=1` to log every call the arrs make to the fake client.
-- The job file is a small JSON file written atomically after every change. It moves to SQLite in roadmap milestone B1.
 - The release folder in `complete/` is named after the release (not the job ID) so the arrs can parse it.
+
+## Database and backups
+
+State (jobs, RSS items already seen, tracked shows, access requests) lives in SQLite at `/config/undermynd.db`. Settings, the admin login and the encryption key stay as files in `/config`, so you can always sign in even if the database has a problem.
+
+- **First start on this version:** the old `jobs.json`, `rss-seen.json`, `tracked-shows.json` and `access-requests.json` are imported once and renamed to `.bak`. Nothing is deleted.
+- **Backups:** a copy is written to `/config/backups/` once a day, and before any schema upgrade; the last 7 are kept. To restore, stop the container, copy a backup over `/config/undermynd.db` (and delete `undermynd.db-wal` and `undermynd.db-shm` if present), and start it again.
+- **Going back to the JSON files:** set `UNDERMYND_STORE=json`. To return to an older image, rename the `.bak` files back first. Jobs started on SQLite will not be in them.
+- Keep `/config` on a cache or single-disk path (on Unraid, an appdata share that lives on the cache pool, or `/mnt/cache/appdata/...`). SQLite, like Sonarr and Radarr, should not run on the `/mnt/user` FUSE layer.
 
 ## Branding
 

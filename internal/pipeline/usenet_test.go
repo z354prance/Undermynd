@@ -182,7 +182,7 @@ func newURig(t *testing.T) *urig {
 	if err := cfg.Set(s); err != nil {
 		t.Fatal(err)
 	}
-	st, err := store.Open(filepath.Join(env.ConfigDir, "jobs.json"))
+	st, err := openStore(t, env.ConfigDir)
 	if err != nil {
 		t.Fatal(err)
 	}

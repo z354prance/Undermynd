@@ -21,6 +21,20 @@ jobs:
         run: python3 -c "import xml.dom.minidom as m; m.parse('unraid/undermynd.xml')"
       - name: Build container
         run: docker build -t undermynd:ci .
+      - name: Smoke test the container (starts, creates the database and a backup)
+        run: |
+          mkdir -p smoke/config smoke/data && chmod -R 777 smoke
+          docker run -d --name smoke -e PUID=$(id -u) -e PGID=$(id -g) \
+            -v "$PWD/smoke/config:/config" -v "$PWD/smoke/data:/data" undermynd:ci
+          for i in $(seq 1 30); do
+            if docker logs smoke 2>&1 | grep -q "backed up to"; then break; fi
+            sleep 1
+          done
+          docker logs smoke 2>&1 | grep -E "database|listening"
+          test -f smoke/config/undermynd.db
+          ls smoke/config/backups/undermynd-*.db
+          docker exec smoke /undermynd healthcheck
+          docker rm -f smoke
 
   publish:
     name: Publish image
