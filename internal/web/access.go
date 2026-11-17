@@ -11,13 +11,20 @@ import (
 	"github.com/z354prance/undermynd/internal/access"
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/secret"
+	"github.com/z354prance/undermynd/internal/state"
 )
 
 var accessLimit requestLimiter
 
 // NewAccess connects the access manager to the saved settings. The media server
 // address and key are the ones on the Playback tab.
+// NewAccess keeps the access requests in files in dir.
 func NewAccess(dir string, cfg *config.Config) (*access.Manager, error) {
+	return NewAccessWith(state.Files{Dir: dir}, cfg)
+}
+
+// NewAccessWith keeps the access requests in st.
+func NewAccessWith(st state.Blobs, cfg *config.Config) (*access.Manager, error) {
 	load := func() access.Settings {
 		c := cfg.Get()
 		a := c.Access
@@ -31,7 +38,7 @@ func NewAccess(dir string, cfg *config.Config) (*access.Manager, error) {
 			SMTPHost: v.SMTPHost, SMTPPort: v.SMTPPort, SMTPSecurity: v.SMTPSecurity, SMTPUser: v.SMTPUser, SMTPPassword: secret.String(v.SMTPPassword), From: v.From, AdminEmail: v.AdminEmail}
 		return cfg.Set(c)
 	}
-	return access.New(dir, load, store)
+	return access.NewWith(st, load, store)
 }
 
 type accessView struct {

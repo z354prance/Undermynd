@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,6 +18,7 @@ import (
 	"github.com/z354prance/undermynd/internal/arr"
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/job"
+	"github.com/z354prance/undermynd/internal/state"
 	"github.com/z354prance/undermynd/internal/store"
 )
 
@@ -71,7 +70,7 @@ type Tracker struct {
 	ArrFor func(config.Category) *arr.Client
 
 	mu       sync.Mutex
-	path     string
+	state    state.Blobs
 	tracked  map[string]tracked    // "category:series" -> entry
 	grabs    map[string][]arr.Grab // job ID -> what history said
 	snap     Snapshot
@@ -81,11 +80,21 @@ type Tracker struct {
 	recent   []Recent
 }
 
+const trackedName = "tracked-shows.json"
+
+// New keeps the tracked shows in a file in the config folder.
 func New(c *config.Config, s *store.Store, l *log.Logger) *Tracker {
-	t := &Tracker{Cfg: c, Store: s, Log: l, Now: time.Now, path: filepath.Join(c.Env.ConfigDir, "tracked-shows.json"),
+	return NewWith(c, s, l, state.Files{Dir: c.Env.ConfigDir})
+}
+
+// NewWith keeps the tracked shows in st.
+func NewWith(c *config.Config, s *store.Store, l *log.Logger, st state.Blobs) *Tracker {
+	t := &Tracker{Cfg: c, Store: s, Log: l, Now: time.Now, state: st,
 		tracked: map[string]tracked{}, grabs: map[string][]arr.Grab{}, snap: Snapshot{Seasons: []Season{}, Missing: []Missing{}, Errors: []string{}}}
 	t.ArrFor = func(cat config.Category) *arr.Client { return arr.New(cat.Kind, cat.ArrURL, string(cat.ArrAPIKey)) }
-	if b, err := os.ReadFile(t.path); err == nil {
+	if b, ok, err := st.Load(trackedName); err != nil {
+		l.Printf("progress: reading tracked shows: %v", err)
+	} else if ok {
 		_ = json.Unmarshal(b, &t.tracked)
 	}
 	return t
@@ -93,9 +102,8 @@ func New(c *config.Config, s *store.Store, l *log.Logger) *Tracker {
 
 func (t *Tracker) save() {
 	b, _ := json.Marshal(t.tracked)
-	tmp := t.path + ".tmp"
-	if os.WriteFile(tmp, b, 0o600) == nil {
-		_ = os.Rename(tmp, t.path)
+	if err := t.state.Save(trackedName, b); err != nil {
+		t.Log.Printf("progress: saving tracked shows: %v", err)
 	}
 }
 

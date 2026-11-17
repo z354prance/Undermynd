@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/z354prance/undermynd/internal/db"
 	"github.com/z354prance/undermynd/internal/job"
 	"github.com/z354prance/undermynd/internal/store"
 )
@@ -24,9 +25,46 @@ type jobStore interface {
 
 var t0 = time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
 
+// backend opens a store kept in dir; opening the same dir again is a restart.
+type backend struct {
+	name string
+	open func(t *testing.T, dir string) (*store.Store, error)
+}
+
+var backends = []backend{
+	{"json", func(t *testing.T, dir string) (*store.Store, error) {
+		return store.Open(filepath.Join(dir, "jobs.json"))
+	}},
+	{"sqlite", func(t *testing.T, dir string) (*store.Store, error) {
+		h, err := db.Open(filepath.Join(dir, "undermynd.db"))
+		if err != nil {
+			return nil, err
+		}
+		t.Cleanup(func() { h.Close() })
+		if err := db.Migrate(h); err != nil {
+			return nil, err
+		}
+		return store.OpenDB(h, filepath.Join(dir, "jobs.json"))
+	}},
+}
+
+// current is the backend the contract tests below run against; forEach sets it.
+var current = backends[0]
+
+// forEach runs a contract test once per backend.
+func forEach(t *testing.T, test func(t *testing.T)) {
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			current = b
+			test(t)
+		})
+	}
+}
+
+// openAt opens the current backend in the folder holding path.
 func openAt(t *testing.T, path string, now time.Time) *store.Store {
 	t.Helper()
-	s, err := store.Open(path)
+	s, err := current.open(t, filepath.Dir(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +82,9 @@ func sample(id string, created time.Time) job.Job {
 	}
 }
 
-func TestGetMissing(t *testing.T) {
+func TestGetMissing(t *testing.T) { forEach(t, testGetMissing) }
+
+func testGetMissing(t *testing.T) {
 	var s jobStore = openAt(t, filepath.Join(t.TempDir(), "jobs.json"), t0)
 	if _, ok := s.Get("nope"); ok {
 		t.Fatal("a missing job must not be found")
@@ -54,7 +94,9 @@ func TestGetMissing(t *testing.T) {
 	}
 }
 
-func TestPutGetRoundTrip(t *testing.T) {
+func TestPutGetRoundTrip(t *testing.T) { forEach(t, testPutGetRoundTrip) }
+
+func testPutGetRoundTrip(t *testing.T) {
 	var s jobStore = openAt(t, filepath.Join(t.TempDir(), "jobs.json"), t0)
 	in := sample("a", t0)
 	if err := s.Put(in); err != nil {
@@ -69,7 +111,9 @@ func TestPutGetRoundTrip(t *testing.T) {
 
 // Callers get copies: changing what Get, List or Update returned, or the job
 // handed to Put, must not change the stored job.
-func TestStoredJobsAreCopies(t *testing.T) {
+func TestStoredJobsAreCopies(t *testing.T) { forEach(t, testStoredJobsAreCopies) }
+
+func testStoredJobsAreCopies(t *testing.T) {
 	var s jobStore = openAt(t, filepath.Join(t.TempDir(), "jobs.json"), t0)
 	in := sample("a", t0)
 	if err := s.Put(in); err != nil {
@@ -93,7 +137,9 @@ func TestStoredJobsAreCopies(t *testing.T) {
 	}
 }
 
-func TestListNewestFirst(t *testing.T) {
+func TestListNewestFirst(t *testing.T) { forEach(t, testListNewestFirst) }
+
+func testListNewestFirst(t *testing.T) {
 	var s jobStore = openAt(t, filepath.Join(t.TempDir(), "jobs.json"), t0)
 	for i, id := range []string{"old", "new", "mid"} {
 		created := t0.Add(-time.Duration([]int{3, 1, 2}[i]) * time.Hour)
@@ -107,7 +153,9 @@ func TestListNewestFirst(t *testing.T) {
 	}
 }
 
-func TestPutReplaces(t *testing.T) {
+func TestPutReplaces(t *testing.T) { forEach(t, testPutReplaces) }
+
+func testPutReplaces(t *testing.T) {
 	var s jobStore = openAt(t, filepath.Join(t.TempDir(), "jobs.json"), t0)
 	j := sample("a", t0)
 	_ = s.Put(j)
@@ -120,7 +168,9 @@ func TestPutReplaces(t *testing.T) {
 	}
 }
 
-func TestUpdate(t *testing.T) {
+func TestUpdate(t *testing.T) { forEach(t, testUpdate) }
+
+func testUpdate(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "jobs.json")
 	var s jobStore = openAt(t, path, t0)
 	_ = s.Put(sample("a", t0))
@@ -150,7 +200,9 @@ func TestUpdate(t *testing.T) {
 }
 
 // A restart resumes from what was last stored.
-func TestReopenResumes(t *testing.T) {
+func TestReopenResumes(t *testing.T) { forEach(t, testReopenResumes) }
+
+func testReopenResumes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "jobs.json")
 	s := openAt(t, path, t0)
 	_ = s.Put(sample("a", t0))
@@ -169,7 +221,9 @@ func TestReopenResumes(t *testing.T) {
 
 // Cleaned jobs older than a week are dropped when the store saves; anything still
 // in flight is kept however old it is.
-func TestPrunesOldCleanedJobs(t *testing.T) {
+func TestPrunesOldCleanedJobs(t *testing.T) { forEach(t, testPrunesOldCleanedJobs) }
+
+func testPrunesOldCleanedJobs(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "jobs.json")
 	s := openAt(t, path, t0)
 	oldDone := sample("old-done", t0.Add(-10*24*time.Hour))
@@ -199,6 +253,7 @@ func TestPrunesOldCleanedJobs(t *testing.T) {
 // Saves go through a temporary file and a rename: no temporary file is left
 // behind, a stale one from a crash is ignored, and the file is private.
 func TestCrashSafety(t *testing.T) {
+	current = backends[0]
 	dir := t.TempDir()
 	path := filepath.Join(dir, "jobs.json")
 	s := openAt(t, path, t0)
@@ -225,6 +280,7 @@ func TestCrashSafety(t *testing.T) {
 
 // A damaged job file is reported, never silently replaced by an empty store.
 func TestCorruptFileIsAnError(t *testing.T) {
+	current = backends[0]
 	path := filepath.Join(t.TempDir(), "jobs.json")
 	if err := os.WriteFile(path, []byte(`{not json`), 0o600); err != nil {
 		t.Fatal(err)
@@ -235,7 +291,9 @@ func TestCorruptFileIsAnError(t *testing.T) {
 }
 
 // Concurrent updates to one job are applied one at a time; none is lost.
-func TestConcurrentUpdates(t *testing.T) {
+func TestConcurrentUpdates(t *testing.T) { forEach(t, testConcurrentUpdates) }
+
+func testConcurrentUpdates(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "jobs.json")
 	s := openAt(t, path, t0)
 	_ = s.Put(sample("a", t0))
@@ -256,5 +314,40 @@ func TestConcurrentUpdates(t *testing.T) {
 	}
 	if g, _ := openAt(t, path, t0).Get("a"); g.Size != 50 {
 		t.Fatalf("want 50 updates saved, got %d", g.Size)
+	}
+}
+
+// The first start on SQLite imports the JSON job file once and keeps it as .bak.
+func TestSQLiteImportsLegacyJobs(t *testing.T) {
+	dir := t.TempDir()
+	legacy := filepath.Join(dir, "jobs.json")
+	js, err := store.Open(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := sample("a", t0)
+	a.State = job.Transcoding
+	_ = js.Put(a)
+	_ = js.Put(sample("b", t0.Add(time.Minute)))
+
+	current = backends[1]
+	s := openAt(t, legacy, t0)
+	if got, ok := s.Get("a"); !ok || got.State != job.Transcoding || got.PastRemoteIDs[0] != "old-1" {
+		t.Fatalf("imported job: %+v %v", got, ok)
+	}
+	if len(s.List()) != 2 {
+		t.Fatalf("want 2 imported jobs, got %d", len(s.List()))
+	}
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Fatal("the JSON file must be renamed after import")
+	}
+	if _, err := os.Stat(legacy + ".bak"); err != nil {
+		t.Fatal("the JSON file must be kept as jobs.json.bak")
+	}
+	// A later start does not import again, even if a jobs.json reappears.
+	_ = os.WriteFile(legacy, []byte(`[{"id":"ghost"}]`), 0o600)
+	r := openAt(t, legacy, t0)
+	if _, ok := r.Get("ghost"); ok || len(r.List()) != 2 {
+		t.Fatal("jobs must only be imported into an empty table")
 	}
 }

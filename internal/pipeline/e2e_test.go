@@ -180,7 +180,7 @@ func newRig(t *testing.T) *rig {
 	if err := cfg.Set(s); err != nil {
 		t.Fatal(err)
 	}
-	st, err := store.Open(filepath.Join(env.ConfigDir, "jobs.json"))
+	st, err := openStore(t, env.ConfigDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -386,7 +386,7 @@ func TestRestartResumes(t *testing.T) {
 	id := r.addTorrent("Resume.Me", "radarr", 10)
 	r.tick(2)
 	// a new engine over the same persisted store continues from the stored state
-	st2, err := store.Open(filepath.Join(r.cfg.Env.ConfigDir, "jobs.json"))
+	st2, err := openStore(t, r.cfg.Env.ConfigDir)
 	if err != nil {
 		t.Fatal(err)
 	}

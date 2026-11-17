@@ -14,13 +14,13 @@ import (
 	"fmt"
 	"net/mail"
 	"net/url"
-	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/z354prance/undermynd/internal/state"
 )
 
 type Settings struct {
@@ -64,7 +64,7 @@ type rec struct {
 // Manager keeps requests in one JSON file. Settings live in Undermynd's own config;
 // Load and Save connect them so this package does not depend on it.
 type Manager struct {
-	path  string
+	state state.Blobs
 	Load  func() Settings
 	Store func(Settings) error
 
@@ -75,15 +75,24 @@ type Manager struct {
 	send func(Settings, string, string, letter) error
 }
 
+const requestsName = "access-requests.json"
+
+// New keeps the access requests in a file in dir.
 func New(dir string, load func() Settings, save func(Settings) error) (*Manager, error) {
-	m := &Manager{path: filepath.Join(dir, "access-requests.json"), Load: load, Store: save, send: sendMail}
-	b, err := os.ReadFile(m.path)
-	if err == nil {
-		if err = json.Unmarshal(b, &m.recs); err != nil {
-			return nil, fmt.Errorf("access requests file is unreadable: %w", err)
-		}
-	} else if !os.IsNotExist(err) {
+	return NewWith(state.Files{Dir: dir}, load, save)
+}
+
+// NewWith keeps the access requests in st.
+func NewWith(st state.Blobs, load func() Settings, save func(Settings) error) (*Manager, error) {
+	m := &Manager{state: st, Load: load, Store: save, send: sendMail}
+	b, ok, err := st.Load(requestsName)
+	if err != nil {
 		return nil, err
+	}
+	if ok {
+		if err = json.Unmarshal(b, &m.recs); err != nil {
+			return nil, fmt.Errorf("access requests are unreadable: %w", err)
+		}
 	}
 	for _, r := range m.recs {
 		if r.ID > m.next {
@@ -113,11 +122,7 @@ func (m *Manager) persist() error {
 	if err != nil {
 		return err
 	}
-	tmp := m.path + ".tmp"
-	if err = os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, m.path)
+	return m.state.Save(requestsName, b)
 }
 
 func (m *Manager) update(id int64, f func(*rec)) error {

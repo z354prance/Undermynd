@@ -11,8 +11,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -20,6 +18,7 @@ import (
 
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/pipeline"
+	"github.com/z354prance/undermynd/internal/state"
 )
 
 type Poller struct {
@@ -33,7 +32,8 @@ type Poller struct {
 	seen   map[string]time.Time // item key -> when first seen
 	last   map[string]time.Time // feed name -> last poll
 	loaded bool
-	path   string
+	// State keeps the items already seen; files in the config folder unless set.
+	State state.Blobs
 
 	status  map[string]*FeedStatus // feed name -> what the last check saw
 	outcome map[string]string      // item key -> what was done with it (this run only)
@@ -78,7 +78,7 @@ func (p *Poller) CheckNow(ctx context.Context) {
 
 func New(c *config.Config, e *pipeline.Engine, l *log.Logger) *Poller {
 	return &Poller{Cfg: c, Engine: e, Log: l, Now: time.Now, HTTP: &http.Client{Timeout: 60 * time.Second},
-		seen: map[string]time.Time{}, last: map[string]time.Time{}, status: map[string]*FeedStatus{}, polled: map[string][]item{}, outcome: map[string]string{}, path: filepath.Join(c.Env.ConfigDir, "rss-seen.json")}
+		seen: map[string]time.Time{}, last: map[string]time.Time{}, status: map[string]*FeedStatus{}, polled: map[string][]item{}, outcome: map[string]string{}, State: state.Files{Dir: c.Env.ConfigDir}}
 }
 
 func (p *Poller) load() {
@@ -86,7 +86,9 @@ func (p *Poller) load() {
 		return
 	}
 	p.loaded = true
-	if b, err := os.ReadFile(p.path); err == nil {
+	if b, ok, err := p.State.Load(seenName); err != nil {
+		p.Log.Printf("rss: reading seen items: %v", err)
+	} else if ok {
 		_ = json.Unmarshal(b, &p.seen)
 	}
 }
@@ -109,11 +111,12 @@ func (p *Poller) save() {
 		}
 	}
 	b, _ := json.Marshal(p.seen)
-	tmp := p.path + ".tmp"
-	if os.WriteFile(tmp, b, 0o600) == nil {
-		_ = os.Rename(tmp, p.path)
+	if err := p.State.Save(seenName, b); err != nil {
+		p.Log.Printf("rss: saving seen items: %v", err)
 	}
 }
+
+const seenName = "rss-seen.json"
 
 // Run polls until ctx ends.
 func (p *Poller) Run(ctx context.Context) {

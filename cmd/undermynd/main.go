@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -10,18 +12,21 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 	_ "time/tzdata" // so TZ works in a minimal image
 
 	"github.com/z354prance/undermynd/internal/auth"
 	"github.com/z354prance/undermynd/internal/config"
+	"github.com/z354prance/undermynd/internal/db"
 	"github.com/z354prance/undermynd/internal/logbuf"
 	"github.com/z354prance/undermynd/internal/pipeline"
 	"github.com/z354prance/undermynd/internal/progress"
 	"github.com/z354prance/undermynd/internal/qbitapi"
 	"github.com/z354prance/undermynd/internal/rss"
 	"github.com/z354prance/undermynd/internal/sabapi"
+	"github.com/z354prance/undermynd/internal/state"
 	"github.com/z354prance/undermynd/internal/storage"
 	"github.com/z354prance/undermynd/internal/store"
 	"github.com/z354prance/undermynd/internal/watch"
@@ -88,9 +93,32 @@ func main() {
 	if err != nil {
 		logger.Fatalf("config: %v", err)
 	}
-	st, err := store.Open(filepath.Join(env.ConfigDir, "jobs.json"))
-	if err != nil {
-		logger.Fatalf("store: %v", err)
+	// State lives in SQLite (/config/undermynd.db) unless UNDERMYND_STORE=json asks
+	// for the old JSON files. The first SQLite start imports the JSON files and
+	// keeps them as .bak.
+	var (
+		st    *store.Store
+		blobs state.Blobs = state.Files{Dir: env.ConfigDir}
+	)
+	legacyJobs := filepath.Join(env.ConfigDir, "jobs.json")
+	if strings.EqualFold(os.Getenv("UNDERMYND_STORE"), "json") {
+		st, err = store.Open(legacyJobs)
+		if err != nil {
+			logger.Fatalf("store: %v", err)
+		}
+		logger.Printf("store: JSON files (UNDERMYND_STORE=json)")
+	} else {
+		h, err := openDatabase(logger, env.ConfigDir)
+		if err != nil {
+			logger.Fatalf("database: %v", err)
+		}
+		defer h.Close()
+		st, err = store.OpenDB(h, legacyJobs)
+		if err != nil {
+			logger.Fatalf("store: %v", err)
+		}
+		blobs = db.Blobs{DB: h, LegacyDir: env.ConfigDir}
+		go keepBackups(logger, h, filepath.Join(env.ConfigDir, "backups"))
 	}
 	au, err := auth.New(env.ConfigDir)
 	if err != nil {
@@ -106,7 +134,7 @@ func main() {
 	site := web.New(st, eng, cfg, au, logger)
 	site.Logs = logs
 
-	if am, err := web.NewAccess(env.ConfigDir, cfg); err != nil {
+	if am, err := web.NewAccessWith(blobs, cfg); err != nil {
 		logger.Fatalf("access: %v", err)
 	} else {
 		if err := am.RecoverInterrupted(); err != nil {
@@ -126,7 +154,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	go eng.Run(ctx, env.TickInterval)
-	pt := progress.New(cfg, st, logger)
+	pt := progress.NewWith(cfg, st, logger, blobs)
 	site.Progress = pt
 	site.Storage = storage.New(os.Getenv("UNDERMYND_STORAGE_ROOT"))
 	if root := os.Getenv("UNDERMYND_STORAGE_ROOT"); root != "" {
@@ -139,6 +167,7 @@ func main() {
 	go site.Storage.Run(ctx, func() time.Duration { return time.Duration(cfg.Get().StorageScanMinutes) * time.Minute })
 	go pt.Run(ctx)
 	rp := rss.New(cfg, eng, logger)
+	rp.State = blobs
 	site.RSS = rp
 	go rp.Run(ctx)
 	go watch.New(cfg, eng, logger).Run(ctx)
@@ -165,5 +194,57 @@ func main() {
 	defer cancel()
 	for _, s := range servers {
 		_ = s.Shutdown(shutdown)
+	}
+}
+
+// openDatabase opens /config/undermynd.db and brings its schema up to date,
+// backing it up first when an existing database is about to be migrated.
+func openDatabase(logger *log.Logger, configDir string) (*sql.DB, error) {
+	path := filepath.Join(configDir, "undermynd.db")
+	h, err := db.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	cur, err := db.Applied(h)
+	if err != nil {
+		h.Close()
+		return nil, err
+	}
+	if cur > 0 && cur < db.Version() {
+		if p, err := db.Backup(h, filepath.Join(configDir, "backups"), backupsKept, time.Now()); err != nil {
+			h.Close()
+			return nil, fmt.Errorf("backup before migrating: %w", err)
+		} else {
+			logger.Printf("database: backed up to %s before migrating from version %d to %d", p, cur, db.Version())
+		}
+	}
+	if err := db.Migrate(h); err != nil {
+		h.Close()
+		return nil, err
+	}
+	logger.Printf("database: %s (schema version %d)", path, db.Version())
+	return h, nil
+}
+
+const backupsKept = 7
+
+// keepBackups writes a backup once a day, keeping the last week.
+func keepBackups(logger *log.Logger, h *sql.DB, dir string) {
+	for {
+		list, _ := db.Backups(dir)
+		due := len(list) == 0
+		if !due {
+			if fi, err := os.Stat(list[len(list)-1]); err != nil || time.Since(fi.ModTime()) > 24*time.Hour {
+				due = true
+			}
+		}
+		if due {
+			if p, err := db.Backup(h, dir, backupsKept, time.Now()); err != nil {
+				logger.Printf("database: %v", err)
+			} else {
+				logger.Printf("database: backed up to %s", p)
+			}
+		}
+		time.Sleep(time.Hour)
 	}
 }
