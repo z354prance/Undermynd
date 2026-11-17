@@ -30,7 +30,7 @@ jobs:
             if docker logs smoke 2>&1 | grep -q "backed up to"; then break; fi
             sleep 1
           done
-          docker logs smoke
+          docker logs smoke 2>&1 | grep -E "database|listening"
           test -f smoke/config/undermynd.db
           ls smoke/config/backups/undermynd-*.db
           docker exec smoke /undermynd healthcheck
