@@ -323,12 +323,12 @@
     if(f.reason)c.appendChild(el('div','freason',f.reason));
     var opts=f.options||[];
     if(f.match&&opts.length&&f.state!=='skipped'){
-      if(f.state==='ready'){var o=opts[0];var kvd=el('div','kv');kvd.appendChild(el('span','k','numbering'));kvd.appendChild(el('span','v',o.numbering+' · '+(o.order?'TMDB group "'+o.orderName+'"':'TMDB seasons')+' · all '+o.mapped+' files map'));c.appendChild(kvd)}
+      if(f.state==='ready'){var o=opts[0];var kvd=el('div','kv');kvd.appendChild(el('span','k','numbering'));kvd.appendChild(el('span','v',o.numbering+' · '+(o.order?'TMDB group "'+o.orderName+'"':'TMDB seasons')+' · '+(o.extras?o.mapped+' files map':'all '+o.mapped+' files map')));c.appendChild(kvd);if(f.note)c.appendChild(el('div','reason',f.note))}
       else{var fs=el('fieldset','fopts');fs.appendChild(el('legend','','how the files are numbered'));
         opts.slice(0,6).forEach(function(o,i){var id='o'+Math.random().toString(36).slice(2);var row=el('div','opt'+(i===0?' on':''));var inp=el('input');inp.type='radio';inp.name='n'+f.path;inp.id=id;inp.checked=i===0;
           inp.onchange=function(){chosen=i;fs.querySelectorAll('.opt').forEach(function(x){x.classList.remove('on')});row.classList.add('on')};
           var lb=el('label');lb.htmlFor=id;lb.appendChild(el('div','',(o.order?'TMDB episode group "'+o.orderName+'"':'TMDB seasons')+' · '+o.numbering));
-          var full=o.mapped===f.files&&o.distinct===f.files;lb.appendChild(el('div','reason',full?'all '+o.mapped+' files map'+(i===0?' · recommended':''):o.mapped+' of '+f.files+' files map'+(o.distinct<o.mapped?', '+(o.mapped-o.distinct)+' on an episode another file has':'')));
+          var full=o.distinct===o.mapped&&o.mapped+(o.extras||0)===f.files;lb.appendChild(el('div','reason',full?(o.extras?o.mapped+' files map, '+o.extras+' extra episode(s) left out':'all '+o.mapped+' files map')+(i===0?' · recommended':''):o.mapped+' of '+f.files+' files map'+(o.distinct<o.mapped?', '+(o.mapped-o.distinct)+' on an episode another file has':'')));
           row.appendChild(inp);row.appendChild(lb);fs.appendChild(row)});c.appendChild(fs)}}
     if(f.unmapped&&f.unmapped.length&&f.state!=='ready'){var um=el('details','fdet');um.appendChild(el('summary','','files that match no episode ('+f.unmapped.length+(f.unmapped.length>=10?'+':'')+')'));f.unmapped.forEach(function(u){um.appendChild(el('div','mono',u))});c.appendChild(um)}
     if(f.unparsed&&f.unparsed.length){var up=el('details','fdet');up.appendChild(el('summary','',f.unparsed.length+(f.unparsed.length>=10?'+':'')+' video file(s) with no episode number are left out'));f.unparsed.forEach(function(u){up.appendChild(el('div','mono',u))});c.appendChild(up)}

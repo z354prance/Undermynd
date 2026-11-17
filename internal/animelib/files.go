@@ -236,3 +236,37 @@ func same(a, b map[int]int) bool {
 	}
 	return true
 }
+
+// Extras counts the files a reading leaves out that sit past the end of their
+// season (or past the last absolute number): extra episodes that came out after
+// a TV run, which TMDB keeps among the specials. ok is false when some other
+// file is left out too.
+func Extras(files []DiskFile, eps []catalog.Episode, fit Fit) (n int, ok bool) {
+	last := map[int]int{}
+	lastAbs := 0
+	for _, e := range eps {
+		if e.Number > last[e.Season] {
+			last[e.Season] = e.Number
+		}
+		if e.Absolute > lastAbs {
+			lastAbs = e.Absolute
+		}
+	}
+	for i, f := range files {
+		if !f.OK {
+			continue
+		}
+		if _, mapped := fit.m[i]; mapped {
+			continue
+		}
+		past := f.Season >= 1 && last[f.Season] > 0 && f.Episode > last[f.Season]
+		if fit.Numbering == catalog.ByAbsolute {
+			past = f.Season >= 1 && lastAbs > 0 && f.Episode > lastAbs
+		}
+		if !past {
+			return 0, false
+		}
+		n++
+	}
+	return n, true
+}
