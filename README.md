@@ -21,6 +21,7 @@ One container that owns the whole download-to-library path for Sonarr, Radarr an
 | Import confirmation | Arr history check (`downloadId` + import event) | confirmed against real Sonarr and Radarr |
 | RSS and watch folder | Feeds, regex rules, first-poll baseline, dedupe, manual download, watch folder | built, in real use |
 | Anime library | Places episodes in show folders by name, never guesses or overwrites; handles SubsPlease, Trix and Judas-style names | built, in real use |
+| Anime catalog | Imports the anime folders into Undermynd's own catalog (TMDB match, numbering and episode order per show, a person confirms anything unsure); Library shows real season counts, missing episodes and a page per show | built (C1), being checked on the real library |
 | Re-encode | Converts library files to AV1 through the Tdarr flow | built |
 | Overmynd merge | Requests (through Seerr), access requests, playback, storage | built |
 | Hardening | Reconciler, retries, cleanup, log viewer | partly (notifications and API tokens not yet) |
@@ -81,7 +82,7 @@ Behind a reverse proxy set `UNDERMYND_TRUST_PROXY=true` so the real client IP is
 
 Undermynd keeps its own catalog of shows, episodes and the other titles each show is known by, filled from:
 
-- **TMDB**, with your own free API key (Admin → Settings → Metadata). Both the short API key and the long read access token work.
+- **TMDB**, with your own free API key (Admin → Metadata, under Connections in the sidebar). Both the short API key and the long read access token work.
 - **Two optional anime lists**, downloaded once a week: the [anime-offline-database](https://github.com/manami-project/anime-offline-database) for other titles, and [Kometa Anime-IDs](https://github.com/Kometa-Team/Anime-IDs) to connect them to TMDB through TVDB. Set either address to `off` to skip it.
 
 TMDB answers are cached in the database, requests are spaced out, and each show is refreshed about once a day. Attribution is on `/credits`. Nothing in the download path depends on metadata yet; the native anime library (roadmap stage C) is the first user.
