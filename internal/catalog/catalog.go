@@ -467,7 +467,7 @@ func (c *Catalog) EpisodeFiles(episodeID int64) ([]File, error) {
 func (c *Catalog) Missing(seriesID int64) ([]Episode, error) {
 	today := c.Now().UTC().Format("2006-01-02")
 	rows, err := c.DB.Query(`SELECT `+episodeCols+` FROM episodes e
-		WHERE e.series_id = ? AND e.air_date != '' AND e.air_date <= ?
+		WHERE e.series_id = ? AND e.season > 0 AND e.air_date != '' AND e.air_date <= ?
 		AND NOT EXISTS (SELECT 1 FROM file_episodes fe WHERE fe.episode_id = e.id)
 		ORDER BY season, number`, seriesID, today)
 	if err != nil {
@@ -478,9 +478,9 @@ func (c *Catalog) Missing(seriesID int64) ([]Episode, error) {
 
 // SeasonCount is how many episodes of a season exist and how many have files.
 type SeasonCount struct {
-	Season int
-	Have   int
-	Total  int
+	Season int `json:"season"`
+	Have   int `json:"have"`
+	Total  int `json:"total"`
 }
 
 // Seasons counts, per season, the episodes with files against the total.

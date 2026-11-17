@@ -316,13 +316,13 @@
       var cols=el('div','ocols');var left=el('div'),right=el('div');cols.appendChild(left);cols.appendChild(right);host.appendChild(cols);
       var seasons={};d.episodes.forEach(function(e){(seasons[e.season]=seasons[e.season]||[]).push(e)});
       Object.keys(seasons).map(Number).sort(function(a,b){return (a||999)-(b||999)}).forEach(function(sn){var list=seasons[sn],have=0,aired=0;
-        list.forEach(function(e){if(e.state==='have')have++;if(e.state==='have'||e.state==='missing')aired++});
-        left.appendChild(el('h3','osec',(sn?'Season '+sn:'Specials')+' · '+have+' of '+list.length+' · '+aired+' aired'));
+        list.forEach(function(e){if(e.state==='have')have++;if(e.state==='have'||e.state==='missing'||(e.state==='special'&&e.airDate))aired++});
+        left.appendChild(el('h3','osec',sn?'Season '+sn+' · '+have+' of '+list.length+' · '+aired+' aired':'Specials · '+have+' of '+list.length+' · not counted as missing'));
         var t=el('table','atable eps'),hr=el('tr');['episode','absolute','aired','file','name in the library'].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tb=el('tbody');
         list.forEach(function(e){var tr=el('tr','ep-'+e.state);tr.appendChild(el('td','num','E'+String(e.number).padStart(2,'0')));tr.appendChild(el('td','num dimt',e.absolute?String(e.absolute):''));tr.appendChild(el('td','num',e.airDate||'no date'));
           var fc=el('td'),nc=el('td','mono');
           if(e.files&&e.files.length){e.files.forEach(function(f){fc.appendChild(el('span','chip2',[f.group,f.resolution].filter(Boolean).join(' · ')||'on disk'));nc.appendChild(el('div','',f.name))})}
-          else{fc.appendChild(el('span','chip2 '+(e.state==='missing'?'warn':'dim'),e.state==='missing'?'missing':e.state==='upcoming'?'not aired':'no date'));nc.appendChild(el('span','dimt','no file'))}
+          else{fc.appendChild(el('span','chip2 '+(e.state==='missing'?'warn':'dim'),{missing:'missing',upcoming:'not aired',special:'special',undated:'no date'}[e.state]||e.state));nc.appendChild(el('span','dimt','no file'))}
           tr.appendChild(fc);tr.appendChild(nc);tb.appendChild(tr)});
         t.appendChild(tb);left.appendChild(t)});
       var info=el('div','card');info.appendChild(el('h4','','show'));

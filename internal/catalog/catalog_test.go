@@ -149,6 +149,9 @@ func TestFilesMissingAndSeasons(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if err := c.PutEpisodes(s.ID, []catalog.Episode{{Season: 0, Number: 1, AirDate: "2026-10-01"}}); err != nil { // a special: never missing
+		t.Fatal(err)
+	}
 	miss, err := c.Missing(s.ID)
 	if err != nil || len(miss) != 2 || miss[0].Number != 4 || miss[1].Number != 7 {
 		t.Fatalf("missing: %+v %v", miss, err)

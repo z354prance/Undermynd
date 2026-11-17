@@ -218,6 +218,8 @@ func (s *Server) animeShow(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case len(ae.Files) > 0:
 			ae.State = "have"
+		case e.Season == 0:
+			ae.State = "special" // specials are listed, never counted as missing
 		case e.AirDate == "":
 			ae.State = "undated"
 		case e.AirDate > today:
