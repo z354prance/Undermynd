@@ -172,3 +172,23 @@ func TestSureBreaksListTiesByTitle(t *testing.T) {
 		t.Fatalf("should go to a person: %+v %q", m, why)
 	}
 }
+
+func TestExtrasPastTheSeasonEnd(t *testing.T) {
+	// Ah! My Goddess: season 1 has 24 TMDB episodes, the folder has 26.
+	tmdb := eps([3]int{1, 1, 1}, [3]int{1, 2, 2}, [3]int{2, 1, 3}, [3]int{2, 2, 4})
+	disk := files([2]int{1, 1}, [2]int{1, 2}, [2]int{1, 3}, [2]int{2, 1}, [2]int{2, 2}, [2]int{2, 3})
+	fit := Fits(disk, tmdb)[0]
+	if n, ok := Extras(disk, tmdb, fit); fit.Numbering != catalog.BySeason || !ok || n != 2 {
+		t.Fatalf("got %d %v for %+v", n, ok, fit)
+	}
+	// A file in the middle of a season that matches nothing is not an extra.
+	disk = files([2]int{1, 1}, [2]int{3, 1})
+	for _, f := range Fits(disk, tmdb) {
+		if f.Numbering == catalog.BySeason {
+			fit = f
+		}
+	}
+	if _, ok := Extras(disk, tmdb, fit); ok {
+		t.Fatal("a season TMDB does not have is not an extra")
+	}
+}

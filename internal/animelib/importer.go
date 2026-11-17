@@ -38,6 +38,10 @@ type Option struct {
 	Numbering string `json:"numbering"`
 	Mapped    int    `json:"mapped"` // files that land on an episode
 	Distinct  int    `json:"distinct"`
+	// Extras are files left out because they sit past the end of their season:
+	// extra episodes TMDB keeps among the specials. Set only when they are the
+	// only files left out.
+	Extras int `json:"extras,omitempty"`
 }
 
 // Folder is one show folder in an import.
@@ -54,6 +58,7 @@ type Folder struct {
 	Unmapped   []string             `json:"unmapped,omitempty"`
 	SeriesID   int64                `json:"seriesId,omitempty"`
 	Picked     bool                 `json:"picked,omitempty"` // a person chose the match
+	Note       string               `json:"note,omitempty"`   // worth knowing about a ready folder
 	prev       string
 }
 
@@ -389,7 +394,7 @@ func (im *Importer) evaluate(ctx context.Context, f *Folder, files []DiskFile) e
 		f.State, f.Reason = Failed, "reading the show from TMDB: "+err.Error()
 		return err
 	}
-	f.Options, f.Unmapped = nil, nil
+	f.Options, f.Unmapped, f.Note = nil, nil, ""
 	var bestMap map[int]int
 	for i, o := range orders {
 		if i > maxOrders {
@@ -407,7 +412,11 @@ func (im *Importer) evaluate(ctx context.Context, f *Folder, files []DiskFile) e
 			continue
 		}
 		for _, fit := range Fits(files, eps) {
-			f.Options = append(f.Options, Option{Order: o.ID, OrderName: o.Name, Numbering: fit.Numbering, Mapped: fit.Mapped, Distinct: fit.Distinct})
+			opt := Option{Order: o.ID, OrderName: o.Name, Numbering: fit.Numbering, Mapped: fit.Mapped, Distinct: fit.Distinct}
+			if n, ok := Extras(files, eps, fit); ok {
+				opt.Extras = n
+			}
+			f.Options = append(f.Options, opt)
 			if bestMap == nil || better(fit, Fit{Mapped: len(bestMap), Distinct: distinctOf(bestMap)}) {
 				bestMap = fit.m
 			}
@@ -426,17 +435,24 @@ func (im *Importer) evaluate(ctx context.Context, f *Folder, files []DiskFile) e
 		}
 	}
 	best := f.Options[0]
-	full := 0
+	// A reading that places every file beats one that leaves extras out: only
+	// when none does are readings with extras counted.
+	full, clean := 0, 0
 	for _, o := range f.Options {
-		if fits(o, f.Files) {
+		if fits(o, f.Files) && o.Extras == 0 {
+			clean++
+		}
+	}
+	for _, o := range f.Options {
+		if fits(o, f.Files) && (clean == 0 || o.Extras == 0) {
 			full++
 		}
 	}
 	switch {
-	case best.Mapped < f.Files:
+	case best.Mapped+best.Extras < f.Files:
 		f.State = Needs
 		f.Reason = fmt.Sprintf("%d of %d files do not match an episode in any order TMDB has", f.Files-best.Mapped, f.Files)
-	case best.Distinct < f.Files:
+	case best.Distinct < best.Mapped:
 		f.State = Needs
 		f.Reason = fmt.Sprintf("%d files land on an episode another file already has: check for duplicates or a numbering mix", f.Files-best.Distinct)
 	case best.Order != "":
@@ -447,12 +463,15 @@ func (im *Importer) evaluate(ctx context.Context, f *Folder, files []DiskFile) e
 		f.Reason = "the files fit more than one way: choose how they are numbered"
 	default:
 		f.State, f.Reason = Ready, ""
+		if best.Extras > 0 {
+			f.Note = fmt.Sprintf("%d extra episode(s) past the end of a season are left out: TMDB keeps them among the specials", best.Extras)
+		}
 	}
 	return nil
 }
 
 // fits says an option puts every file on its own episode.
-func fits(o Option, files int) bool { return o.Mapped == files && o.Distinct == files }
+func fits(o Option, files int) bool { return o.Distinct == o.Mapped && o.Mapped+o.Extras == files }
 
 func distinctOf(m map[int]int) int {
 	seen := map[int]bool{}
