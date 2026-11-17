@@ -204,6 +204,14 @@ var migrations = []string{
 		numbering    TEXT NOT NULL
 	);
 	CREATE INDEX series_folders_series ON series_folders(series_id);`,
+
+	// 5: anime stays with the simple folder-name importer (user decision,
+	// Nov 17): forget the anime shows the catalog import recorded, and the
+	// import and placement state. Nothing on disk is touched.
+	`DELETE FROM files WHERE id IN (SELECT fe.file_id FROM file_episodes fe
+		JOIN episodes e ON e.id = fe.episode_id JOIN series s ON s.id = e.series_id WHERE s.kind = 'anime');
+	DELETE FROM series WHERE kind = 'anime';
+	DELETE FROM kv WHERE name IN ('anime-import.json', 'placement-mode.json', 'placement-queue.json', 'placement-dryrun.json');`,
 }
 
 // Version is the schema version this build expects.

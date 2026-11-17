@@ -36,7 +36,7 @@ func (e *Engine) placeInLibrary(ctx context.Context, j job.Job, cat config.Categ
 		if _, err := os.Stat(src); errors.Is(err, fs.ErrNotExist) {
 			continue // placed on an earlier pass
 		}
-		dst, why, err := e.placeFile(root, folders, src, j.ID)
+		dst, why, err := placeOne(root, folders, src)
 		if err != nil {
 			e.retry(j, err, 10, "place in library")
 			return
@@ -71,39 +71,6 @@ func (e *Engine) placeInLibrary(ctx context.Context, j job.Job, cat config.Categ
 		return nil
 	})
 	e.Log.Printf("job %s %s", short(j.ID), why)
-}
-
-// LibraryPlacer places anime files by the catalog (animelib.Placer).
-type LibraryPlacer interface {
-	// Mode is "folders", "dry-run" or "catalog".
-	Mode() string
-	// Place moves a file by the catalog, or leaves it waiting for a person.
-	// byFolder places it by folder name, for shows the catalog does not have.
-	Place(src, jobID, root string, byFolder func() (string, string, error)) (dst, why string, err error)
-	// Preview says where the catalog would put a file.
-	Preview(src, root string) (dst, why string)
-	// Record keeps a dry-run comparison.
-	Record(src, catalogDst, catalogWhy, folderDst, folderWhy string)
-}
-
-// placeFile places one file the way the placement mode says: by folder name,
-// by folder name while recording what the catalog would do, or by the catalog.
-func (e *Engine) placeFile(root string, folders []string, src, jobID string) (dst, why string, err error) {
-	if e.Placer == nil {
-		return placeOne(root, folders, src)
-	}
-	switch e.Placer.Mode() {
-	case "catalog":
-		return e.Placer.Place(src, jobID, root, func() (string, string, error) { return placeOne(root, folders, src) })
-	case "dry-run":
-		cd, cw := e.Placer.Preview(src, root)
-		dst, why, err = placeOne(root, folders, src)
-		if err == nil {
-			e.Placer.Record(src, cd, cw, dst, why)
-		}
-		return dst, why, err
-	}
-	return placeOne(root, folders, src)
 }
 
 // placeOne moves one file into the library. It returns the new path, or a reason
@@ -162,7 +129,7 @@ func (e *Engine) SweepLibrary(category string) (string, error) {
 	placed := 0
 	var left []string
 	for _, src := range files {
-		dst, why, err := e.placeFile(cat.LibraryDir, folders, src, "")
+		dst, why, err := placeOne(cat.LibraryDir, folders, src)
 		if err != nil {
 			return "", err
 		}

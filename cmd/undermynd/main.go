@@ -17,7 +17,6 @@ import (
 	"time"
 	_ "time/tzdata" // so TZ works in a minimal image
 
-	"github.com/z354prance/undermynd/internal/animelib"
 	"github.com/z354prance/undermynd/internal/auth"
 	"github.com/z354prance/undermynd/internal/catalog"
 	"github.com/z354prance/undermynd/internal/config"
@@ -179,20 +178,6 @@ func main() {
 		}
 		site.Metadata = newMetadata(dbh, cfg, logger)
 		go site.Metadata.Run(ctx, func() bool { return cfg.Get().Metadata.TMDBKey != "" })
-		site.Anime = &animelib.Importer{Meta: site.Metadata, Cat: site.Metadata.Catalog, Blobs: blobs, Log: logger, Now: time.Now,
-			Roots: func() []string {
-				var roots []string
-				for _, c := range cfg.Get().Categories {
-					if c.LibraryDir != "" {
-						roots = append(roots, c.LibraryDir)
-					}
-				}
-				return roots
-			}}
-		go site.Anime.Run(ctx)
-		site.Placer = &animelib.Placer{Cat: site.Metadata.Catalog, Meta: site.Metadata, Blobs: blobs, Log: logger, Now: time.Now}
-		eng.Placer = site.Placer
-		go site.Placer.Run(ctx)
 	}
 	rp := rss.New(cfg, eng, logger)
 	rp.State = blobs

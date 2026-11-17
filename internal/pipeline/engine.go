@@ -59,10 +59,6 @@ type Engine struct {
 	nmu      sync.Mutex
 	notes    map[string]string
 
-	// Placer, when set, places anime files by the catalog (or records what it
-	// would do, in its dry run).
-	Placer LibraryPlacer
-
 	// LibraryRoots are the media folders re-encode jobs may read and replace files in.
 	LibraryRoots []string
 

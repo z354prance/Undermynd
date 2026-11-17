@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/z354prance/undermynd/internal/access"
-	"github.com/z354prance/undermynd/internal/animelib"
 	"github.com/z354prance/undermynd/internal/arr"
 	"github.com/z354prance/undermynd/internal/auth"
 	"github.com/z354prance/undermynd/internal/config"
@@ -56,11 +55,7 @@ type Server struct {
 	Access   *access.Manager
 	// Metadata is nil when state is kept in JSON files (no database).
 	Metadata *metadata.Service
-	// Anime keeps the anime library in the catalog; nil without the database.
-	Anime *animelib.Importer
-	// Placer places anime files by the catalog; nil without the database.
-	Placer *animelib.Placer
-	RSS    interface {
+	RSS      interface {
 		Status() []rss.FeedStatus
 		Download(ctx context.Context, feed string, index int, title, category string) (string, error)
 		CheckNow(context.Context)
@@ -150,15 +145,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /admin/api/metadata/test", s.guard(s.admin(s.metadataTest)))
 	mux.HandleFunc("GET /admin/api/metadata/status", s.admin(s.metadataStatus))
 	mux.HandleFunc("POST /admin/api/metadata/lists/refresh", s.guard(s.admin(s.metadataListsRefresh)))
-	mux.HandleFunc("GET /admin/api/anime/series", s.admin(s.animeSeries))
-	mux.HandleFunc("GET /admin/api/anime/series/{id}", s.admin(s.animeShow))
-	mux.HandleFunc("POST /admin/api/anime/series/{id}/{action}", s.guard(s.admin(s.animeSeriesAction)))
-	mux.HandleFunc("GET /admin/api/anime/import", s.admin(s.animeImportStatus))
-	mux.HandleFunc("POST /admin/api/anime/import/{action}", s.guard(s.admin(s.animeImportAction)))
-	mux.HandleFunc("GET /admin/api/anime/search", s.admin(s.animeSearch))
-	mux.HandleFunc("GET /admin/api/anime/placement", s.admin(s.placementStatus))
-	mux.HandleFunc("PUT /admin/api/anime/placement/mode", s.guard(s.admin(s.placementMode)))
-	mux.HandleFunc("POST /admin/api/anime/placement/{id}", s.guard(s.admin(s.placementResolve)))
 	mux.HandleFunc("POST /admin/api/tdarr/test", s.guard(s.admin(s.tdarrTest)))
 	mux.HandleFunc("POST /admin/api/settings/client-password", s.guard(s.admin(s.newClientPassword)))
 	return secure(mux)
