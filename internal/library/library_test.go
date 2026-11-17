@@ -87,3 +87,61 @@ func TestMatchIgnoresYearAndPunctuation(t *testing.T) {
 		}
 	}
 }
+
+// Real names from the user's feeds (Nov 2026).
+func TestParseRealFeedNames(t *testing.T) {
+	cases := []struct {
+		in      string
+		title   string
+		alias   string
+		season  int
+		ep      int
+		res     string
+		cleaned string
+	}{
+		{"[Judas] Seitokai ni mo Ana wa Aru! {Even the Student Council Has Its Holes} [Uncensored] - S01E07 [1080p][HEVC x265 10bit][Multi-Subs] (Weekly).mkv",
+			"Seitokai ni mo Ana wa Aru!", "Even the Student Council Has Its Holes", 1, 7, "1080p",
+			"Seitokai ni mo Ana wa Aru! - S01E07.mkv"},
+		{"[Judas] Seitokai ni mo Ana wa Aru! {Even the Student Council Has Its Holes} [Uncensored] - S01E01 [1080p][HEVC x265 10bit][Multi-Subs] (Weekly)",
+			"Seitokai ni mo Ana wa Aru!", "Even the Student Council Has Its Holes", 1, 1, "1080p", ""},
+		{"[Trix] Blue Box S02E06 1080p NF WEB-DL Opus2.0 AV1 (Multi-Audio / Dual-Audio, Multi-Subs) (Ao no Hako Season 2) (Weekly)",
+			"Blue Box", "", 2, 6, "1080p", ""},
+		{"[SubsPlease] 86 - Eighty Six - 02 (1080p) [285887DF].mkv",
+			"86 - Eighty Six", "", 1, 2, "1080p", "86 - Eighty Six - 2 (1080p).mkv"},
+		{"[SubsPlease] One Piece - 1158 (1080p) [12345678].mkv",
+			"One Piece", "", 1, 1158, "1080p", "One Piece - 1158 (1080p).mkv"},
+	}
+	for _, c := range cases {
+		r, ok := library.Parse(c.in)
+		if !ok || r.Title != c.title || r.Season != c.season || r.Episode != c.ep || r.Res != c.res {
+			t.Errorf("%q\n -> %+v %v", c.in, r, ok)
+			continue
+		}
+		if c.alias != "" && (len(r.Aliases) != 1 || r.Aliases[0] != c.alias) {
+			t.Errorf("%q: aliases %q, want %q", c.in, r.Aliases, c.alias)
+		}
+		if c.alias == "" && len(r.Aliases) != 0 {
+			t.Errorf("%q: unexpected aliases %q", c.in, r.Aliases)
+		}
+		if c.cleaned != "" {
+			if got := library.Clean(c.in); got != c.cleaned {
+				t.Errorf("Clean(%q)\n got  %q\n want %q", c.in, got, c.cleaned)
+			}
+		}
+	}
+}
+
+func TestMatchAnyUsesAliases(t *testing.T) {
+	folders := []string{"Seitokai ni mo Ana wa Aru", "Even the Student Council Has Its Holes Fan Folder", "Blue Box"}
+	if f, _ := library.MatchAny([]string{"Seitokai ni mo Ana wa Aru!", "Even the Student Council Has Its Holes"}, folders); f != "Seitokai ni mo Ana wa Aru" {
+		t.Fatalf("romaji title should match, got %q", f)
+	}
+	only := []string{"Even the Student Council Has Its Holes", "Blue Box"}
+	if f, _ := library.MatchAny([]string{"Seitokai ni mo Ana wa Aru!", "Even the Student Council Has Its Holes"}, only); f != "Even the Student Council Has Its Holes" {
+		t.Fatalf("a folder named after the English title should match through the alias, got %q", f)
+	}
+	two := []string{"Seitokai ni mo Ana wa Aru", "Even the Student Council Has Its Holes"}
+	if f, c := library.MatchAny([]string{"Seitokai ni mo Ana wa Aru!", "Even the Student Council Has Its Holes"}, two); f != "" || len(c) != 2 {
+		t.Fatalf("two different folders must not be guessed between: %q %v", f, c)
+	}
+}

@@ -552,6 +552,21 @@ func TestLibraryPlacesAMatchingEpisode(t *testing.T) {
 	}
 }
 
+// A Judas-style name, with the English title in braces and [Uncensored] inside the
+// title, is placed in the show's folder and keeps its episode number.
+func TestLibraryPlacesABracedTitleRelease(t *testing.T) {
+	u, lib := libraryRig(t)
+	if err := os.MkdirAll(filepath.Join(lib, "Seitokai ni mo Ana wa Aru"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rel := "[Judas] Seitokai ni mo Ana wa Aru! {Even the Student Council Has Its Holes} [Uncensored] - S01E07 [1080p][HEVC x265 10bit][Multi-Subs] (Weekly)"
+	got := u.dropRelease(t, "101", rel, rel+".mkv")
+	want := filepath.Join(lib, "Seitokai ni mo Ana wa Aru", "Season 1", "Seitokai ni mo Ana wa Aru! - S01E07.mkv")
+	if !exists(want) {
+		t.Fatalf("the episode should be placed at %s (%s, %s)", want, got.State, got.Reason)
+	}
+}
+
 // A release with no clear show folder stays where it was delivered and the job ends.
 func TestLibraryLeavesWhatItCannotPlace(t *testing.T) {
 	u, lib := libraryRig(t)
