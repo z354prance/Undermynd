@@ -237,11 +237,15 @@ func same(a, b map[int]int) bool {
 	return true
 }
 
+// maxExtras is the most extra episodes one season can have.
+const maxExtras = 4
+
 // Extras counts the files a reading leaves out that sit past the end of their
 // season (or past the last absolute number): extra episodes that came out after
 // a TV run, which TMDB keeps among the specials. ok is false when some other
 // file is left out too.
 func Extras(files []DiskFile, eps []catalog.Episode, fit Fit) (n int, ok bool) {
+	perSeason := map[int]int{}
 	last := map[int]int{}
 	lastAbs := 0
 	for _, e := range eps {
@@ -267,6 +271,10 @@ func Extras(files []DiskFile, eps []catalog.Episode, fit Fit) (n int, ok bool) {
 			return 0, false
 		}
 		n++
+		perSeason[f.Season]++
+		if perSeason[f.Season] > maxExtras {
+			return 0, false // too many to be a few extra episodes
+		}
 	}
 	return n, true
 }

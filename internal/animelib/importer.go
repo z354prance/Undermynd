@@ -435,9 +435,16 @@ func (im *Importer) evaluate(ctx context.Context, f *Folder, files []DiskFile) e
 		}
 	}
 	best := f.Options[0]
-	full := 0
+	// A reading that places every file beats one that leaves extras out: only
+	// when none does are readings with extras counted.
+	full, clean := 0, 0
 	for _, o := range f.Options {
-		if fits(o, f.Files) {
+		if fits(o, f.Files) && o.Extras == 0 {
+			clean++
+		}
+	}
+	for _, o := range f.Options {
+		if fits(o, f.Files) && (clean == 0 || o.Extras == 0) {
 			full++
 		}
 	}
