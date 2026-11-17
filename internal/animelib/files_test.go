@@ -192,3 +192,21 @@ func TestExtrasPastTheSeasonEnd(t *testing.T) {
 		t.Fatal("a season TMDB does not have is not an extra")
 	}
 }
+
+func TestCopies(t *testing.T) {
+	tmdb := eps([3]int{1, 1, 1}, [3]int{1, 2, 2}, [3]int{1, 3, 3})
+	// A v2 of episode 2 is a copy.
+	disk := files([2]int{1, 1}, [2]int{1, 2}, [2]int{1, 2}, [2]int{1, 3})
+	fit := Fits(disk, tmdb)[0]
+	if c := Copies(disk, fit); c != 1 || fit.Distinct != 3 {
+		t.Fatalf("v2: copies %d %+v", c, fit)
+	}
+	// Two seasons numbered alike landing on one season's episodes are not copies.
+	two := eps([3]int{1, 1, 1}, [3]int{1, 2, 2}, [3]int{2, 1, 3}, [3]int{2, 2, 4})
+	disk = files([2]int{1, 1}, [2]int{1, 2}, [2]int{2, 1}, [2]int{2, 2})
+	for _, f := range Fits(disk, two) {
+		if f.Numbering == catalog.ByAbsolute && Copies(disk, f) != 0 {
+			t.Fatalf("absolute collisions across seasons counted as copies: %+v", f)
+		}
+	}
+}

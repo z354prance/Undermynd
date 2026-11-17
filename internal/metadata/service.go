@@ -383,3 +383,16 @@ func (s *Service) Titles(ctx context.Context, tmdbID int64) ([]string, error) {
 	}
 	return out, nil
 }
+
+// Airing says whether TMDB has the show as still running or yet to air.
+func (s *Service) Airing(ctx context.Context, tmdbID int64) bool {
+	tv, err := s.TMDB.TV(ctx, tmdbID, false)
+	if err != nil {
+		return false
+	}
+	switch tv.Status {
+	case "Returning Series", "In Production", "Planned", "Pilot":
+		return true
+	}
+	return false
+}

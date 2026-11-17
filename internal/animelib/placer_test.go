@@ -36,7 +36,7 @@ func TestCatalogPlacement(t *testing.T) {
 
 	// A season show, under another title it is known by, placed in its group order.
 	src := put("[Trix] Ao no Hako S02E02 [1080p AV1].mkv")
-	dst, why, err := p.Place(src, "job1", lib)
+	dst, why, err := p.Place(src, "job1", lib, nil)
 	want := filepath.Join(lib, "Blue Box", "Season 2", "Blue Box - S02E02 (1080p).mkv")
 	if err != nil || why != "" || dst != want {
 		t.Fatalf("blue box: %q %q %v", dst, why, err)
@@ -55,7 +55,7 @@ func TestCatalogPlacement(t *testing.T) {
 
 	// An absolute show's next episode before TMDB lists it waits, then goes in by hand.
 	src = put("[SubsPlease] One Piece - 5 (1080p) [ABCD1234].mkv")
-	if _, why, err := p.Place(src, "job2", lib); err != nil || why == "" {
+	if _, why, err := p.Place(src, "job2", lib, nil); err != nil || why == "" {
 		t.Fatalf("one piece 5 should wait: %q %v", why, err)
 	}
 	q := p.Queue()
@@ -70,7 +70,7 @@ func TestCatalogPlacement(t *testing.T) {
 	// An unknown title: suggested by its first words, placed over an existing
 	// file by hand, the old file kept aside, and the title remembered.
 	src = put("[SubsPlease] Boku no Hero Academia Vigilantes - 01 (1080p) [ABCD1234].mkv")
-	if _, why, _ := p.Place(src, "job3", lib); why == "" {
+	if _, why, _ := p.Place(src, "job3", lib, nil); why == "" {
 		t.Fatal("unknown title should wait")
 	}
 	q = p.Queue()
@@ -96,9 +96,22 @@ func TestCatalogPlacement(t *testing.T) {
 		t.Fatalf("queue should be empty: %+v", p.Queue())
 	}
 
+	// A show that is not in the catalog goes by folder name when it can.
+	src = put("[SubsPlease] Never Imported - 03 (1080p) [ABCD1234].mkv")
+	called := false
+	dst, why, err = p.Place(src, "job5", lib, func() (string, string, error) { called = true; return "/lib/Never Imported/Season 1/x.mkv", "", nil })
+	if !called || err != nil || why != "" || dst == "" || len(p.Queue()) != 0 {
+		t.Fatalf("fallback: %v %q %q %v %+v", called, dst, why, err, p.Queue())
+	}
+	// When folder names cannot place it either, it waits for a person.
+	if _, why, _ := p.Place(src, "job5", lib, func() (string, string, error) { return "", "no folder", nil }); why == "" || len(p.Queue()) != 1 {
+		t.Fatalf("fallback left: %q %+v", why, p.Queue())
+	}
+	p.Resolve(ctx, p.Queue()[0].ID, animelib.Resolution{Action: "leave"})
+
 	// The episode already in the library: the new copy waits.
 	src = put("[Judas] Ao no Hako - S01E01 [1080p].mkv")
-	if _, why, _ := p.Place(src, "job4", lib); why == "" {
+	if _, why, _ := p.Place(src, "job4", lib, nil); why == "" {
 		t.Fatal("an episode with a file should wait")
 	}
 	if q = p.Queue(); len(q) != 1 || q[0].Kind != animelib.KindExists || q[0].Existing == nil {
@@ -112,14 +125,15 @@ func TestCatalogPlacement(t *testing.T) {
 	// The dry run compares, and the mode is kept.
 	p.Record("/x/a.mkv", "/lib/Show/Season 1/Show - S01E01.mkv", "", "/lib/Show/Season 1/Show - 1.mkv", "")
 	p.Record("/x/b.mkv", "/lib/Show/Season 2/Show - S02E01.mkv", "", "", "no folder")
-	if d := p.DryRun(); len(d) != 2 || d[0].Verdict != "better" || d[1].Verdict != "same" {
+	p.Record("/x/c.mkv", "", animelib.ByFolderName, "/lib/Old/Season 1/Old - 1.mkv", "")
+	if d := p.DryRun(); len(d) != 3 || d[0].Verdict != "same" || !d[0].ByFolder || d[1].Verdict != "better" || d[2].Verdict != "same" {
 		t.Fatalf("dry run: %+v", d)
 	}
 	if err := p.SetMode(animelib.ModeCatalog); err != nil {
 		t.Fatal(err)
 	}
 	p2 := &animelib.Placer{Cat: im.Cat, Meta: im.Meta, Blobs: blobs, Log: im.Log, Now: im.Now}
-	if p2.Mode() != animelib.ModeCatalog || len(p2.DryRun()) != 2 {
+	if p2.Mode() != animelib.ModeCatalog || len(p2.DryRun()) != 3 {
 		t.Fatalf("not kept: %s %d", p2.Mode(), len(p2.DryRun()))
 	}
 }

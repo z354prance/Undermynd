@@ -42,6 +42,10 @@ type Option struct {
 	// extra episodes TMDB keeps among the specials. Set only when they are the
 	// only files left out.
 	Extras int `json:"extras,omitempty"`
+	// Copies are files that are a second copy of an episode another file has,
+	// named with the same season and number (a v2, or a second group's
+	// release). They are fine; files of different numbers that collide are not.
+	Copies int `json:"copies,omitempty"`
 }
 
 // Folder is one show folder in an import.
@@ -58,6 +62,7 @@ type Folder struct {
 	Unmapped   []string             `json:"unmapped,omitempty"`
 	SeriesID   int64                `json:"seriesId,omitempty"`
 	Picked     bool                 `json:"picked,omitempty"` // a person chose the match
+	Airing     bool                 `json:"airing,omitempty"` // TMDB has the matched show as still running
 	Note       string               `json:"note,omitempty"`   // worth knowing about a ready folder
 	prev       string
 }
@@ -271,9 +276,13 @@ func (im *Importer) examine(ctx context.Context, path string, was *Folder) exami
 			c := cands[0]
 			f.Match = &c
 		}
+		if f.Match != nil {
+			f.Airing = im.Meta.Airing(ctx, f.Match.TMDBID)
+		}
 		return examined{Folder: f}
 	}
 	f.Match = match
+	f.Airing = im.Meta.Airing(ctx, match.TMDBID)
 	err = im.evaluate(ctx, f, files)
 	return examined{Folder: f, err: err}
 }
@@ -386,25 +395,40 @@ func onlyExact(titles []string, cands []metadata.Candidate, animated bool) *meta
 // squash compares titles ignoring spaces as well as case and punctuation.
 func squash(t string) string { return strings.ReplaceAll(library.Normalize(t), " ", "") }
 
-// byAltTitle settles a tie between the shows the anime lists point at by
-// TMDB's alternative titles: Bakuten!! is TMDB's "Backflip!!", known there as
-// "Bakuten!!" too. Exactly one list show must carry the folder's title.
+// byAltTitle settles a match by TMDB's alternative titles when the plain title
+// check could not: a tie between the shows the anime lists point at (Bakuten!!
+// is TMDB's "Backflip!!", known there as "Bakuten!!" too), or a show too new for
+// the lists whose TMDB name is English (Gorilla no Kami is "The Gorilla God's
+// Go-To Girl"). Exactly one show must carry the folder's title.
 func (im *Importer) byAltTitle(ctx context.Context, titles []string, cands []metadata.Candidate) *metadata.Candidate {
 	want := map[string]bool{}
 	for _, t := range titles {
 		want[squash(t)] = true
 	}
-	var lists []metadata.Candidate
+	var lists, search []metadata.Candidate
 	for _, c := range cands {
 		if c.Via == "anime lists" {
 			lists = append(lists, c)
+		} else if c.Animation {
+			search = append(search, c)
 		}
 	}
-	if len(lists) < 2 || len(lists) > 4 {
-		return nil // only a tie between list shows is settled this way
+	pool := lists
+	switch {
+	case len(lists) >= 2 && len(lists) <= 4:
+		// a tie between the shows the lists point at
+	case len(lists) == 0 && len(search) > 0:
+		// a show too new for the lists: TMDB names it in English, the folder
+		// in romaji, which TMDB keeps among the alternative titles
+		pool = search
+		if len(pool) > 5 {
+			pool = pool[:5]
+		}
+	default:
+		return nil
 	}
 	var hit []metadata.Candidate
-	for _, c := range lists {
+	for _, c := range pool {
 		names, err := im.Meta.Titles(ctx, c.TMDBID)
 		if err != nil {
 			return nil
@@ -451,7 +475,7 @@ func (im *Importer) evaluate(ctx context.Context, f *Folder, files []DiskFile) e
 			continue
 		}
 		for _, fit := range Fits(files, eps) {
-			opt := Option{Order: o.ID, OrderName: o.Name, Numbering: fit.Numbering, Mapped: fit.Mapped, Distinct: fit.Distinct}
+			opt := Option{Order: o.ID, OrderName: o.Name, Numbering: fit.Numbering, Mapped: fit.Mapped, Distinct: fit.Distinct, Copies: Copies(files, fit)}
 			if n, ok := Extras(files, eps, fit); ok {
 				opt.Extras = n
 			}
@@ -463,10 +487,10 @@ func (im *Importer) evaluate(ctx context.Context, f *Folder, files []DiskFile) e
 	}
 	sort.SliceStable(f.Options, func(i, j int) bool {
 		a, b := f.Options[i], f.Options[j]
-		if a.Distinct != b.Distinct {
-			return a.Distinct > b.Distinct
+		if a.Distinct+a.Copies != b.Distinct+b.Copies {
+			return a.Distinct+a.Copies > b.Distinct+b.Copies
 		}
-		return a.Mapped > b.Mapped
+		return a.Distinct > b.Distinct
 	})
 	for i, d := range files {
 		if _, ok := bestMap[i]; d.OK && !ok && len(f.Unmapped) < 10 {
@@ -491,9 +515,9 @@ func (im *Importer) evaluate(ctx context.Context, f *Folder, files []DiskFile) e
 	case best.Mapped+best.Extras < f.Files:
 		f.State = Needs
 		f.Reason = fmt.Sprintf("%d of %d files do not match an episode in any order TMDB has", f.Files-best.Mapped, f.Files)
-	case best.Distinct < best.Mapped:
+	case best.Distinct+best.Copies < best.Mapped || best.Copies > copiesAllowed(f.Files):
 		f.State = Needs
-		f.Reason = fmt.Sprintf("%d files land on an episode another file already has: check for duplicates or a numbering mix", f.Files-best.Distinct)
+		f.Reason = fmt.Sprintf("%d files land on an episode another file already has: the files are numbered in a way TMDB's episodes do not fit", best.Mapped-best.Distinct)
 	case best.Order != "":
 		f.State = Needs
 		f.Reason = fmt.Sprintf("TMDB's own seasons do not fit these files; its episode group %q does", best.OrderName)
@@ -502,15 +526,31 @@ func (im *Importer) evaluate(ctx context.Context, f *Folder, files []DiskFile) e
 		f.Reason = "the files fit more than one way: choose how they are numbered"
 	default:
 		f.State, f.Reason = Ready, ""
+		var notes []string
 		if best.Extras > 0 {
-			f.Note = fmt.Sprintf("%d extra episode(s) past the end of a season are left out: TMDB keeps them among the specials", best.Extras)
+			notes = append(notes, fmt.Sprintf("%d extra episode(s) past the end of a season are left out: TMDB keeps them among the specials", best.Extras))
 		}
+		if best.Copies > 0 {
+			notes = append(notes, fmt.Sprintf("%d episode(s) have two copies in the folder (a v2 or a second group); both are recorded", best.Copies))
+		}
+		f.Note = strings.Join(notes, "; ")
 	}
 	return nil
 }
 
 // fits says an option puts every file on its own episode.
-func fits(o Option, files int) bool { return o.Distinct == o.Mapped && o.Mapped+o.Extras == files }
+func fits(o Option, files int) bool {
+	return o.Copies <= copiesAllowed(files) && o.Distinct+o.Copies == o.Mapped && o.Mapped+o.Extras == files
+}
+
+// copiesAllowed is how many second copies a folder may have before they look
+// like two seasons numbered alike in one folder rather than a stray v2.
+func copiesAllowed(files int) int {
+	if files/10 > 2 {
+		return files / 10
+	}
+	return 2
+}
 
 func distinctOf(m map[int]int) int {
 	seen := map[int]bool{}

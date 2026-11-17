@@ -78,7 +78,8 @@ type LibraryPlacer interface {
 	// Mode is "folders", "dry-run" or "catalog".
 	Mode() string
 	// Place moves a file by the catalog, or leaves it waiting for a person.
-	Place(src, jobID, root string) (dst, why string, err error)
+	// byFolder places it by folder name, for shows the catalog does not have.
+	Place(src, jobID, root string, byFolder func() (string, string, error)) (dst, why string, err error)
 	// Preview says where the catalog would put a file.
 	Preview(src, root string) (dst, why string)
 	// Record keeps a dry-run comparison.
@@ -93,7 +94,7 @@ func (e *Engine) placeFile(root string, folders []string, src, jobID string) (ds
 	}
 	switch e.Placer.Mode() {
 	case "catalog":
-		return e.Placer.Place(src, jobID, root)
+		return e.Placer.Place(src, jobID, root, func() (string, string, error) { return placeOne(root, folders, src) })
 	case "dry-run":
 		cd, cw := e.Placer.Preview(src, root)
 		dst, why, err = placeOne(root, folders, src)
