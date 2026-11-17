@@ -21,25 +21,27 @@ type Release struct {
 	Episode  int
 	EpisodeS string // the episode as written, e.g. "07"
 	Res      string // e.g. "1080p", empty if none
+	Group    string // the release group from a leading [Group], empty if none
 	// Aliases are other titles the name gives for the same show, such as the
 	// English title some groups add in braces: "Romaji {English Title}".
 	Aliases []string
 }
 
 var (
-	lead    = regexp.MustCompile(`^\s*(\[[^\]]*\]\s*)+`)
-	tail    = regexp.MustCompile(`(\s*\[[^\]]*\])+\s*$`)
-	res     = regexp.MustCompile(`(?i)[\(\[ ](\d{3,4}p)[\)\] ]?`)
-	epDash  = regexp.MustCompile(`(?i)^(.*?)\s+-\s+(?:EP?\.?\s?)?(\d{1,4})(?:v\d+)?(?:\s|\(|\[|$)`)
-	epNxM   = regexp.MustCompile(`(?i)^(.*?)\s+(?:-\s+)?(\d{1,2})x(\d{1,3})(?:v\d+)?(?:\s|\(|\[|$)`)
-	year    = regexp.MustCompile(`\s*[\(\[](?:19|20)\d\d[\)\]]\s*$`)
-	epSxE   = regexp.MustCompile(`(?i)^(.*?)\s+(?:-\s+)?S(\d{1,2})E(\d{1,3})(?:v\d+)?(?:\s|\(|\[|\.|$)`)
-	seasonA = regexp.MustCompile(`(?i)^(.*?)\s+S(\d{1,2})$`)
-	seasonB = regexp.MustCompile(`(?i)^(.*?)\s+(\d{1,2})(?:st|nd|rd|th)\s+Season$`)
-	seasonC = regexp.MustCompile(`(?i)^(.*?)\s+Season\s+(\d{1,2})$`)
-	braces  = regexp.MustCompile(`\{([^}]*)\}`)
-	inTags  = regexp.MustCompile(`\[[^\]]*\]`)
-	spaces  = regexp.MustCompile(`\s+`)
+	lead     = regexp.MustCompile(`^\s*(\[[^\]]*\]\s*)+`)
+	tail     = regexp.MustCompile(`(\s*\[[^\]]*\])+\s*$`)
+	res      = regexp.MustCompile(`(?i)[\(\[ ](\d{3,4}p)[\)\] ]?`)
+	epDash   = regexp.MustCompile(`(?i)^(.*?)\s+-\s+(?:EP?\.?\s?)?(\d{1,4})(?:v\d+)?(?:\s|\(|\[|$)`)
+	epNxM    = regexp.MustCompile(`(?i)^(.*?)\s+(?:-\s+)?(\d{1,2})x(\d{1,3})(?:v\d+)?(?:\s|\(|\[|$)`)
+	year     = regexp.MustCompile(`\s*[\(\[](?:19|20)\d\d[\)\]]\s*$`)
+	epSxE    = regexp.MustCompile(`(?i)^(.*?)\s+(?:-\s+)?S(\d{1,2})E(\d{1,3})(?:v\d+)?(?:\s|\(|\[|\.|$)`)
+	seasonA  = regexp.MustCompile(`(?i)^(.*?)\s+S(\d{1,2})$`)
+	seasonB  = regexp.MustCompile(`(?i)^(.*?)\s+(\d{1,2})(?:st|nd|rd|th)\s+Season$`)
+	seasonC  = regexp.MustCompile(`(?i)^(.*?)\s+Season\s+(\d{1,2})$`)
+	braces   = regexp.MustCompile(`\{([^}]*)\}`)
+	firstTag = regexp.MustCompile(`^\s*\[([^\]]*)\]`)
+	inTags   = regexp.MustCompile(`\[[^\]]*\]`)
+	spaces   = regexp.MustCompile(`\s+`)
 )
 
 // Parse reads a release file name (with or without its extension).
@@ -48,15 +50,22 @@ func Parse(name string) (Release, bool) {
 	if strings.EqualFold(filepath.Ext(name), "") {
 		s = name
 	}
+	orig := s
+	group := ""
+	if m := firstTag.FindStringSubmatch(s); m != nil {
+		group = strings.TrimSpace(m[1])
+	}
 	s = lead.ReplaceAllString(s, "")
 	s = tail.ReplaceAllString(s, "")
 	// Dotted or underscored names ("Show.Name.S02E06.1080p.WEB-GRP") read like spaced ones.
 	if strings.Count(s, ".")+strings.Count(s, "_") > strings.Count(s, " ") {
 		s = strings.Join(strings.Fields(strings.NewReplacer(".", " ", "_", " ").Replace(s)), " ")
 	}
-	r := Release{Season: 1}
+	r := Release{Season: 1, Group: group}
 	if m := res.FindStringSubmatch(" " + s + " "); m != nil {
 		r.Res = strings.ToLower(m[1])
+	} else if m := res.FindStringSubmatch(" " + orig + " "); m != nil {
+		r.Res = strings.ToLower(m[1]) // in the trailing tags: "[1080p AV1]"
 	}
 	var title string
 	if m := epSxE.FindStringSubmatch(s); m != nil {

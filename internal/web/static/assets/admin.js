@@ -243,6 +243,7 @@
       if(!d.roots||!d.roots.length){host.appendChild(el('div','empty','No anime library folder is set. Give your anime category a library folder under Arrs & categories.'));return}
       if(!d.hasKey){host.appendChild(el('div','empty','Add a TMDB key under Metadata, then import your anime folders.'));return}
       if(!d.series.length){host.appendChild(el('div','empty','No anime in the catalog yet. Import your anime folders to start.'));return}
+      placementSection(host,d.series);
       var t=el('table','atable'),hr=el('tr');['show','numbering','episode order','seasons','have','missing','latest aired'].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tbd=el('tbody');
       d.series.forEach(function(r){var tr=el('tr');var c1=el('td');var a=el('button','link',r.title);a.onclick=function(){animeShow=r.id;app()};c1.appendChild(a);c1.appendChild(el('div','reason',r.folder));tr.appendChild(c1);
         var c2=el('td');c2.appendChild(el('span','chip2 '+(r.numbering==='absolute'?'blue':'dim'),r.numbering));tr.appendChild(c2);
@@ -252,6 +253,60 @@
       t.appendChild(tbd);host.appendChild(t);
       host.appendChild(el('p','hint','Missing counts only episodes that have aired. Episodes TMDB has not dated are never counted. Files are checked every half hour.'));
     }).catch(function(e){if(e.status===401)fail(e);else host.appendChild(el('div','err',e.message))})}
+  function fmtSize(b){if(!b)return '';var u=['B','KB','MB','GB','TB'],i=0;while(b>=1024&&i<4){b/=1024;i++}return b.toFixed(i>2?1:0)+' '+u[i]}
+  function parseEp(v){v=(v||'').trim();var m=/^s(\d{1,2})\s*e(\d{1,4})$/i.exec(v);if(m)return {season:+m[1],episode:+m[2],marked:true};m=/^(\d{1,4})$/.exec(v);if(m)return {season:1,episode:+m[1],marked:false};return null}
+  function placementSection(host,series){
+    var box=el('div');host.appendChild(box);
+    api('GET','/anime/placement').then(function(d){
+      var q=d.queue||[];
+      if(q.length){box.appendChild(el('h3','osec','Files that need you · '+q.length));
+        box.appendChild(help('New episodes that could not be placed with certainty. They stay where they were downloaded until you decide; nothing is overwritten.'));
+        q.forEach(function(it){box.appendChild(pendingCard(it,series))})}
+      var c=d.counts||{},total=0;Object.keys(c).forEach(function(k){total+=c[k]});
+      box.appendChild(el('h3','osec','Placement'));
+      var modeHelp={folders:'New episodes are placed by folder name, as before the catalog.','dry-run':'New episodes are still placed by folder name; the catalog records where it would have put each one, below, so it can be trusted before it takes over.',catalog:'New episodes are placed by the catalog: each show\'s own numbering and season folders, matched by every title it is known by. Anything unsure waits above.'};
+      var tb=el('div','toolbar');var sel=el('select');sel.setAttribute('aria-label','placement mode');[['dry-run','folder names, with catalog dry run'],['catalog','catalog'],['folders','folder names only']].forEach(function(o){var op=new Option(o[1],o[0]);op.selected=d.mode===o[0];sel.appendChild(op)});
+      var msg=el('span','msg');sel.onchange=function(){api('PUT','/anime/placement/mode',{mode:sel.value}).then(function(){app()}).catch(function(e){msg.className='msg err';msg.textContent=e.message})};
+      tb.appendChild(el('span','reason','place new episodes by'));tb.appendChild(sel);
+      if(d.mode==='dry-run'&&total){[['same',''],['better','blue'],['different','warn'],['worse','bad'],['both-left','dim']].forEach(function(v){if(c[v[0]])tb.appendChild(el('span','chip2 '+v[1],c[v[0]]+' '+v[0].replace('-',' ')))})}
+      tb.appendChild(msg);box.appendChild(tb);box.appendChild(help(modeHelp[d.mode]||''));
+      if(d.mode==='dry-run'){
+        if(!d.dryRun.length){box.appendChild(el('div','empty','No episodes have arrived since the dry run started. Each new one is compared here.'));return}
+        box.appendChild(help('same: the same show and season folder. better: the catalog places a file folder names left. different: another folder (check these). worse: the catalog would leave a file folder names placed.'));
+        var t=el('table','atable'),hr=el('tr');['when','file','folder names','catalog would',''].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tbd=el('tbody');
+        d.dryRun.slice(0,40).forEach(function(e){var tr=el('tr');tr.appendChild(el('td','mono',ago(e.at)+' ago'));tr.appendChild(el('td','mono',e.name));
+          tr.appendChild(el('td','mono'+(e.folderDst?'':' warnt'),e.folderDst||('left: '+e.folderWhy)));tr.appendChild(el('td','mono'+(e.catalogDst?'':' warnt'),e.catalogDst||('waits: '+e.catalogWhy)));
+          var vc=el('td');vc.appendChild(el('span','chip2 '+({same:'',better:'blue',different:'warn',worse:'bad','both-left':'dim'}[e.verdict]||''),e.verdict.replace('-',' ')));tr.appendChild(vc);tbd.appendChild(tr)});
+        t.appendChild(tbd);box.appendChild(t)}
+    }).catch(function(e){if(e.status===401)fail(e);else if(e.status!==409)box.appendChild(el('div','err',e.message))})}
+  function pendingCard(it,series){
+    var c=el('section','card fcard '+(it.kind==='ambiguous'?'failedc':'needs'));
+    var h=el('div','nh');var hl=el('div');hl.appendChild(el('div','fname',it.name));hl.appendChild(el('div','reason',(it.jobId?'job '+it.jobId.slice(0,8)+' · ':'')+'arrived '+ago(it.added)+' ago'));h.appendChild(hl);var acts=el('div','acts rhoriz');h.appendChild(acts);c.appendChild(h);
+    c.appendChild(el('div','freason',it.reason));
+    if(it.existing){c.appendChild(el('div','reason','in the library: '+[it.existing.group,it.existing.res,fmtSize(it.existing.size)].filter(Boolean).join(' · ')+' · '+it.existing.path.split('/').pop()));
+      c.appendChild(el('div','reason','this one: '+[it.group,it.res].filter(Boolean).join(' · ')))}
+    var msg=el('div','msg');var pick=el('div','fpick'),showSel=null,epIn=null;
+    var needsShow=it.kind==='unknown'||it.kind==='ambiguous'||it.kind==='no-number'||it.kind==='no-episode';
+    if(needsShow){showSel=el('select');showSel.setAttribute('aria-label','show');showSel.appendChild(new Option('choose the show…',''));
+      var seen={};(it.candidates||[]).forEach(function(x){seen[x.id]=1;showSel.appendChild(new Option(x.title+(x.year?' ('+x.year+')':'')+' · suggested',String(x.id)))});
+      if(it.seriesId&&!seen[it.seriesId]){seen[it.seriesId]=1;var o=new Option(it.series,String(it.seriesId));o.selected=true;showSel.appendChild(o)}
+      if((it.candidates||[]).length===1&&!it.seriesId)showSel.value=String(it.candidates[0].id);
+      series.slice().sort(function(a,b){return a.title.localeCompare(b.title)}).forEach(function(x){if(!seen[x.id])showSel.appendChild(new Option(x.title+(x.year?' ('+x.year+')':''),String(x.id)))});
+      pick.appendChild(showSel);epIn=el('input');epIn.type='text';epIn.setAttribute('aria-label','episode');epIn.placeholder='episode: S01E08 or 1181';epIn.value=it.epLabel||(it.episode?(it.marked?'S'+String(it.season).padStart(2,'0')+'E'+String(it.episode).padStart(2,'0'):String(it.episode)):'');pick.appendChild(epIn);c.appendChild(pick)}
+    function send(body,b){if(b)b.disabled=true;msg.className='msg';msg.textContent='working…';
+      api('POST','/anime/placement/'+it.id,body).then(function(r){msg.className='msg ok';msg.textContent=r.placed?'placed: '+r.placed:'done';setTimeout(app,900)}).catch(function(e){if(b)b.disabled=false;msg.className='msg err';msg.textContent=e.message})}
+    function a(label,cls,fn){var b=el('button',cls,label);b.onclick=function(){fn(b)};acts.appendChild(b)}
+    function chosen(){var sid=Number(showSel.value);if(!sid){msg.className='msg err';msg.textContent='choose the show';return null}var ep=parseEp(epIn.value);if(!ep){msg.className='msg err';msg.textContent='write the episode as S01E08 or as a number';return null}return {seriesId:sid,season:ep.season,marked:ep.marked,episode:ep.episode}}
+    if(needsShow){a('place here and remember this title','go',function(b){var x=chosen();if(!x)return;x.action='place';x.remember=true;send(x,b)});
+      var ns=el('div','fpick');var q=el('input');q.type='search';q.placeholder='or add as a new show: search TMDB, Enter';q.setAttribute('aria-label','search TMDB for a new show');var res=el('div','fres');
+      q.onkeydown=function(e){if(e.key!=='Enter')return;e.preventDefault();res.replaceChildren(el('span','reason','searching…'));api('GET','/anime/search?q='+encodeURIComponent(q.value)).then(function(list){res.replaceChildren();if(!list.length)res.appendChild(el('span','reason','nothing found'));
+        list.slice(0,8).forEach(function(x){var b=el('button','link','add '+x.name+(x.year?' ('+x.year+')':'')+' · TMDB '+x.tmdbId+' as a new show');b.onclick=function(){var ep=epIn?parseEp(epIn.value):null;var body={action:'new-show',tmdbId:x.tmdbId};if(ep){body.season=ep.season;body.marked=ep.marked;body.episode=ep.episode}send(body,b)};res.appendChild(b)})}).catch(function(e){res.replaceChildren(el('span','msg err',e.message))})};
+      ns.appendChild(q);c.appendChild(ns);c.appendChild(res)}
+    if(it.kind==='exists'){a('keep the one in the library','',function(b){send({action:'leave'},b)});a('replace it','go',function(b){if(confirm('Replace it? The file in the library is kept beside it as .replaced.'))send({action:'replace'},b)});a('keep both','',function(b){send({action:'keep-both'},b)})}
+    if(it.kind==='not-on-tmdb'){c.appendChild(help('It will be placed by itself once TMDB lists the episode (checked every hour; the show is refreshed every six).'));a('place now as '+it.epLabel,'go',function(b){send({action:'place-anyway'},b)})}
+    a('leave it',needsShow||it.kind==='not-on-tmdb'||it.kind==='no-folder'?'':'',function(b){if(confirm('Stop waiting for this file? It stays in the download folder.'))send({action:'leave'},b)});
+    c.appendChild(msg);return c;
+  }
   function animeShowView(body,id){
     var back=el('div','crumbs');var bl=el('button','link','Library');bl.onclick=function(){animeShow=null;app()};back.appendChild(bl);back.appendChild(el('span','dimt',' / anime'));body.appendChild(back);
     var host=el('div');body.appendChild(host);

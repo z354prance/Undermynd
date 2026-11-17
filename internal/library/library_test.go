@@ -156,3 +156,23 @@ func TestNormalizeThousands(t *testing.T) {
 		t.Fatal(library.Normalize("Re:Zero 2.5"), library.Normalize("1,000,000"))
 	}
 }
+
+func TestParseGroup(t *testing.T) {
+	for name, want := range map[string]string{
+		"[SubsPlease] Sousou no Frieren S2 - 07 (1080p) [ABCD1234].mkv": "SubsPlease",
+		"[Judas] Seitokai ni mo Ana wa Aru! - S01E05.mkv":               "Judas",
+		"Show - 05 (1080p).mkv":                                         "",
+	} {
+		r, ok := library.Parse(name)
+		if !ok || r.Group != want {
+			t.Errorf("%s: got %q (%v)", name, r.Group, ok)
+		}
+	}
+}
+
+func TestParseResolutionInTrailingTags(t *testing.T) {
+	r, ok := library.Parse("[Trix] Ao no Hako S02E02 [1080p AV1].mkv")
+	if !ok || r.Res != "1080p" || r.Season != 2 || r.Episode != 2 {
+		t.Fatalf("%+v %v", r, ok)
+	}
+}
