@@ -1,10 +1,10 @@
-# Roadmap: folding the arr stack into Undermynd (v18, Nov 16, 2026)
+# Roadmap: folding the arr stack into Undermynd (v19, Nov 16, 2026)
 
 Goal: one app that does what Radarr, Sonarr, Lidarr, Prowlarr, Seerr, Houndarr and Recyclarr do today, so nothing else has to run or be configured. It will be renamed HyveMynd at the end.
 
 How to use this doc: the **milestones table** is the plan. Each milestone is one or a few pull requests, has a clear exit test, and lists what it depends on. Decisions and gates explain why the order is what it is. This file is kept in the repo (`docs/ROADMAP.md`) and in the Undermynd project (`design/roadmap-arr-consolidation.md`) with the same content. Supporting project docs: `design/metadata-sources.md`, `design/anime-pipeline.md`; in the repo: `docs/RENAME.md`.
 
-v13 restructured the plan into milestones. v14 to v17 answered every gate that blocks the start. v18 records Stage A progress: A1 and A2 merged, A3 done.
+v13 restructured the plan into milestones. v14 to v17 answered every gate that blocks the start. v18 recorded Stage A progress. v19 records B1 merged and adds B0 (Go upgrade).
 
 ---
 
@@ -15,7 +15,7 @@ v13 restructured the plan into milestones. v14 to v17 answered every gate that b
 | Audience | Personal, non-commercial, self-hosted, one household. TMDB free terms, with a Credits section. Each install brings its own TMDB key. |
 | Requests | The public request box stays open: **no sign-in** (no Emby sign-in, no accounts). Anyone who can reach the page can search and request, as today. Every request waits in an approval queue on the admin dashboard; the admin approves or declines. Rate-limited per address. Optional free-text name so the admin knows who asked. An "auto-approve everything" setting, off by default. No quotas, no accounts. Request status visible on the public status page through the pipeline stages. |
 | Metadata (G3) | TMDB for the structure of every show and movie (seasons, episodes, air dates; absolute numbers worked out from TMDB's ordered episode list). For anime alternate titles, manami-project's anime-offline-database as a weekly downloaded file (no key, no rate limit), connected to TMDB through a community ID mapping list. Anything unmapped goes to the "needs a person" queue once. AniList only as an optional fallback; AniDB avoided. The B3 spike confirms this on five of the user's shows; the user only hears back if it fails. |
-| Storage | SQLite with a pure-Go driver (no cgo, static binary and scratch image kept). Operational state moves early, jobs first. |
+| Storage | SQLite with a pure-Go driver (`modernc.org/sqlite`, no cgo, static binary and scratch image kept) at `/config/undermynd.db`. Shipped in B1. `/config` is on the cache pool (confirmed). |
 | What stays as files | `settings.json`, `admin.json`, `sessions.json`, `secret.key` stay as files: small, hand-editable, and sign-in recovery must not depend on the database. Everything else that is state (jobs, RSS seen items, tracked shows, access requests, requests, and all new catalog data) moves to SQLite. `storage-scan.json` is a cache and can stay. |
 | Dependencies | The SQLite driver is the only new dependency unless a later decision adds one. |
 | Media server | Emby first, Jellyfin through the same small interface. Plex out of scope. Used for libraries, the existing access flow and optional refresh, not for signing in to make requests. |
@@ -30,13 +30,15 @@ v13 restructured the plan into milestones. v14 to v17 answered every gate that b
 | Out of scope | Plex, Whisparr, Readarr/books, subtitles (Bazarr), user accounts for requests, quotas, multi-tenant hosting, importers for other people's arr setups. Revisit only if asked. |
 | How the user wants to be involved | Cares that it works, not about implementation details. Bring only real choices and failures to the user; decide the rest and record it here. |
 
-## 2. Where it is today (Nov 16, main at 4e882cd plus the A3 README update)
+## 2. Where it is today (Nov 16, main at bfd7c01)
 
 - About 12.6k lines of Go, standard library only, `go vet` clean, all tests pass with `-race`, including end-to-end runs against fake TorBox, Tdarr, NZBGet and arrs, and the new job store contract tests.
 - Download and transcode layer: fake qBittorrent and SABnzbd APIs for the arrs; TorBox, local qBittorrent and NZBGet backends; job state machine with retries, reconciler, cleanup and import confirmation (confirmed on real arrs); Tdarr hand-off with progress, stall detection and hand-back of originals that need no work; resolution check that blocklists fakes; AV1 re-encode tab.
 - Anime path with no arr: RSS feeds and rules, watch folder, `internal/library` parser and folder matcher, `placeInLibrary`. Trix, SubsPlease and (since A1) Judas names place; the braced English title is kept as an alias. Absolute numbers parse but default to season 1.
 - From Overmynd: public request box (no sign-in, rate-limited) backed by Seerr, with admin approve/decline; Emby/Jellyfin access flow; Tracearr playback; storage monitor; season progress (`internal/progress`, from the arrs).
-- State is spread over JSON files in `/config`: jobs, RSS, tracked shows, access requests, limiter, storage scan.
+- State (jobs, RSS seen items, tracked shows, access requests) is in SQLite since B1, with daily backups; old JSON files are imported once and kept as `.bak`. The TorBox limiter and storage scan stay as small files.
+- CI starts the built container and checks that it creates the database and a backup.
+- Go 1.24, which is out of upstream support; the SQLite driver is pinned at v1.46.1, the newest that builds with it (B0).
 
 ## 3. Target shape
 
@@ -83,7 +85,8 @@ Sizes: **S** one build session, **M** two to four, **L** about a week of session
 ### Stage B: Foundations
 | ID | Milestone | Size | Depends on | Exit test |
 |---|---|---|---|---|
-| B1 | SQLite: driver, migration framework, job store backend behind the same interface; one-time import of `jobs.json`, RSS seen items, tracked shows and access requests, keeping `.bak` copies; WAL and busy timeout; nightly `VACUUM INTO` backup to `/config/backups`, keep the last N | M | A2 | A2 contract tests and all pipeline tests pass on SQLite; restart mid-job resumes; a real TorBox + Tdarr grab completes; restoring a backup works |
+| B0 | Move to a supported Go version (1.26), then update the SQLite driver to its newest release | S | B1 | CI green; container smoke test passes; no behaviour change |
+| B1 | SQLite: driver, migration framework, job store backend behind the same interface; one-time import of `jobs.json`, RSS seen items, tracked shows and access requests, keeping `.bak` copies; WAL and busy timeout; daily `VACUUM INTO` backup to `/config/backups`, keep the last 7 | M | A2 | A2 contract tests and all pipeline tests pass on SQLite; restart mid-job resumes; a real TorBox + Tdarr grab completes; restoring a backup works. **Merged (PR #5); waiting on the user's real-run check** |
 | B2 | Catalog schema: series (with numbering mode), seasons, episodes (season/episode and absolute), movies, files, aliases, releases, requests; jobs can point at an episode or movie | M | B1 | Unit tests; schema migration up from B1 |
 | B3 | Metadata spike to confirm G3 on Blue Box, Seitokai, One Piece, Boku no Hero Academia and a current SubsPlease show: TMDB structure and absolute mapping (One Piece in particular), offline database aliases, ID mapping coverage to TMDB, and how Emby reads a season-laid-out anime test folder (sets C6's naming) | S | none | Result in `design/metadata-sources.md`; the user is told only if the plan has to change |
 | B4 | Metadata layer: TMDB client, weekly offline anime database import, ID mapping, cache tables, per-source limiter, background refresh, Credits page | M | B2, B3 | Add a show by TMDB id; aliases and both numberings stored; refresh picks up a new episode |
@@ -157,7 +160,7 @@ B4 -> H1 -> H2 -> [Lidarr off]
 everything -> I2 (rename)
 ```
 
-Recommended sequence for one builder: B1 → B2 → B3 → B4 → C1 to C4 → B5 → D1 → E1 → D2 → F1 to F6 → G → H → I. B6 (settings screen) can go anywhere after B1, but before the first category switch. C5 and C6 whenever wanted.
+Recommended sequence for one builder: B1 (real-run check) → B0 → B2 → B3 → B4 → C1 to C4 → B5 → D1 → E1 → D2 → F1 to F6 → G → H → I. B6 (settings screen) can go anywhere after B1, but before the first category switch. C5 and C6 whenever wanted.
 
 ## 7. Design track
 
@@ -221,6 +224,7 @@ The redesign doc says Settings, Library and Requests/Access are not designed yet
 - v16: requests need no sign-in; every request waits for admin approval. Stage E is one milestone. A4 done.
 - v17: G3 answered: TMDB plus anime-offline-database plus ID mapping.
 - v18: A1 merged (PR #2), A2 done (PR #3, Clone bug fixed), A3 done (README status, this file added to `docs/`). Merge rule recorded.
+- v19: B1 merged (PR #5): SQLite store, state blobs, backups, container smoke test in CI. Added B0: move to a supported Go version. The build machine cannot reach the Go module proxy, so new dependencies are resolved by a temporary CI job.
 
 ## 12. Housekeeping
 
