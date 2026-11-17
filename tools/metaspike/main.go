@@ -17,7 +17,7 @@ import (
 	"unicode"
 )
 
-var key = os.Getenv("TMDB_API_KEY")
+var key = strings.TrimSpace(os.Getenv("TMDB_API_KEY"))
 var client = &http.Client{Timeout: 60 * time.Second}
 
 type show struct {
@@ -35,7 +35,15 @@ var shows = []show{
 }
 
 func get(u string, out any) error {
-	resp, err := client.Get(u)
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return err
+	}
+	return do(req, out)
+}
+
+func do(req *http.Request, out any) error {
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -47,12 +55,23 @@ func get(u string, out any) error {
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
+// tmdb accepts either kind of TMDB credential: the short API key (v3) as a
+// query parameter, or the long read access token (starts "eyJ") as a bearer header.
 func tmdb(path string, q url.Values, out any) error {
 	if q == nil {
 		q = url.Values{}
 	}
-	q.Set("api_key", key)
-	err := get("https://api.themoviedb.org/3"+path+"?"+q.Encode(), out)
+	var bearer string
+	if strings.HasPrefix(key, "eyJ") {
+		bearer = key
+	} else {
+		q.Set("api_key", key)
+	}
+	req, _ := http.NewRequest("GET", "https://api.themoviedb.org/3"+path+"?"+q.Encode(), nil)
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	err := do(req, out)
 	if err != nil {
 		return fmt.Errorf("tmdb %s: %s", path, strings.ReplaceAll(err.Error(), key, "***"))
 	}
@@ -89,6 +108,11 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Println("# B3 metadata spike report")
+	kind := "API key (v3)"
+	if strings.HasPrefix(key, "eyJ") {
+		kind = "read access token (v4)"
+	}
+	fmt.Printf("credential: %s, %d characters\n", kind, len(key))
 	tmdbIDs := map[string]int64{}
 	for _, s := range shows {
 		fmt.Printf("\n## %s\n", s.label)
@@ -331,7 +355,21 @@ func main() {
 				sort.Strings(tm)
 				found = append(found, fmt.Sprintf("anidb %d: %s", id, strings.Join(tm, " ")))
 			}
-			fmt.Printf("- %s (TMDB %d): mapping reaches the TMDB id: %v\n", s.label, tmdbIDs[s.label], hit)
+			for _, f := range found {
+				if i := strings.Index(f, "tvdb_id="); i >= 0 && !hit && tmdbIDs[s.label] != 0 {
+					var tv int64
+					fmt.Sscanf(f[i+len("tvdb_id="):], "%d", &tv)
+					var r struct {
+						TV []struct {
+							ID int64 `json:"id"`
+						} `json:"tv_results"`
+					}
+					if tv != 0 && tmdb(fmt.Sprintf("/find/%d", tv), url.Values{"external_source": {"tvdb_id"}}, &r) == nil && len(r.TV) > 0 && r.TV[0].ID == tmdbIDs[s.label] {
+						hit = true
+					}
+				}
+			}
+			fmt.Printf("- %s (TMDB %d): mapping reaches the TMDB id (directly or through TVDB): %v\n", s.label, tmdbIDs[s.label], hit)
 			for _, f := range first(found, 8) {
 				fmt.Println("  -", f)
 			}
