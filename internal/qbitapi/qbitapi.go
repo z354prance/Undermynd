@@ -228,7 +228,13 @@ func parent(p string) string {
 	return p
 }
 
+// visible reports whether the arrs should see j through this fake qBittorrent.
+// Only torrent jobs belong here: usenet jobs are reported by the fake SABnzbd,
+// and listing them here too made Sonarr show every usenet grab twice.
 func (a *API) visible(j job.Job) bool {
+	if j.Kind == "usenet" || j.Kind == "local" {
+		return false
+	}
 	if j.State == job.Cleaned {
 		return false
 	}
