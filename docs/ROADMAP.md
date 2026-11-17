@@ -1,10 +1,10 @@
-# Roadmap: folding the arr stack into Undermynd (v22, Nov 16, 2026)
+# Roadmap: folding the arr stack into Undermynd (v23, Nov 17, 2026)
 
 Goal: one app that does what Radarr, Sonarr, Lidarr, Prowlarr, Seerr, Houndarr and Recyclarr do today, so nothing else has to run or be configured. It will be renamed HyveMynd at the end.
 
 How to use this doc: the **milestones table** is the plan. Each milestone is one or a few pull requests, has a clear exit test, and lists what it depends on. Decisions and gates explain why the order is what it is. This file is kept in the repo (`docs/ROADMAP.md`) and in the Undermynd project (`design/roadmap-arr-consolidation.md`) with the same content. Supporting project docs: `design/metadata-sources.md`, `design/anime-pipeline.md`; in the repo: `docs/RENAME.md`.
 
-v13 restructured the plan into milestones. v14 to v17 answered every gate that blocks the start. v18 recorded Stage A progress. v19 recorded B1 merged and added B0 (Go upgrade). v20 closed A1. v21 closed B1 and B0. v22 records B2 (catalog schema) merged.
+v13 restructured the plan into milestones. v14 to v17 answered every gate that blocks the start. v18 recorded Stage A progress. v19 recorded B1 merged and added B0 (Go upgrade). v20 closed A1. v21 closed B1 and B0. v22 recorded B2 merged. v23 records the B3 spike results.
 
 ---
 
@@ -14,7 +14,7 @@ v13 restructured the plan into milestones. v14 to v17 answered every gate that b
 |---|---|
 | Audience | Personal, non-commercial, self-hosted, one household. TMDB free terms, with a Credits section. Each install brings its own TMDB key. |
 | Requests | The public request box stays open: **no sign-in** (no Emby sign-in, no accounts). Anyone who can reach the page can search and request, as today. Every request waits in an approval queue on the admin dashboard; the admin approves or declines. Rate-limited per address. Optional free-text name so the admin knows who asked. An "auto-approve everything" setting, off by default. No quotas, no accounts. Request status visible on the public status page through the pipeline stages. |
-| Metadata (G3) | TMDB for the structure of every show and movie (seasons, episodes, air dates; absolute numbers worked out from TMDB's ordered episode list). For anime alternate titles, manami-project's anime-offline-database as a weekly downloaded file (no key, no rate limit), connected to TMDB through a community ID mapping list. Anything unmapped goes to the "needs a person" queue once. AniList only as an optional fallback; AniDB avoided. The B3 spike confirms this on five of the user's shows; the user only hears back if it fails. |
+| Metadata (G3, confirmed by B3) | TMDB is primary for structure (seasons, episodes, air dates) and alternate titles. The anime-offline-database supplements alternate titles (it filled a gap TMDB had) but is stale (last release 2026-07-04), so it is optional and cached. The Kometa Anime-IDs list maps AniDB to TVDB; TMDB's `/find` turns TVDB into TMDB. New shows not in any list: TMDB title search, confirmed once by the user. Where release seasons and TMDB seasons disagree, a per-series episode order (TMDB default, a TMDB episode group, or a season offset). Details in the project's `design/metadata-sources.md`. |
 | Storage | SQLite with a pure-Go driver (`modernc.org/sqlite`, no cgo, static binary and scratch image kept) at `/config/undermynd.db`. Shipped in B1. `/config` is on the cache pool (confirmed). |
 | What stays as files | `settings.json`, `admin.json`, `sessions.json`, `secret.key` stay as files: small, hand-editable, and sign-in recovery must not depend on the database. Everything else that is state (jobs, RSS seen items, tracked shows, access requests, requests, and all new catalog data) moves to SQLite. `storage-scan.json` is a cache and can stay. |
 | Dependencies | The SQLite driver is the only new dependency unless a later decision adds one. |
@@ -87,16 +87,16 @@ Sizes: **S** one build session, **M** two to four, **L** about a week of session
 |---|---|---|---|---|
 | B0 | Move to a supported Go version (1.27), then update the SQLite driver to its newest release | S | B1 | CI green; container smoke test passes; no behaviour change. **Done** |
 | B1 | SQLite: driver, migration framework, job store backend behind the same interface; one-time import of `jobs.json`, RSS seen items, tracked shows and access requests, keeping `.bak` copies; WAL and busy timeout; daily `VACUUM INTO` backup to `/config/backups`, keep the last 7 | M | A2 | A2 contract tests and all pipeline tests pass on SQLite; restart mid-job resumes; a real TorBox + Tdarr grab completes; restoring a backup works. **Done** (PR #5). Real-run check passed Nov 16: import with `.bak` files, backup written, container restarted mid-transcode, jobs resumed, finished and were imported by Sonarr |
-| B2 | Catalog schema: series (with numbering mode), seasons, episodes (season/episode and absolute), movies, files, aliases, releases, requests; jobs can point at an episode or movie | M | B1 | Unit tests; schema migration up from B1. **Merged (PR #9).** Real-run check: after updating, the log shows schema version 2 and a backup taken before the upgrade |
-| B3 | Metadata spike to confirm G3 on Blue Box, Seitokai, One Piece, Boku no Hero Academia and a current SubsPlease show: TMDB structure and absolute mapping (One Piece in particular), offline database aliases, ID mapping coverage to TMDB, and how Emby reads a season-laid-out anime test folder (sets C6's naming) | S | none | Result in `design/metadata-sources.md`; the user is told only if the plan has to change |
-| B4 | Metadata layer: TMDB client, weekly offline anime database import, ID mapping, cache tables, per-source limiter, background refresh, Credits page | M | B2, B3 | Add a show by TMDB id; aliases and both numberings stored; refresh picks up a new episode |
+| B2 | Catalog schema: series (with numbering mode), seasons, episodes (season/episode and absolute), movies, files, aliases, releases, requests; jobs can point at an episode or movie | M | B1 | Unit tests; schema migration up from B1. **Merged (PR #10).** Real-run check: after updating, the log shows schema version 2 and a backup taken before the upgrade |
+| B3 | Metadata spike to confirm G3 on Blue Box, Seitokai, One Piece, Boku no Hero Academia and a current SubsPlease show | S | none | **Done Nov 17** (run in CI on an unmerged spike branch). All 5 found on TMDB; alias coverage needs TMDB plus the offline database; mapping reaches TMDB through TVDB for 4 of 5; One Piece is numbered absolutely by TMDB; **Blue Box season 2 is part of TMDB season 1**, so per-series episode order is needed. The Emby check moves to C6 |
+| B4 | Metadata layer: TMDB client (search, details, alternative titles, seasons, episode groups, `/find`), offline anime database import (optional, cached), Kometa ID mapping, cache tables, per-source limiter, background refresh, TMDB key setting, Credits page | M | B2, B3 | Add a show by TMDB id; aliases from TMDB and the offline database stored; both numberings stored; an episode group can be chosen; refresh picks up a new episode |
 | B5 | Media-server interface extracted from `access` and `playback`; Emby and Jellyfin implementations; list libraries; optional refresh setting | S | none | Access flow and playback unchanged; Emby tests pass; Jellyfin marked untested if not run |
 | B6 | Settings screen rebuilt around categories, with the per-category owner switch (arr or native) | M | design | Every current setting reachable; switch exists but only "arr" is selectable until a native mode ships |
 
 ### Stage C: Native anime (first native category)
 | ID | Milestone | Size | Depends on | Exit test |
 |---|---|---|---|---|
-| C1 | Library import: scan the anime library, match each folder to TMDB with the user confirming, detect each series' numbering mode from its files (absolute, seasons, or mixed, which goes to a person), record which episodes already exist | M | B4 | Season cells show real counts for anime, for absolute and season-laid-out shows alike |
+| C1 | Library import: scan the anime library, match each folder to TMDB with the user confirming, detect each series' numbering mode and episode order from its files (absolute or seasons; TMDB default order, an episode group, or a season offset, as with Blue Box), sending anything unclear to a person, and record which episodes already exist | M | B4 | Season cells show real counts for anime, for absolute and season-laid-out shows alike, including Blue Box season 2 |
 | C2 | Catalog-based placement: match by alias instead of folder name; place each episode in the series' own mode; "needs a person" queue with reasons and a manual resolve action; dry-run | M | C1, A1 | Name corpus passes; an absolute show and a season show each get new episodes in their own layout; nothing ever overwritten |
 | C3 | Monitoring: monitor a series, ordered group preference per show, 1080p default; generate per-show nyaa search feeds through the existing RSS poller | M | C2 | Two of the user's hand-made feeds replaced with generated ones for a week with no misses |
 | C4 | Missing and gap filling: per-episode search from the next group when one skips; air dates stop early "missing"; never re-download an episode another group already supplied; group and resolution shown per episode | M | C3 | Student Council holes filled automatically |
@@ -160,7 +160,7 @@ B4 -> H1 -> H2 -> [Lidarr off]
 everything -> I2 (rename)
 ```
 
-Recommended sequence for one builder: B3 → B3 → B4 → C1 to C4 → B5 → D1 → E1 → D2 → F1 to F6 → G → H → I. B6 (settings screen) can go anywhere after B1, but before the first category switch. C5 and C6 whenever wanted.
+Recommended sequence for one builder: B4 → B3 → B4 → C1 to C4 → B5 → D1 → E1 → D2 → F1 to F6 → G → H → I. B6 (settings screen) can go anywhere after B1, but before the first category switch. C5 and C6 whenever wanted.
 
 ## 7. Design track
 
@@ -224,6 +224,7 @@ The redesign doc says Settings, Library and Requests/Access are not designed yet
 - v16: requests need no sign-in; every request waits for admin approval. Stage E is one milestone. A4 done.
 - v17: G3 answered: TMDB plus anime-offline-database plus ID mapping.
 - v18: A1 merged (PR #2), A2 done (PR #3, Clone bug fixed), A3 done (README status, this file added to `docs/`). Merge rule recorded.
+- v23: B3 done: spike results recorded; G3 refined (TMDB primary for titles too, offline database optional, mapping through TVDB, per-series episode order); B4 and C1 widened accordingly.
 - v22: B2 merged: migration 2 and `internal/catalog` (series, episodes with both numberings, movies, aliases, files, missing and season counts, job targets, requests table). Migration test from every earlier version added.
 - v21: B1 done (real-run check passed), B0 done (Go 1.27, SQLite driver v1.62.0). Also fixed: usenet grabs listed twice in Sonarr (PR #7).
 - v20: A1 closed. Lesson recorded: test parsing against the file names inside a release, not only feed titles.
