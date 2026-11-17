@@ -132,6 +132,11 @@ func (s *Service) aliases(ctx context.Context, seriesID int64, tv TV) error {
 	if err != nil {
 		return err
 	}
+	unlinked, err := s.Lists.TitlesForUnlinked(ctx, append([]string{tv.Name}, titles...))
+	if err != nil {
+		return err
+	}
+	more = append(more, unlinked...)
 	for _, t := range more {
 		if err := s.Catalog.AddSeriesAlias(seriesID, t, "anime-offline-database"); err != nil {
 			return err

@@ -162,6 +162,7 @@ const titlesJSON = `{"$schema":"x","license":{"name":"ODbL"},"lastUpdate":"2026-
  {"sources":["https://anidb.net/anime/19308","https://anilist.co/anime/191656"],"title":"Seitokai ni mo Ana wa Aru!","synonyms":["Even the Student Council Has Its Holes","Seitokai ni mo Ana wa Aru!"]},
  {"sources":["https://anidb.net/anime/69"],"title":"One Piece","synonyms":["OP","Wan Pisu"]},
  {"sources":["https://anidb.net/anime/411"],"title":"One Piece Movie 01","synonyms":[]},
+ {"sources":["https://anilist.co/anime/202250"],"title":"Hako no Ao","synonyms":["アオのハコ","Ao Box Revo Spelling"]},
  {"sources":["https://myanimelist.net/anime/1"],"title":"No Usable Id","synonyms":["Ignored"]}
 ]}`
 
@@ -172,7 +173,7 @@ const idsJSON = `{"19308":{"tvdb_id":463051,"tvdb_season":1,"tvdb_epoffset":0,"a
 func (r *rig) importLists(t *testing.T) {
 	t.Helper()
 	n, date, err := r.svc.Lists.ImportTitles(strings.NewReader(titlesJSON))
-	if err != nil || n != 3 || date != "2026-07-04" {
+	if err != nil || n != 4 || date != "2026-07-04" {
 		t.Fatalf("titles: %d %q %v", n, date, err)
 	}
 	if n, err := r.svc.Lists.ImportIDs(strings.NewReader(idsJSON)); err != nil || n != 3 {
@@ -350,12 +351,12 @@ func TestListsRefreshKeepsOldCopyOnFailure(t *testing.T) {
 	r.svc.Lists.TitlesURL = func() string { return srv.URL + "/titles" }
 	r.svc.Lists.IDsURL = func() string { return srv.URL + "/ids" }
 	st := r.svc.Lists.Refresh(context.Background())
-	if st.Titles != 3 || st.IDs != 3 || st.TitlesError != "" || st.TitlesDate != "2026-07-04" {
+	if st.Titles != 4 || st.IDs != 3 || st.TitlesError != "" || st.TitlesDate != "2026-07-04" {
 		t.Fatalf("first refresh: %+v", st)
 	}
 	ok = false
 	st = r.svc.Lists.Refresh(context.Background())
-	if st.TitlesError == "" || st.Titles != 3 {
+	if st.TitlesError == "" || st.Titles != 4 {
 		t.Fatalf("a failed download must keep the last counts and record the error: %+v", st)
 	}
 	if ids, _ := r.svc.Lists.TVDBForTitle(context.Background(), "one piece"); len(ids) != 1 || ids[0] != 81797 {
@@ -363,5 +364,19 @@ func TestListsRefreshKeepsOldCopyOnFailure(t *testing.T) {
 	}
 	if got := r.svc.Lists.Status(); got.TitlesError == "" {
 		t.Fatal("status must be saved")
+	}
+}
+
+// A new show the ID list does not know yet still gets the list's other titles
+// when one of them matches a TMDB title (here the Japanese original).
+func TestUnlinkedListTitles(t *testing.T) {
+	r := newRig(t)
+	r.importLists(t)
+	s, err := r.svc.AddSeries(context.Background(), 2, "anime", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f, _, err := r.cat.FindSeries("Ao Box Revo Spelling"); err != nil || f.ID != s.ID {
+		t.Fatalf("a list-only spelling must find the show: %v", err)
 	}
 }
