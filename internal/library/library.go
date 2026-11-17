@@ -21,6 +21,9 @@ type Release struct {
 	Episode  int
 	EpisodeS string // the episode as written, e.g. "07"
 	Res      string // e.g. "1080p", empty if none
+	// Aliases are other titles the name gives for the same show, such as the
+	// English title some groups add in braces: "Romaji {English Title}".
+	Aliases []string
 }
 
 var (
@@ -34,6 +37,9 @@ var (
 	seasonA = regexp.MustCompile(`(?i)^(.*?)\s+S(\d{1,2})$`)
 	seasonB = regexp.MustCompile(`(?i)^(.*?)\s+(\d{1,2})(?:st|nd|rd|th)\s+Season$`)
 	seasonC = regexp.MustCompile(`(?i)^(.*?)\s+Season\s+(\d{1,2})$`)
+	braces  = regexp.MustCompile(`\{([^}]*)\}`)
+	inTags  = regexp.MustCompile(`\[[^\]]*\]`)
+	spaces  = regexp.MustCompile(`\s+`)
 )
 
 // Parse reads a release file name (with or without its extension).
@@ -72,7 +78,17 @@ func Parse(name string) (Release, bool) {
 	} else {
 		return Release{}, false
 	}
-	title = strings.TrimSpace(title)
+	// Some groups put the English title in braces and tags such as [Uncensored]
+	// inside the title: "Romaji! {English Title} [Uncensored] - S01E07". The braces
+	// text is another name for the show; the tags are not part of any name.
+	for _, m := range braces.FindAllStringSubmatch(title, -1) {
+		if a := strings.TrimSpace(m[1]); a != "" {
+			r.Aliases = append(r.Aliases, a)
+		}
+	}
+	title = braces.ReplaceAllString(title, " ")
+	title = inTags.ReplaceAllString(title, " ")
+	title = strings.TrimSpace(spaces.ReplaceAllString(title, " "))
 	title = strings.TrimSpace(year.ReplaceAllString(title, ""))
 	for _, re := range []*regexp.Regexp{seasonA, seasonB, seasonC} {
 		if m := re.FindStringSubmatch(title); m != nil {
@@ -166,6 +182,35 @@ func Match(title string, folders []string) (folder string, candidates []string) 
 	return "", candidates
 }
 
+// MatchAny is Match over several names for the same show (a title and its
+// aliases). It returns a folder only when every name that fits a folder exactly
+// fits the same one; otherwise it offers the candidates.
+func MatchAny(names []string, folders []string) (folder string, candidates []string) {
+	seen := map[string]bool{}
+	for _, n := range names {
+		if strings.TrimSpace(n) == "" {
+			continue
+		}
+		f, c := Match(n, folders)
+		if f != "" {
+			if folder != "" && folder != f {
+				return "", []string{folder, f}
+			}
+			folder = f
+		}
+		for _, x := range c {
+			if !seen[x] {
+				seen[x] = true
+				candidates = append(candidates, x)
+			}
+		}
+	}
+	if folder != "" {
+		return folder, nil
+	}
+	return "", candidates
+}
+
 func tokens(s string) map[string]bool {
 	m := map[string]bool{}
 	for _, t := range strings.Fields(s) {
@@ -196,13 +241,20 @@ var (
 	cleanLead = regexp.MustCompile(`^\[[^\]]+\]\s*`)
 	cleanPad  = regexp.MustCompile(` - 0+(\d)`)
 	cleanTail = regexp.MustCompile(`\s+\[.*(\.[^.]+)$`)
+	// Braces text and tags that sit in the title, before " - episode".
+	cleanBrace  = regexp.MustCompile(`\s*\{[^}]*\}`)
+	cleanTitled = regexp.MustCompile(`(\s*\[[^\]]*\])+(\s+-\s)`)
 )
 
 // Clean gives a release file name the library's name: the same three steps as the
 // Rename.ps1 script used by hand. It drops the leading [Group], drops zero padding
-// after " - ", and drops a trailing [hash] before the extension.
+// after " - ", and drops a trailing [hash] before the extension. It also drops a
+// {braced} alternate title and [tags] placed in the title before " - episode", so
+// those names keep their episode number.
 func Clean(name string) string {
 	n := cleanLead.ReplaceAllString(name, "")
+	n = cleanBrace.ReplaceAllString(n, "")
+	n = cleanTitled.ReplaceAllString(n, "$2")
 	n = cleanPad.ReplaceAllString(n, " - $1")
 	n = cleanTail.ReplaceAllString(n, "$1")
 	return n

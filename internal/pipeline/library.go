@@ -81,7 +81,7 @@ func placeOne(root string, folders []string, src string) (dst, why string, err e
 	if !ok {
 		return "", base + ": the name has no episode number", nil
 	}
-	folder, cands := library.Match(rel.Title, folders)
+	folder, cands := library.MatchAny(append([]string{rel.Title}, rel.Aliases...), folders)
 	if folder == "" {
 		msg := fmt.Sprintf("no folder named %q", rel.Title)
 		if len(cands) > 0 {
