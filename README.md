@@ -21,6 +21,7 @@ One container that owns the whole download-to-library path for Sonarr, Radarr an
 | Import confirmation | Arr history check (`downloadId` + import event) | confirmed against real Sonarr and Radarr |
 | RSS and watch folder | Feeds, regex rules, first-poll baseline, dedupe, manual download, watch folder | built, in real use |
 | Anime library | Places episodes in show folders by name, never guesses or overwrites; handles SubsPlease, Trix and Judas-style names | built, in real use |
+| Followed shows | Anime page in the arrs' style: episodes and gaps per folder, AniList status, follow with a group order and quality, nyaa checked for new episodes, interactive search, Add New | built (C3), being checked |
 | Re-encode | Converts library files to AV1 through the Tdarr flow | built |
 | Overmynd merge | Requests (through Seerr), access requests, playback, storage | built |
 | Look | Graphite theme, icon-rail admin, public dashboard (Now Playing, On the way with segmented circles and season bars, Recently added, storage ring), Seerr-style Request media dropdown backed by Seerr | built |

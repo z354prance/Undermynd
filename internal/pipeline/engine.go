@@ -62,6 +62,9 @@ type Engine struct {
 	// AfterPlace, when set, is told about each file the simple importer
 	// places (to have the media server pick it up).
 	AfterPlace func(path string)
+	// FolderTitles, when set, gives the other titles of each show folder in a
+	// library folder, so a release under another title still finds its folder.
+	FolderTitles func(root string) map[string][]string
 
 	// LibraryRoots are the media folders re-encode jobs may read and replace files in.
 	LibraryRoots []string

@@ -36,7 +36,7 @@ func (e *Engine) placeInLibrary(ctx context.Context, j job.Job, cat config.Categ
 		if _, err := os.Stat(src); errors.Is(err, fs.ErrNotExist) {
 			continue // placed on an earlier pass
 		}
-		dst, why, err := placeOne(root, folders, src)
+		dst, why, err := placeOne(root, folders, src, e.otherTitles(root))
 		if err != nil {
 			e.retry(j, err, 10, "place in library")
 			return
@@ -78,13 +78,16 @@ func (e *Engine) placeInLibrary(ctx context.Context, j job.Job, cat config.Categ
 
 // placeOne moves one file into the library. It returns the new path, or a reason
 // the file was left where it is (an error only when the move itself failed).
-func placeOne(root string, folders []string, src string) (dst, why string, err error) {
+func placeOne(root string, folders []string, src string, titles map[string][]string) (dst, why string, err error) {
 	base := filepath.Base(src)
 	rel, ok := library.Parse(base)
 	if !ok {
 		return "", base + ": the name has no episode number", nil
 	}
 	folder, cands := library.MatchAny(append([]string{rel.Title}, rel.Aliases...), folders)
+	if folder == "" && len(cands) == 0 {
+		folder = byOtherTitle(rel, titles)
+	}
 	if folder == "" {
 		msg := fmt.Sprintf("no folder named %q", rel.Title)
 		if len(cands) > 0 {
@@ -103,6 +106,37 @@ func placeOne(root string, folders []string, src string) (dst, why string, err e
 	_ = os.Chmod(dst, 0o666)
 	_ = os.Chmod(filepath.Dir(dst), 0o777)
 	return dst, "", nil
+}
+
+// byOtherTitle finds the folder whose other titles (set on the Anime page)
+// include the release's title; "" unless exactly one does.
+func byOtherTitle(rel library.Release, titles map[string][]string) string {
+	want := map[string]bool{}
+	for _, t := range append([]string{rel.Title}, rel.Aliases...) {
+		if n := library.Normalize(t); n != "" {
+			want[n] = true
+		}
+	}
+	found := ""
+	for folder, list := range titles {
+		for _, t := range list {
+			if want[library.Normalize(t)] {
+				if found != "" && found != folder {
+					return ""
+				}
+				found = folder
+			}
+		}
+	}
+	return found
+}
+
+// otherTitles asks the shows service for the folders' other titles.
+func (e *Engine) otherTitles(root string) map[string][]string {
+	if e.FolderTitles == nil {
+		return nil
+	}
+	return e.FolderTitles(root)
 }
 
 // SweepLibrary places the video files already sitting in a no-arr category's
@@ -132,7 +166,7 @@ func (e *Engine) SweepLibrary(category string) (string, error) {
 	placed := 0
 	var left []string
 	for _, src := range files {
-		dst, why, err := placeOne(cat.LibraryDir, folders, src)
+		dst, why, err := placeOne(cat.LibraryDir, folders, src, e.otherTitles(cat.LibraryDir))
 		if err != nil {
 			return "", err
 		}
