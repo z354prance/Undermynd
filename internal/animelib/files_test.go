@@ -153,3 +153,22 @@ func TestSureMatches(t *testing.T) {
 		t.Fatalf("a live-action show with the title must not be sure: %+v", m)
 	}
 }
+
+func TestSureBreaksListTiesByTitle(t *testing.T) {
+	lists := []metadata.Candidate{
+		{TMDBID: 31701, Name: "Burst Angel", Original: "爆裂天使", Via: "anime lists", Animation: true},
+		{TMDBID: 110070, Name: "Bakuten!!", Original: "バクテン!!", Via: "anime lists", Animation: true},
+	}
+	m, _ := sure("Bakuten!!", []string{"Bakuten!!"}, lists)
+	if m == nil || m.TMDBID != 110070 {
+		t.Fatalf("got %+v", m)
+	}
+	if m, _ := sure("Bakuten", []string{"Bakuten"}, lists[:1]); m == nil {
+		t.Fatal("one list show, nothing titled like the folder: still sure")
+	}
+	// The lists know only the wrong show; TMDB search finds the right title.
+	search := metadata.Candidate{TMDBID: 110070, Name: "Bakuten!!", Via: "TMDB search", Animation: true}
+	if m, why := sure("Bakuten!!", []string{"Bakuten!!"}, []metadata.Candidate{lists[0], search}); m != nil || why == "" {
+		t.Fatalf("should go to a person: %+v %q", m, why)
+	}
+}

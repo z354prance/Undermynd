@@ -257,7 +257,9 @@ func (im *Importer) examine(ctx context.Context, path string, was *Folder) exami
 	match, why := sure(f.Name, titles, cands)
 	if match == nil {
 		f.State, f.Reason = Needs, why
-		if len(cands) > 0 {
+		if c := onlyExact(titles, cands, false); c != nil {
+			f.Match = c
+		} else if len(cands) > 0 {
 			c := cands[0]
 			f.Match = &c
 		}
@@ -321,22 +323,25 @@ func sure(folder string, titles []string, cands []metadata.Candidate) (*metadata
 	switch {
 	case len(lists) == 1:
 		c := lists[0]
+		// A synonym can lead the lists to the wrong show. When TMDB has a
+		// show whose own title is the folder's, and the lists' show is not it,
+		// a person decides.
+		if exact := exactTitles(titles, cands, true); len(exact) > 0 && onlyExact(titles, lists, false) == nil {
+			return nil, fmt.Sprintf("the anime lists point at %s, but TMDB has a show titled exactly like the folder", c.Name)
+		}
 		return &c, ""
 	case len(lists) > 1:
+		// A short title can be a synonym of more than one show (Bakuten!! is
+		// also a nickname of Burst Angel). The one whose own TMDB title is the
+		// folder's is the show; otherwise a person picks.
+		if c := onlyExact(titles, lists, false); c != nil {
+			return c, ""
+		}
 		return nil, fmt.Sprintf("the anime lists point at %d different shows", len(lists))
 	case len(cands) == 0:
 		return nil, "nothing on TMDB has this title: search for the show below"
 	}
-	want := map[string]bool{}
-	for _, t := range titles {
-		want[squash(t)] = true
-	}
-	var exact []metadata.Candidate
-	for _, c := range cands {
-		if c.Animation && (want[squash(c.Name)] || want[squash(c.Original)]) {
-			exact = append(exact, c)
-		}
-	}
+	exact := exactTitles(titles, cands, true)
 	if len(exact) == 1 {
 		c := exact[0]
 		return &c, ""
@@ -345,6 +350,29 @@ func sure(folder string, titles []string, cands []metadata.Candidate) (*metadata
 		return nil, fmt.Sprintf("%d TMDB shows have this exact title", len(exact))
 	}
 	return nil, "not in the anime lists yet (a new show?), so it was matched by title only"
+}
+
+// exactTitles returns the candidates whose TMDB title or original title is one
+// of titles, ignoring case, spacing and punctuation.
+func exactTitles(titles []string, cands []metadata.Candidate, animated bool) []metadata.Candidate {
+	want := map[string]bool{}
+	for _, t := range titles {
+		want[squash(t)] = true
+	}
+	var out []metadata.Candidate
+	for _, c := range cands {
+		if (!animated || c.Animation) && (want[squash(c.Name)] || want[squash(c.Original)]) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func onlyExact(titles []string, cands []metadata.Candidate, animated bool) *metadata.Candidate {
+	if e := exactTitles(titles, cands, animated); len(e) == 1 {
+		return &e[0]
+	}
+	return nil
 }
 
 // squash compares titles ignoring spaces as well as case and punctuation.
