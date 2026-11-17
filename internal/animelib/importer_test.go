@@ -41,12 +41,16 @@ func fakeTMDB(t *testing.T) *httptest.Server {
 		"2": show(2, "Blue Box", "アオのハコ", 429934, []int{1}, []map[string]any{{"id": "g-seasons", "name": "Seasons", "type": 6, "episode_count": 4}}),
 		"3": show(3, "My Hero Academia", "僕のヒーローアカデミア", 305074, []int{1, 2}, []map[string]any{}),
 		"5": show(5, "Magic Repo Man", "Kashita Maryoku wa Ribo Barai", 0, []int{1}, []map[string]any{}),
+		"6": show(6, "Backflip!!", "バクテン!!", 999, []int{1}, []map[string]any{}),
+		"7": show(7, "Burst Angel", "爆裂天使", 888, []int{1}, []map[string]any{}),
 	}
+	shows["6"]["alternative_titles"] = map[string]any{"results": []map[string]any{{"title": "Bakuten!!"}}}
 	seasons := map[string][]map[string]any{
 		"1/1": {e(1, 1), e(1, 2)}, "1/2": {e(2, 3), e(2, 4)},
 		"2/1": {e(1, 1), e(1, 2), e(1, 3), e(1, 4)},
 		"3/1": {e(1, 1), e(1, 2)}, "3/2": {e(2, 1), e(2, 2)},
 		"5/1": {e(1, 1), e(1, 2), e(1, 3)},
+		"6/1": {e(1, 1), e(1, 2)}, "7/1": {e(1, 1), e(1, 2), e(1, 3)},
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := strings.Trim(r.URL.Path, "/")
@@ -100,10 +104,12 @@ func fakeTMDB(t *testing.T) *httptest.Server {
 const titlesJSON = `{"lastUpdate":"2026-07-04","data":[
  {"sources":["https://anidb.net/anime/69"],"title":"One Piece","synonyms":[]},
  {"sources":["https://anidb.net/anime/100"],"title":"Ao no Hako","synonyms":["Blue Box"]},
- {"sources":["https://anidb.net/anime/200"],"title":"Boku no Hero Academia","synonyms":["My Hero Academia"]}
+ {"sources":["https://anidb.net/anime/200"],"title":"Boku no Hero Academia","synonyms":["My Hero Academia"]},
+ {"sources":["https://anidb.net/anime/400"],"title":"Bakuten!!","synonyms":[]},
+ {"sources":["https://anidb.net/anime/401"],"title":"Bakuretsu Tenshi","synonyms":["Bakuten!!"]}
 ]}`
 
-const idsJSON = `{"69":{"tvdb_id":81797,"tvdb_season":-1},"100":{"tvdb_id":429934,"tvdb_season":1},"200":{"tvdb_id":305074,"tvdb_season":1}}`
+const idsJSON = `{"69":{"tvdb_id":81797,"tvdb_season":-1},"100":{"tvdb_id":429934,"tvdb_season":1},"200":{"tvdb_id":305074,"tvdb_season":1},"400":{"tvdb_id":999,"tvdb_season":1},"401":{"tvdb_id":888,"tvdb_season":1}}`
 
 func touch(t *testing.T, root string, rel ...string) {
 	t.Helper()
@@ -150,6 +156,7 @@ func newImporter(t *testing.T) (*animelib.Importer, string) {
 		"Boku no Hero Academia/Season 1/Boku no Hero Academia - 1 (720p).mkv", "Boku no Hero Academia/Season 1/Boku no Hero Academia - 2 (720p).mkv",
 		"Boku no Hero Academia/Season 2/Boku no Hero Academia - 3 (1080p).mkv", "Boku no Hero Academia/Season 2/Boku no Hero Academia - 4 (1080p).mkv",
 		"Kashita Maryoku wa Revo Barai/Season 1/Kashita Maryoku wa Revo Barai - 1 (1080p).mkv",
+		"Bakuten!!/Season 1/Bakuten!! - 1 (1080p).mkv", "Bakuten!!/Season 1/Bakuten!! - 2 (1080p).mkv",
 	)
 	im := &animelib.Importer{Meta: svc, Cat: cat, Roots: func() []string { return []string{lib} }, Blobs: state.Files{Dir: dir}, Log: logger, Now: time.Now}
 	return im, lib
@@ -192,11 +199,14 @@ func TestImportLibrary(t *testing.T) {
 	if bb.State != animelib.Needs || bb.Options[0].Order != "g-seasons" || bb.Options[0].Mapped != 3 || bb.Options[0].Distinct != 3 {
 		t.Fatalf("blue box: %+v %+v", bb, bb.Options)
 	}
+	if f := got["Bakuten!!"]; f.State != animelib.Ready || f.Match.TMDBID != 6 {
+		t.Fatalf("bakuten: %+v %+v", f, f.Match)
+	}
 	if f := got["Kashita Maryoku wa Revo Barai"]; f.State != animelib.Needs || f.Reason == "" {
 		t.Fatalf("new show: %+v", f)
 	}
 
-	if n, errs := im.ConfirmReady(ctx); n != 2 || len(errs) != 0 {
+	if n, errs := im.ConfirmReady(ctx); n != 3 || len(errs) != 0 {
 		t.Fatalf("confirm ready: %d %v", n, errs)
 	}
 	if _, err := im.Confirm(ctx, bb.Path, 0); err != nil {

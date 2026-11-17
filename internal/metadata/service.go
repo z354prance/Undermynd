@@ -370,3 +370,16 @@ func (s *Service) Search(ctx context.Context, q string) ([]Candidate, error) {
 	}
 	return out, nil
 }
+
+// Titles lists a TMDB show's name, original name and alternative titles.
+func (s *Service) Titles(ctx context.Context, tmdbID int64) ([]string, error) {
+	tv, err := s.TMDB.TV(ctx, tmdbID, false)
+	if err != nil {
+		return nil, err
+	}
+	out := []string{tv.Name, tv.OriginalName}
+	for _, a := range tv.AlternativeTitles.Results {
+		out = append(out, a.Title)
+	}
+	return out, nil
+}

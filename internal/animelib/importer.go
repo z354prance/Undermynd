@@ -261,6 +261,9 @@ func (im *Importer) examine(ctx context.Context, path string, was *Folder) exami
 	f.Candidates = trim(cands, 8)
 	match, why := sure(f.Name, titles, cands)
 	if match == nil {
+		match = im.byAltTitle(ctx, titles, cands)
+	}
+	if match == nil {
 		f.State, f.Reason = Needs, why
 		if c := onlyExact(titles, cands, false); c != nil {
 			f.Match = c
@@ -382,6 +385,42 @@ func onlyExact(titles []string, cands []metadata.Candidate, animated bool) *meta
 
 // squash compares titles ignoring spaces as well as case and punctuation.
 func squash(t string) string { return strings.ReplaceAll(library.Normalize(t), " ", "") }
+
+// byAltTitle settles a tie between the shows the anime lists point at by
+// TMDB's alternative titles: Bakuten!! is TMDB's "Backflip!!", known there as
+// "Bakuten!!" too. Exactly one list show must carry the folder's title.
+func (im *Importer) byAltTitle(ctx context.Context, titles []string, cands []metadata.Candidate) *metadata.Candidate {
+	want := map[string]bool{}
+	for _, t := range titles {
+		want[squash(t)] = true
+	}
+	var lists []metadata.Candidate
+	for _, c := range cands {
+		if c.Via == "anime lists" {
+			lists = append(lists, c)
+		}
+	}
+	if len(lists) < 2 || len(lists) > 4 {
+		return nil // only a tie between list shows is settled this way
+	}
+	var hit []metadata.Candidate
+	for _, c := range lists {
+		names, err := im.Meta.Titles(ctx, c.TMDBID)
+		if err != nil {
+			return nil
+		}
+		for _, t := range names {
+			if want[squash(t)] {
+				hit = append(hit, c)
+				break
+			}
+		}
+	}
+	if len(hit) != 1 {
+		return nil
+	}
+	return &hit[0]
+}
 
 // maxOrders caps how many TMDB episode groups are tried for one folder.
 const maxOrders = 8

@@ -14,7 +14,7 @@ func TestCatalogPlacement(t *testing.T) {
 	im, lib := newImporter(t)
 	ctx := context.Background()
 	got := scan(t, im)
-	if n, errs := im.ConfirmReady(ctx); n != 2 || len(errs) != 0 {
+	if n, errs := im.ConfirmReady(ctx); n != 3 || len(errs) != 0 {
 		t.Fatalf("confirm ready: %d %v", n, errs)
 	}
 	if _, err := im.Confirm(ctx, got["Blue Box"].Path, 0); err != nil {
