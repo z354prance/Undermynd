@@ -63,6 +63,109 @@ var migrations = []string{
 		value   BLOB NOT NULL,
 		updated TEXT NOT NULL
 	);`,
+
+	// 2: the title catalog (roadmap B2). An episode keeps both its season number
+	// and, when known, its absolute number, whatever the folder layout on disk.
+	`CREATE TABLE series (
+		id        INTEGER PRIMARY KEY,
+		kind      TEXT NOT NULL CHECK (kind IN ('tv', 'anime')),
+		title     TEXT NOT NULL,
+		year      INTEGER NOT NULL DEFAULT 0,
+		tmdb_id   INTEGER UNIQUE,
+		tvdb_id   INTEGER,
+		imdb_id   TEXT NOT NULL DEFAULT '',
+		numbering TEXT NOT NULL DEFAULT 'seasons' CHECK (numbering IN ('seasons', 'absolute')),
+		folder    TEXT NOT NULL DEFAULT '',
+		monitored INTEGER NOT NULL DEFAULT 0,
+		added     TEXT NOT NULL,
+		updated   TEXT NOT NULL
+	);
+	CREATE TABLE episodes (
+		id        INTEGER PRIMARY KEY,
+		series_id INTEGER NOT NULL REFERENCES series(id) ON DELETE CASCADE,
+		season    INTEGER NOT NULL,
+		number    INTEGER NOT NULL,
+		absolute  INTEGER,
+		title     TEXT NOT NULL DEFAULT '',
+		air_date  TEXT NOT NULL DEFAULT '',
+		UNIQUE (series_id, season, number)
+	);
+	CREATE INDEX episodes_absolute ON episodes(series_id, absolute);
+	CREATE TABLE movies (
+		id        INTEGER PRIMARY KEY,
+		title     TEXT NOT NULL,
+		year      INTEGER NOT NULL DEFAULT 0,
+		tmdb_id   INTEGER UNIQUE,
+		imdb_id   TEXT NOT NULL DEFAULT '',
+		folder    TEXT NOT NULL DEFAULT '',
+		monitored INTEGER NOT NULL DEFAULT 0,
+		added     TEXT NOT NULL,
+		updated   TEXT NOT NULL
+	);
+	CREATE TABLE aliases (
+		id        INTEGER PRIMARY KEY,
+		series_id INTEGER REFERENCES series(id) ON DELETE CASCADE,
+		movie_id  INTEGER REFERENCES movies(id) ON DELETE CASCADE,
+		title     TEXT NOT NULL,
+		norm      TEXT NOT NULL,
+		source    TEXT NOT NULL DEFAULT '',
+		CHECK ((series_id IS NULL) <> (movie_id IS NULL))
+	);
+	CREATE UNIQUE INDEX aliases_series ON aliases(series_id, norm) WHERE series_id IS NOT NULL;
+	CREATE UNIQUE INDEX aliases_movie ON aliases(movie_id, norm) WHERE movie_id IS NOT NULL;
+	CREATE INDEX aliases_norm ON aliases(norm);
+	CREATE TABLE files (
+		id            INTEGER PRIMARY KEY,
+		path          TEXT NOT NULL UNIQUE,
+		size          INTEGER NOT NULL DEFAULT 0,
+		movie_id      INTEGER REFERENCES movies(id) ON DELETE SET NULL,
+		release_group TEXT NOT NULL DEFAULT '',
+		resolution    TEXT NOT NULL DEFAULT '',
+		codec         TEXT NOT NULL DEFAULT '',
+		added         TEXT NOT NULL
+	);
+	CREATE TABLE file_episodes (
+		file_id    INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+		episode_id INTEGER NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
+		PRIMARY KEY (file_id, episode_id)
+	);
+	CREATE INDEX file_episodes_episode ON file_episodes(episode_id);
+	CREATE TABLE releases (
+		id            INTEGER PRIMARY KEY,
+		title         TEXT NOT NULL,
+		release_group TEXT NOT NULL DEFAULT '',
+		resolution    TEXT NOT NULL DEFAULT '',
+		source        TEXT NOT NULL DEFAULT '',
+		guid          TEXT NOT NULL DEFAULT '',
+		job_id        TEXT NOT NULL DEFAULT '',
+		outcome       TEXT NOT NULL DEFAULT '',
+		reason        TEXT NOT NULL DEFAULT '',
+		seen          TEXT NOT NULL
+	);
+	CREATE INDEX releases_job ON releases(job_id);
+	CREATE TABLE job_targets (
+		job_id     TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+		episode_id INTEGER REFERENCES episodes(id) ON DELETE CASCADE,
+		movie_id   INTEGER REFERENCES movies(id) ON DELETE CASCADE,
+		CHECK ((episode_id IS NULL) <> (movie_id IS NULL))
+	);
+	CREATE UNIQUE INDEX job_targets_episode ON job_targets(job_id, episode_id) WHERE episode_id IS NOT NULL;
+	CREATE UNIQUE INDEX job_targets_movie ON job_targets(job_id, movie_id) WHERE movie_id IS NOT NULL;
+	CREATE TABLE requests (
+		id        INTEGER PRIMARY KEY,
+		kind      TEXT NOT NULL CHECK (kind IN ('movie', 'tv', 'anime')),
+		tmdb_id   INTEGER NOT NULL,
+		title     TEXT NOT NULL,
+		year      INTEGER NOT NULL DEFAULT 0,
+		seasons   TEXT NOT NULL DEFAULT '',
+		requester TEXT NOT NULL DEFAULT '',
+		note      TEXT NOT NULL DEFAULT '',
+		status    TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'declined', 'available')),
+		reason    TEXT NOT NULL DEFAULT '',
+		created   TEXT NOT NULL,
+		decided   TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX requests_status ON requests(status, created);`,
 }
 
 // Version is the schema version this build expects.
