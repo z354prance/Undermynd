@@ -1,10 +1,10 @@
-# Roadmap: folding the arr stack into Undermynd (v19, Nov 16, 2026)
+# Roadmap: folding the arr stack into Undermynd (v20, Nov 16, 2026)
 
 Goal: one app that does what Radarr, Sonarr, Lidarr, Prowlarr, Seerr, Houndarr and Recyclarr do today, so nothing else has to run or be configured. It will be renamed HyveMynd at the end.
 
 How to use this doc: the **milestones table** is the plan. Each milestone is one or a few pull requests, has a clear exit test, and lists what it depends on. Decisions and gates explain why the order is what it is. This file is kept in the repo (`docs/ROADMAP.md`) and in the Undermynd project (`design/roadmap-arr-consolidation.md`) with the same content. Supporting project docs: `design/metadata-sources.md`, `design/anime-pipeline.md`; in the repo: `docs/RENAME.md`.
 
-v13 restructured the plan into milestones. v14 to v17 answered every gate that blocks the start. v18 recorded Stage A progress. v19 records B1 merged and adds B0 (Go upgrade).
+v13 restructured the plan into milestones. v14 to v17 answered every gate that blocks the start. v18 recorded Stage A progress. v19 recorded B1 merged and added B0 (Go upgrade). v20 closes A1 and corrects what it found.
 
 ---
 
@@ -34,7 +34,7 @@ v13 restructured the plan into milestones. v14 to v17 answered every gate that b
 
 - About 12.6k lines of Go, standard library only, `go vet` clean, all tests pass with `-race`, including end-to-end runs against fake TorBox, Tdarr, NZBGet and arrs, and the new job store contract tests.
 - Download and transcode layer: fake qBittorrent and SABnzbd APIs for the arrs; TorBox, local qBittorrent and NZBGet backends; job state machine with retries, reconciler, cleanup and import confirmation (confirmed on real arrs); Tdarr hand-off with progress, stall detection and hand-back of originals that need no work; resolution check that blocklists fakes; AV1 re-encode tab.
-- Anime path with no arr: RSS feeds and rules, watch folder, `internal/library` parser and folder matcher, `placeInLibrary`. Trix, SubsPlease and (since A1) Judas names place; the braced English title is kept as an alias. Absolute numbers parse but default to season 1.
+- Anime path with no arr: RSS feeds and rules, watch folder, `internal/library` parser and folder matcher, `placeInLibrary`. Trix, SubsPlease and Judas episodes place. (Judas file names inside the torrent are placed fine; the `{English title} [Uncensored]` form seen in the RSS titles is also handled since A1.) Absolute numbers parse but default to season 1.
 - From Overmynd: public request box (no sign-in, rate-limited) backed by Seerr, with admin approve/decline; Emby/Jellyfin access flow; Tracearr playback; storage monitor; season progress (`internal/progress`, from the arrs).
 - State (jobs, RSS seen items, tracked shows, access requests) is in SQLite since B1, with daily backups; old JSON files are imported once and kept as `.bak`. The TorBox limiter and storage scan stay as small files.
 - CI starts the built container and checks that it creates the database and a backup.
@@ -77,7 +77,7 @@ Sizes: **S** one build session, **M** two to four, **L** about a week of session
 ### Stage A: Stabilise what exists
 | ID | Milestone | Size | Depends on | Exit test | Status |
 |---|---|---|---|---|---|
-| A1 | Parser fix: strip `{...}` and descriptive tags like `[Uncensored]` from titles, keep braces text as an alias; match by title or alias; keep the episode number in the cleaned name; tests from real Trix, Judas, SubsPlease names | S | none | Judas names place in `Seitokai ni mo Ana wa Aru`; user runs Sweep on the anime category and checks whether the Student Council holes were unplaced files | Merged (PR #2). Waiting on the user's Sweep check |
+| A1 | Parser fix: strip `{...}` and descriptive tags like `[Uncensored]` from titles, keep braces text as an alias; match by title or alias; keep the episode number in the cleaned name; tests from real Trix, Judas, SubsPlease names | S | none | Judas names place in `Seitokai ni mo Ana wa Aru`; user runs Sweep on the anime category and checks whether the Student Council holes were unplaced files | **Done** (PR #2). Correction: the earlier test used RSS item titles, not the file names inside the torrents; the user confirmed Judas episodes were already importing fine. So the Student Council holes are episodes that were never grabbed, not stuck files: C4 (gap filling) is what fixes them |
 | A2 | Job store contract tests (round trip, copies, order, update, reopen, pruning, crash safety, corrupt file, concurrency) | S | none | Tests pass against the current JSON store | **Done** (PR #3). Found and fixed a bug: `Job.Clone` shared `PastRemoteIDs` |
 | A3 | Housekeeping: merge PR #1, refresh README status, add this roadmap to `docs/` | S | none | README matches the code | **Done** |
 | A4 | Real-run checks | S | none | Arr import confirmation works on real Sonarr and Radarr; AV1 sources handled by the existing Tdarr flow | **Done** |
@@ -99,7 +99,7 @@ Sizes: **S** one build session, **M** two to four, **L** about a week of session
 | C1 | Library import: scan the anime library, match each folder to TMDB with the user confirming, detect each series' numbering mode from its files (absolute, seasons, or mixed, which goes to a person), record which episodes already exist | M | B4 | Season cells show real counts for anime, for absolute and season-laid-out shows alike |
 | C2 | Catalog-based placement: match by alias instead of folder name; place each episode in the series' own mode; "needs a person" queue with reasons and a manual resolve action; dry-run | M | C1, A1 | Name corpus passes; an absolute show and a season show each get new episodes in their own layout; nothing ever overwritten |
 | C3 | Monitoring: monitor a series, ordered group preference per show, 1080p default; generate per-show nyaa search feeds through the existing RSS poller | M | C2 | Two of the user's hand-made feeds replaced with generated ones for a week with no misses |
-| C4 | Missing and gap filling: per-episode search from the next group when one skips; air dates stop early "missing"; never re-download an episode another group already supplied; group and resolution shown per episode | M | C3 | Student Council holes filled automatically (if A1's Sweep has not already filled them) |
+| C4 | Missing and gap filling: per-episode search from the next group when one skips; air dates stop early "missing"; never re-download an episode another group already supplied; group and resolution shown per episode | M | C3 | Student Council holes filled automatically |
 | C5 | Optional speed-up: skip the Tdarr round trip when the source already matches the target codec | S | none | A Trix AV1 release is placed without a Tdarr run |
 | C6 | Season conversion tool, optional and per series: preview every rename and move, convert on confirm, write an undo log, refresh that show in Emby, then switch the series' mode to seasons. Hardlink or rename only; never overwrite; stop on anything unmapped | M | C2, B3, B5 | One small absolute show converted, checked in Emby, and undone once; then a mid-size show. One Piece only when the user chooses |
 | Switch | Anime category set to native | | C1 to C4 | Two weeks without manual fixes |
@@ -224,6 +224,7 @@ The redesign doc says Settings, Library and Requests/Access are not designed yet
 - v16: requests need no sign-in; every request waits for admin approval. Stage E is one milestone. A4 done.
 - v17: G3 answered: TMDB plus anime-offline-database plus ID mapping.
 - v18: A1 merged (PR #2), A2 done (PR #3, Clone bug fixed), A3 done (README status, this file added to `docs/`). Merge rule recorded.
+- v20: A1 closed. Lesson recorded: test parsing against the file names inside a release, not only feed titles.
 - v19: B1 merged (PR #5): SQLite store, state blobs, backups, container smoke test in CI. Added B0: move to a supported Go version. The build machine cannot reach the Go module proxy, so new dependencies are resolved by a temporary CI job.
 
 ## 12. Housekeeping
