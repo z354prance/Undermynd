@@ -328,7 +328,7 @@
       var info=el('div','card');info.appendChild(el('h4','','show'));
       function kv(k,v){var x=el('div','kv');x.appendChild(el('span','k',k));var vv=el('span','v');if(typeof v==='string')vv.textContent=v;else vv.appendChild(v);x.appendChild(vv);info.appendChild(x)}
       var tl=el('a','','TMDB '+d.tmdbId);tl.href='https://www.themoviedb.org/tv/'+d.tmdbId;tl.target='_blank';tl.rel='noopener';kv('TMDB',tl);if(d.tvdbId)kv('TVDB',String(d.tvdbId));
-      kv('folder',r.folder);kv('numbering',r.numbering==='absolute'?'absolute (episodes counted across seasons)':'seasons (each season starts at 1)');kv('episode order',r.orderName);kv('refreshed',ago(d.updated)+' ago');
+      kv('folder',r.folder);(d.places||[]).filter(function(p){return p.extra}).forEach(function(p){kv('also in',p.folder+' (TMDB season '+p.firstSeason+' onward)')});kv('numbering',r.numbering==='absolute'?'absolute (episodes counted across seasons)':'seasons (each season starts at 1)');kv('episode order',r.orderName);kv('refreshed',ago(d.updated)+' ago');
       var msg=el('div','msg');
       function act(label,a,cls,confirmText){var b=el('button',cls||'',label);b.onclick=function(){if(confirmText&&!confirm(confirmText))return;b.disabled=true;msg.className='msg';msg.textContent='working…';
         api('POST','/anime/series/'+id+'/'+a).then(function(res){if(a==='remove'){animeShow=null;app();return}
@@ -370,6 +370,7 @@
     }
     load();
   }
+  function optName(o){return o.extraOf?'with '+o.extraTitle+', as its TMDB season '+o.firstSeason+(o.firstSeason?' onward':''):o.order?'TMDB episode group "'+o.orderName+'"':'TMDB seasons'}
   function folderCard(f,reload){
     var c=el('section','card fcard'+(f.state==='needs you'?' needs':f.state==='failed'?' failedc':''));
     var h=el('div','nh');var hl=el('div','fhead');hl.appendChild(el('span','chip2 '+({ready:'',skipped:'dim',failed:'bad'}[f.state]!=null?{ready:'',skipped:'dim',failed:'bad'}[f.state]:'warn'),f.state));
@@ -380,11 +381,11 @@
     if(f.reason)c.appendChild(el('div','freason',f.reason));
     var opts=f.options||[];
     if(f.match&&opts.length&&f.state!=='skipped'){
-      if(f.state==='ready'){var o=opts[0];var kvd=el('div','kv');kvd.appendChild(el('span','k','numbering'));kvd.appendChild(el('span','v',o.numbering+' · '+(o.order?'TMDB group "'+o.orderName+'"':'TMDB seasons')+' · '+(o.extras?o.mapped+' files map':'all '+o.mapped+' files map')));c.appendChild(kvd);if(f.note)c.appendChild(el('div','reason',f.note))}
+      if(f.state==='ready'){var o=opts[0];var kvd=el('div','kv');kvd.appendChild(el('span','k','numbering'));kvd.appendChild(el('span','v',o.numbering+' · '+optName(o)+' · '+(o.extras?o.mapped+' files map':'all '+o.mapped+' files map')));c.appendChild(kvd);if(f.note)c.appendChild(el('div','reason',f.note))}
       else{var fs=el('fieldset','fopts');fs.appendChild(el('legend','','how the files are numbered'));
         opts.slice(0,6).forEach(function(o,i){var id='o'+Math.random().toString(36).slice(2);var row=el('div','opt'+(i===0?' on':''));var inp=el('input');inp.type='radio';inp.name='n'+f.path;inp.id=id;inp.checked=i===0;
           inp.onchange=function(){chosen=i;fs.querySelectorAll('.opt').forEach(function(x){x.classList.remove('on')});row.classList.add('on')};
-          var lb=el('label');lb.htmlFor=id;lb.appendChild(el('div','',(o.order?'TMDB episode group "'+o.orderName+'"':'TMDB seasons')+' · '+o.numbering));
+          var lb=el('label');lb.htmlFor=id;lb.appendChild(el('div','',optName(o)+' · '+o.numbering));
           var full=o.distinct===o.mapped&&o.mapped+(o.extras||0)===f.files;lb.appendChild(el('div','reason',full?(o.extras?o.mapped+' files map, '+o.extras+' extra episode(s) left out':'all '+o.mapped+' files map')+(i===0?' · recommended':''):o.mapped+' of '+f.files+' files map'+(o.distinct<o.mapped?', '+(o.mapped-o.distinct)+' on an episode another file has':'')));
           row.appendChild(inp);row.appendChild(lb);fs.appendChild(row)});c.appendChild(fs)}}
     if(f.unmapped&&f.unmapped.length&&f.state!=='ready'){var um=el('details','fdet');um.appendChild(el('summary','','files that match no episode ('+f.unmapped.length+(f.unmapped.length>=10?'+':'')+')'));f.unmapped.forEach(function(u){um.appendChild(el('div','mono',u))});c.appendChild(um)}

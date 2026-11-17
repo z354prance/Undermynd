@@ -222,7 +222,84 @@ func (p *Placer) decide(src, root string) plan {
 		return pl
 	}
 	pl.ser = ser
-	return p.decideEpisode(pl, ser, rel.Season, rel.Marked, rel.Episode, filepath.Ext(src))
+	season, marked, number := p.inPlace(ser, rel)
+	return p.decideEpisode(pl, ser, season, marked, number, filepath.Ext(src))
+}
+
+// inPlace turns a release's numbers into the series' own when the series is
+// kept in more than one folder. A sequel TMDB counts as a later season is
+// numbered from 1 by its releases ("Bleach Thousand-Year Blood War - 03" is
+// Bleach season 17 episode 3), so each folder's reading is tried: a folder
+// named like the release wins; otherwise the reading that lands on an aired
+// episode with no file, the most recent first.
+func (p *Placer) inPlace(ser catalog.Series, rel library.Release) (season int, marked bool, number int) {
+	places, err := p.Cat.Places(ser)
+	if err != nil || len(places) < 2 {
+		return rel.Season, rel.Marked, rel.Episode
+	}
+	eps, err := p.Cat.Episodes(ser.ID)
+	if err != nil {
+		return rel.Season, rel.Marked, rel.Episode
+	}
+	type reading struct {
+		season int
+		marked bool
+		number int
+		named  bool
+	}
+	titles := map[string]bool{}
+	for _, t := range append([]string{rel.Title}, rel.Aliases...) {
+		titles[squash(t)] = true
+	}
+	var readings []reading
+	for _, pl := range places {
+		r := reading{season: rel.Season, marked: rel.Marked, number: rel.Episode, named: titles[squash(filepath.Base(pl.Folder))]}
+		if pl.FirstSeason > 1 {
+			switch {
+			case rel.Marked:
+				r.season = pl.FirstSeason + rel.Season - 1
+			case pl.Numbering == catalog.ByAbsolute:
+				start := 0
+				for _, e := range eps {
+					if e.Season == pl.FirstSeason && e.Absolute > 0 && (start == 0 || e.Absolute < start) {
+						start = e.Absolute
+					}
+				}
+				r.number = start + rel.Episode - 1
+			default:
+				r.season, r.marked = pl.FirstSeason, true
+			}
+		}
+		readings = append(readings, r)
+	}
+	for _, r := range readings {
+		if r.named {
+			return r.season, r.marked, r.number
+		}
+	}
+	best, bestDate := -1, ""
+	for i, r := range readings {
+		var e catalog.Episode
+		var err error
+		if r.marked {
+			e, err = p.Cat.EpisodeBySeason(ser.ID, r.season, r.number)
+		} else {
+			e, err = p.Cat.EpisodeByAbsolute(ser.ID, r.number)
+		}
+		if err != nil || e.AirDate == "" {
+			continue
+		}
+		if files, _ := p.Cat.EpisodeFiles(e.ID); len(files) > 0 {
+			continue
+		}
+		if e.AirDate > bestDate {
+			best, bestDate = i, e.AirDate
+		}
+	}
+	if best < 0 {
+		best = 0
+	}
+	return readings[best].season, readings[best].marked, readings[best].number
 }
 
 // decideEpisode finishes a plan once the show is known.
@@ -266,7 +343,7 @@ func (p *Placer) decideEpisode(pl plan, ser catalog.Series, season int, marked b
 	}
 	pl.ep, pl.hasEp = ep, true
 	pl.epLabel = epLabel(ser, ep)
-	pl.dst = destination(ser, ep, pl.rel.Res, ext)
+	pl.dst = p.destination(ser, ep, pl.rel.Res, ext)
 	if files, _ := p.Cat.EpisodeFiles(ep.ID); len(files) > 0 {
 		f := files[0]
 		if _, serr := os.Stat(f.Path); serr == nil {
@@ -305,20 +382,45 @@ func seasonFolder(folder string, season int) string {
 	return library.SeasonDir(folder, season)
 }
 
-// destination is where an episode's file goes: the show's season folder, named
-// after the folder, by absolute number or by season and episode as the show is
-// laid out.
-func destination(ser catalog.Series, ep catalog.Episode, res, ext string) string {
-	show := strings.TrimSpace(unsafeName.ReplaceAllString(filepath.Base(ser.Folder), ""))
-	num := fmt.Sprintf("S%02dE%02d", ep.Season, ep.Number)
-	if ser.Numbering == catalog.ByAbsolute && ep.Season > 0 && ep.Absolute > 0 {
-		num = fmt.Sprint(ep.Absolute)
+// destination is where an episode's file goes: the season folder of the
+// show's folder that holds that season (an extra folder for a sequel TMDB counts
+// as a later season), named after that folder, by absolute number or by season
+// and episode as the folder is laid out.
+func (p *Placer) destination(ser catalog.Series, ep catalog.Episode, res, ext string) string {
+	place := catalog.Place{Folder: ser.Folder, FirstSeason: 1, Numbering: ser.Numbering}
+	if ep.Season > 0 {
+		places, _ := p.Cat.Places(ser)
+		for _, x := range places {
+			if x.Extra && x.FirstSeason <= ep.Season && x.FirstSeason > place.FirstSeason {
+				place = x
+			}
+		}
+	}
+	season, abs := ep.Season, ep.Absolute
+	if place.FirstSeason > 1 {
+		season = ep.Season - place.FirstSeason + 1
+		start := 0
+		if eps, err := p.Cat.Episodes(ser.ID); err == nil {
+			for _, e := range eps {
+				if e.Season == place.FirstSeason && e.Absolute > 0 && (start == 0 || e.Absolute < start) {
+					start = e.Absolute
+				}
+			}
+		}
+		if start > 0 && abs > 0 {
+			abs = abs - start + 1
+		}
+	}
+	show := strings.TrimSpace(unsafeName.ReplaceAllString(filepath.Base(place.Folder), ""))
+	num := fmt.Sprintf("S%02dE%02d", season, ep.Number)
+	if place.Numbering == catalog.ByAbsolute && season > 0 && abs > 0 {
+		num = fmt.Sprint(abs)
 	}
 	name := show + " - " + num
 	if res != "" {
 		name += " (" + res + ")"
 	}
-	return filepath.Join(seasonFolder(ser.Folder, ep.Season), name+ext)
+	return filepath.Join(seasonFolder(place.Folder, season), name+ext)
 }
 
 // closest lists library shows whose title shares the release title's first words.
@@ -711,7 +813,7 @@ func (p *Placer) placeholderDst(ser catalog.Series, season int, marked bool, num
 	if marked {
 		ep = catalog.Episode{Season: season, Number: number}
 	}
-	return destination(ser, ep, res, ext)
+	return p.destination(ser, ep, res, ext)
 }
 
 // Retry tries the waiting files again: a new episode on TMDB, a title learned

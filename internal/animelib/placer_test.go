@@ -14,7 +14,7 @@ func TestCatalogPlacement(t *testing.T) {
 	im, lib := newImporter(t)
 	ctx := context.Background()
 	got := scan(t, im)
-	if n, errs := im.ConfirmReady(ctx); n != 3 || len(errs) != 0 {
+	if n, errs := im.ConfirmReady(ctx); n != 5 || len(errs) != 0 {
 		t.Fatalf("confirm ready: %d %v", n, errs)
 	}
 	if _, err := im.Confirm(ctx, got["Blue Box"].Path, 0); err != nil {
@@ -94,6 +94,13 @@ func TestCatalogPlacement(t *testing.T) {
 	}
 	if len(p.Queue()) != 0 {
 		t.Fatalf("queue should be empty: %+v", p.Queue())
+	}
+
+	// A sequel's release, numbered from 1, goes in the sequel's own folder.
+	src = put("[SubsPlease] Bleach Thousand-Year Blood War - 03 (1080p) [ABCD1234].mkv")
+	dst, why, err = p.Place(src, "job6", lib, nil)
+	if err != nil || why != "" || dst != filepath.Join(lib, "Bleach Thousand-Year Blood War", "Season 1", "Bleach Thousand-Year Blood War - S01E03 (1080p).mkv") {
+		t.Fatalf("sequel: %q %q %v", dst, why, err)
 	}
 
 	// A show that is not in the catalog goes by folder name when it can.

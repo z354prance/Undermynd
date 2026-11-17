@@ -304,3 +304,40 @@ func Copies(files []DiskFile, fit Fit) int {
 	}
 	return n
 }
+
+// shift reads a folder's files as TMDB numbers: the folder's season 1 is TMDB
+// season first, and with absolute numbering its episode 1 is the first
+// episode of that season.
+func shift(files []DiskFile, eps []catalog.Episode, first int, numbering string) []DiskFile {
+	if first <= 1 {
+		return files
+	}
+	absStart := 0
+	for _, e := range eps {
+		if e.Season == first && e.Absolute > 0 && (absStart == 0 || e.Absolute < absStart) {
+			absStart = e.Absolute
+		}
+	}
+	out := make([]DiskFile, len(files))
+	copy(out, files)
+	for i := range out {
+		if !out[i].OK || out[i].Season == 0 {
+			continue
+		}
+		if numbering == catalog.ByAbsolute {
+			if absStart == 0 {
+				out[i].OK = false
+				continue
+			}
+			out[i].Episode += absStart - 1
+		} else {
+			out[i].Season += first - 1
+		}
+	}
+	return out
+}
+
+// MapPlace maps one folder's files onto a series' episodes; see shift.
+func MapPlace(files []DiskFile, eps []catalog.Episode, first int, numbering string) (map[int]int, int) {
+	return MapFiles(shift(files, eps, first, numbering), eps, numbering)
+}

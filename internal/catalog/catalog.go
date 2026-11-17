@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -647,4 +648,85 @@ func (c *Catalog) SeriesFiles(seriesID int64) ([]SeriesFile, error) {
 		out = append(out, f)
 	}
 	return out, rows.Err()
+}
+
+// Place is one folder a series is kept in. The series' own folder starts at
+// TMDB season 1 and uses the series' numbering; an extra folder holds the
+// seasons from FirstSeason on, its own "Season 1" being that TMDB season.
+type Place struct {
+	Folder      string `json:"folder"`
+	FirstSeason int    `json:"firstSeason"`
+	Numbering   string `json:"numbering"`
+	Extra       bool   `json:"extra"`
+}
+
+// AddSeriesFolder keeps a series in one more folder.
+func (c *Catalog) AddSeriesFolder(seriesID int64, folder string, firstSeason int, numbering string) error {
+	if firstSeason < 1 {
+		return errors.New("an extra folder starts at season 1 or later")
+	}
+	if numbering != ByAbsolute {
+		numbering = BySeason
+	}
+	_, err := c.DB.Exec(`INSERT INTO series_folders (folder, series_id, first_season, numbering) VALUES (?, ?, ?, ?)`, folder, seriesID, firstSeason, numbering)
+	return err
+}
+
+// RemoveSeriesFolder forgets an extra folder and the files recorded in it.
+func (c *Catalog) RemoveSeriesFolder(folder string) error {
+	tx, err := c.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	prefix := strings.TrimSuffix(folder, string(filepath.Separator)) + string(filepath.Separator)
+	if _, err := tx.Exec(`DELETE FROM files WHERE substr(path, 1, ?) = ?`, len(prefix), prefix); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM series_folders WHERE folder = ?`, folder); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// Places lists the folders a series is kept in: its own first, then the extra
+// ones by first season.
+func (c *Catalog) Places(s Series) ([]Place, error) {
+	var out []Place
+	if s.Folder != "" {
+		out = append(out, Place{Folder: s.Folder, FirstSeason: 1, Numbering: s.Numbering})
+	}
+	rows, err := c.DB.Query(`SELECT folder, first_season, numbering FROM series_folders WHERE series_id = ? ORDER BY first_season, folder`, s.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		p := Place{Extra: true}
+		if err := rows.Scan(&p.Folder, &p.FirstSeason, &p.Numbering); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// SeriesByAnyFolder finds the series kept in a folder, its own or an extra one.
+func (c *Catalog) SeriesByAnyFolder(folder string) (Series, Place, error) {
+	if s, err := c.SeriesByFolder(folder); err == nil {
+		return s, Place{Folder: folder, FirstSeason: 1, Numbering: s.Numbering}, nil
+	} else if !errors.Is(err, ErrNotFound) {
+		return Series{}, Place{}, err
+	}
+	p := Place{Folder: folder, Extra: true}
+	var id int64
+	err := c.DB.QueryRow(`SELECT series_id, first_season, numbering FROM series_folders WHERE folder = ?`, folder).Scan(&id, &p.FirstSeason, &p.Numbering)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Series{}, Place{}, ErrNotFound
+	}
+	if err != nil {
+		return Series{}, Place{}, err
+	}
+	s, err := c.Series(id)
+	return s, p, err
 }
