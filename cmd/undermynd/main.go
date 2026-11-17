@@ -172,6 +172,11 @@ func main() {
 	go site.Storage.Run(ctx, func() time.Duration { return time.Duration(cfg.Get().StorageScanMinutes) * time.Minute })
 	go pt.Run(ctx)
 	if dbh != nil {
+		if n, err := metadata.Renormalize(dbh); err != nil {
+			logger.Printf("metadata: renormalising titles: %v", err)
+		} else if n > 0 {
+			logger.Printf("metadata: %d stored titles compared the new way", n)
+		}
 		site.Metadata = newMetadata(dbh, cfg, logger)
 		go site.Metadata.Run(ctx, func() bool { return cfg.Get().Metadata.TMDBKey != "" })
 		site.Anime = &animelib.Importer{Meta: site.Metadata, Cat: site.Metadata.Catalog, Blobs: blobs, Log: logger, Now: time.Now,

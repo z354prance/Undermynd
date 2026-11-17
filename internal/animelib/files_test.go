@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/z354prance/undermynd/internal/catalog"
+	"github.com/z354prance/undermynd/internal/metadata"
 )
 
 func touch(t *testing.T, root string, rel ...string) {
@@ -104,5 +105,51 @@ func TestBlueBoxNeedsItsEpisodeGroup(t *testing.T) {
 	f := Fits(disk, group)
 	if f[0].Numbering != catalog.BySeason || f[0].Mapped != 4 || f[0].Distinct != 4 {
 		t.Fatalf("seasons group: %+v", f)
+	}
+}
+
+func TestLooseNames(t *testing.T) {
+	for name, want := range map[string][3]int{ // ok, season, episode
+		"S01E05 - The Beginning.mkv":             {1, 1, 5},
+		"S01E01-Spring Begins.mkv":               {1, 1, 1},
+		"S02E10-Cold Dew.mkv":                    {1, 2, 10},
+		"Episode 07.mkv":                         {1, 1, 7},
+		"7 Seeds Ep 03.mkv":                      {1, 1, 3},
+		"4 CUT HERO 12.mkv":                      {1, 1, 12},
+		"12.mkv":                                 {1, 1, 12},
+		"A.I.C.O.Incarnation.E04.1080p.mkv":      {1, 1, 4},
+		"show.s02e10.mkv":                        {1, 2, 10},
+		"Movie 2019.mkv":                         {0, 0, 0},
+		"NCOP.mkv":                               {0, 0, 0},
+		"Show - 2x03 [1080p].mkv":                {1, 2, 3},
+		"[Group] Show 05 (1080p) [ABCD1234].mkv": {1, 1, 5},
+	} {
+		r, ok := looseParse(name)
+		got := [3]int{0, r.Season, r.Episode}
+		if ok {
+			got[0] = 1
+		} else {
+			got = [3]int{}
+		}
+		if got != want {
+			t.Errorf("%s: got %v want %v", name, got, want)
+		}
+	}
+}
+
+func TestSureMatches(t *testing.T) {
+	c := func(id int64, name, via string, anim bool) metadata.Candidate {
+		return metadata.Candidate{TMDBID: id, Name: name, Via: via, Animation: anim}
+	}
+	folder := "A Herbivorous Dragon of 5000 Years Gets Unfairly Villainized"
+	m, _ := sure(folder, []string{folder}, []metadata.Candidate{c(139161, "A Herbivorous Dragon of 5,000 Years Gets Unfairly Villainized", "TMDB search", true), c(9, "Dragon", "TMDB search", true)})
+	if m == nil || m.TMDBID != 139161 {
+		t.Fatalf("exact animated title should be sure: %+v", m)
+	}
+	if m, _ := sure("Hunter x Hunter", []string{"Hunter x Hunter"}, []metadata.Candidate{c(1, "Hunter x Hunter", "TMDB search", true), c(2, "Hunter × Hunter", "TMDB search", true), c(3, "HUNTER x HUNTER", "TMDB search", true)}); m != nil {
+		t.Fatalf("two shows with the same title must not be sure: %+v", m)
+	}
+	if m, _ := sure("Monster", []string{"Monster"}, []metadata.Candidate{c(5, "Monster", "TMDB search", false)}); m != nil {
+		t.Fatalf("a live-action show with the title must not be sure: %+v", m)
 	}
 }

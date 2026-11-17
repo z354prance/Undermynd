@@ -25,7 +25,8 @@ const (
 	Needs    = "needs you" // something is unsure; Reason says what
 	Imported = "imported"  // in the catalog
 	Skipped  = "skipped"
-	Failed   = "failed" // could not be looked up; Reason says why
+	Failed   = "failed"  // could not be looked up; Reason says why
+	Waiting  = "waiting" // not checked yet in the running scan
 )
 
 const statusBlob = "anime-import.json"
@@ -186,7 +187,7 @@ func (im *Importer) scan(ctx context.Context, old map[string]*Folder) error {
 	})
 	folders := make([]*Folder, 0, len(paths))
 	for _, p := range paths {
-		folders = append(folders, &Folder{Path: p, Name: filepath.Base(p), State: Needs})
+		folders = append(folders, &Folder{Path: p, Name: filepath.Base(p), State: Waiting})
 	}
 	im.mu.Lock()
 	im.st.Folders, im.st.Total = folders, len(folders)
@@ -328,11 +329,11 @@ func sure(folder string, titles []string, cands []metadata.Candidate) (*metadata
 	}
 	want := map[string]bool{}
 	for _, t := range titles {
-		want[library.Normalize(t)] = true
+		want[squash(t)] = true
 	}
 	var exact []metadata.Candidate
 	for _, c := range cands {
-		if want[library.Normalize(c.Name)] || want[library.Normalize(c.Original)] {
+		if c.Animation && (want[squash(c.Name)] || want[squash(c.Original)]) {
 			exact = append(exact, c)
 		}
 	}
@@ -345,6 +346,9 @@ func sure(folder string, titles []string, cands []metadata.Candidate) (*metadata
 	}
 	return nil, "not in the anime lists yet (a new show?), so it was matched by title only"
 }
+
+// squash compares titles ignoring spaces as well as case and punctuation.
+func squash(t string) string { return strings.ReplaceAll(library.Normalize(t), " ", "") }
 
 // maxOrders caps how many TMDB episode groups are tried for one folder.
 const maxOrders = 8
@@ -383,10 +387,10 @@ func (im *Importer) evaluate(ctx context.Context, f *Folder, files []DiskFile) e
 	}
 	sort.SliceStable(f.Options, func(i, j int) bool {
 		a, b := f.Options[i], f.Options[j]
-		if a.Mapped != b.Mapped {
-			return a.Mapped > b.Mapped
+		if a.Distinct != b.Distinct {
+			return a.Distinct > b.Distinct
 		}
-		return a.Distinct > b.Distinct
+		return a.Mapped > b.Mapped
 	})
 	for i, d := range files {
 		if _, ok := bestMap[i]; d.OK && !ok && len(f.Unmapped) < 10 {
@@ -413,9 +417,6 @@ func (im *Importer) evaluate(ctx context.Context, f *Folder, files []DiskFile) e
 	case full > 1:
 		f.State = Needs
 		f.Reason = "the files fit more than one way: choose how they are numbered"
-	case f.Match.Via == "TMDB search" && !f.Picked:
-		f.State = Needs
-		f.Reason = "not in the anime lists yet (a new show?), so it was matched by title only"
 	default:
 		f.State, f.Reason = Ready, ""
 	}

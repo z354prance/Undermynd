@@ -68,7 +68,11 @@ func ScanFolder(dir string) ([]DiskFile, error) {
 		if info, err := d.Info(); err == nil {
 			f.Size = info.Size()
 		}
-		if r, ok := library.Parse(d.Name()); ok {
+		r, ok := library.Parse(d.Name())
+		if !ok {
+			r, ok = looseParse(d.Name())
+		}
+		if ok {
 			f.OK, f.Title, f.Episode, f.Res = true, r.Title, r.Episode, r.Res
 			f.Season = 1
 			if r.Marked {
@@ -82,6 +86,53 @@ func ScanFolder(dir string) ([]DiskFile, error) {
 	})
 	sort.Slice(out, func(i, j int) bool { return out[i].Rel < out[j].Rel })
 	return out, err
+}
+
+var (
+	looseTags  = regexp.MustCompile(`\[[^\]]*\]|\([^)]*\)|\{[^}]*\}`)
+	looseRes   = regexp.MustCompile(`(?i)\b\d{3,4}p\b`)
+	looseSxE   = regexp.MustCompile(`(?i)(?:^|[^a-z0-9])s(\d{1,2})\s?e(\d{1,4})(?:v\d)?(?:[^0-9]|$)`)
+	looseNxM   = regexp.MustCompile(`(?i)(?:^|[^a-z0-9])(\d{1,2})x(\d{2,3})(?:[^0-9]|$)`)
+	looseEp    = regexp.MustCompile(`(?i)(?:^|[^a-z])(?:episode|ep|e)\.?\s*(\d{1,4})(?:v\d)?(?:[^0-9]|$)`)
+	looseTail  = regexp.MustCompile(`(?:^|[\s._-])(\d{1,4})(?:v\d)?\s*$`)
+	looseYear  = regexp.MustCompile(`^(?:19|20)\d\d$`)
+	looseSpace = regexp.MustCompile(`[\s._]+`)
+)
+
+// looseParse reads an episode number from names the release parser does not
+// accept, as found in older parts of a library: "S01E01 - Title", "Episode 1",
+// "Show 01", or a bare "01". The show is known from the folder, so no title is
+// needed. Anything wrong is caught later when the files are matched to episodes.
+func looseParse(name string) (library.Release, bool) {
+	s := strings.TrimSuffix(name, filepath.Ext(name))
+	r := library.Release{Season: 1}
+	if m := looseRes.FindString(s); m != "" {
+		r.Res = strings.ToLower(m)
+	}
+	s = looseTags.ReplaceAllString(s, " ")
+	s = looseRes.ReplaceAllString(s, " ")
+	if m := looseSxE.FindStringSubmatch(s); m != nil {
+		r.Season, _ = strconv.Atoi(m[1])
+		r.Episode, _ = strconv.Atoi(m[2])
+		r.Marked = true
+		return r, true
+	}
+	if m := looseNxM.FindStringSubmatch(s); m != nil {
+		r.Season, _ = strconv.Atoi(m[1])
+		r.Episode, _ = strconv.Atoi(m[2])
+		r.Marked = true
+		return r, true
+	}
+	if m := looseEp.FindStringSubmatch(s); m != nil {
+		r.Episode, _ = strconv.Atoi(m[1])
+		return r, r.Episode > 0
+	}
+	s = strings.TrimSpace(looseSpace.ReplaceAllString(s, " "))
+	if m := looseTail.FindStringSubmatch(s); m != nil && !looseYear.MatchString(m[1]) {
+		r.Episode, _ = strconv.Atoi(m[1])
+		return r, r.Episode > 0
+	}
+	return library.Release{}, false
 }
 
 // MapFiles points each file at an episode, by season and number or by absolute
@@ -165,11 +216,13 @@ func Fits(files []DiskFile, eps []catalog.Episode) []Fit {
 	return out
 }
 
+// better prefers the reading that gives more files an episode of their own,
+// then the one that places more files.
 func better(a, b Fit) bool {
-	if a.Mapped != b.Mapped {
-		return a.Mapped > b.Mapped
+	if a.Distinct != b.Distinct {
+		return a.Distinct > b.Distinct
 	}
-	return a.Distinct > b.Distinct
+	return a.Mapped > b.Mapped
 }
 
 func same(a, b map[int]int) bool {

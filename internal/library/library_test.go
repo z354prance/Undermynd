@@ -145,3 +145,14 @@ func TestMatchAnyUsesAliases(t *testing.T) {
 		t.Fatalf("two different folders must not be guessed between: %q %v", f, c)
 	}
 }
+
+func TestNormalizeThousands(t *testing.T) {
+	a := library.Normalize("A Herbivorous Dragon of 5,000 Years Gets Unfairly Villainized")
+	b := library.Normalize("A Herbivorous Dragon of 5000 Years Gets Unfairly Villainized")
+	if a != b {
+		t.Fatalf("%q != %q", a, b)
+	}
+	if library.Normalize("Re:Zero 2.5") != "re zero 2 5" || library.Normalize("1,000,000") != "1000000" {
+		t.Fatal(library.Normalize("Re:Zero 2.5"), library.Normalize("1,000,000"))
+	}
+}
