@@ -26,6 +26,7 @@ import (
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/job"
 	"github.com/z354prance/undermynd/internal/logbuf"
+	"github.com/z354prance/undermynd/internal/metadata"
 	"github.com/z354prance/undermynd/internal/pipeline"
 	"github.com/z354prance/undermynd/internal/progress"
 	"github.com/z354prance/undermynd/internal/rss"
@@ -52,6 +53,8 @@ type Server struct {
 	Progress interface{ Snapshot() progress.Snapshot }
 	Storage  *storage.Monitor
 	Access   *access.Manager
+	// Metadata is nil when state is kept in JSON files (no database).
+	Metadata *metadata.Service
 	RSS      interface {
 		Status() []rss.FeedStatus
 		Download(ctx context.Context, feed string, index int, title, category string) (string, error)
@@ -73,6 +76,7 @@ func (s *Server) Handler() http.Handler {
 
 	// ---- public: no sign-in, reads only the public view
 	mux.HandleFunc("GET /{$}", s.page("public.html"))
+	mux.HandleFunc("GET /credits", s.page("credits.html"))
 	mux.HandleFunc("GET /api/public/jobs", s.publicJobs)
 	s.dashboardRoutes(mux, files)
 	mux.HandleFunc("GET /admin/api/library", s.admin(s.adminLibrary))
@@ -138,6 +142,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/api/requests", s.admin(s.requestsAdminList))
 	mux.HandleFunc("POST /admin/api/requests/{id}/{action}", s.guard(s.admin(s.requestsDecide)))
 	mux.HandleFunc("POST /admin/api/playback/test", s.guard(s.admin(s.playbackTest)))
+	mux.HandleFunc("POST /admin/api/metadata/test", s.guard(s.admin(s.metadataTest)))
+	mux.HandleFunc("GET /admin/api/metadata/status", s.admin(s.metadataStatus))
+	mux.HandleFunc("POST /admin/api/metadata/lists/refresh", s.guard(s.admin(s.metadataListsRefresh)))
 	mux.HandleFunc("POST /admin/api/tdarr/test", s.guard(s.admin(s.tdarrTest)))
 	mux.HandleFunc("POST /admin/api/settings/client-password", s.guard(s.admin(s.newClientPassword)))
 	return secure(mux)
@@ -603,6 +610,12 @@ type settingsView struct {
 		PullersAtOnce  int    `json:"pullersAtOnce"`
 		LinkGapSeconds int    `json:"linkGapSeconds"`
 	} `json:"torbox"`
+	Metadata struct {
+		TMDBKey        string `json:"tmdbKey,omitempty"` // write-only
+		HasTMDBKey     bool   `json:"hasTmdbKey"`
+		AnimeTitlesURL string `json:"animeTitlesUrl"`
+		AnimeIDsURL    string `json:"animeIdsUrl"`
+	} `json:"metadata"`
 	ClientUser       string `json:"clientUser"`
 	StallMinutes     int    `json:"stallMinutes"`
 	ReconcileSeconds int    `json:"reconcileSeconds"`
@@ -642,6 +655,7 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	v.TorBox.HasToken, v.TorBox.CreatePerHour, v.TorBox.PullersAtOnce, v.TorBox.LinkGapSeconds = c.TorBox.Token != "", c.TorBox.CreatePerHour, c.TorBox.PullersAtOnce, c.TorBox.LinkGapSeconds
 	v.ClientUser, v.StallMinutes, v.ReconcileSeconds, v.FlagImportHours = c.ClientUser, c.StallMinutes, c.ReconcileSeconds, c.FlagImportHours
 	v.StorageScanMinutes = c.StorageScanMinutes
+	v.Metadata.HasTMDBKey, v.Metadata.AnimeTitlesURL, v.Metadata.AnimeIDsURL = c.Metadata.TMDBKey != "", c.Metadata.AnimeTitlesURL, c.Metadata.AnimeIDsURL
 	qc := !c.SkipQualityCheck
 	v.QualityCheck = &qc
 	writeJSON(w, v)
@@ -788,6 +802,16 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	if in.NZBGet.Password != "" {
 		next.NZBGet.Password = secret.String(in.NZBGet.Password)
 	}
+	if in.Metadata.TMDBKey != "" {
+		next.Metadata.TMDBKey = secret.String(strings.TrimSpace(in.Metadata.TMDBKey))
+	}
+	for _, u := range []string{in.Metadata.AnimeTitlesURL, in.Metadata.AnimeIDsURL} {
+		if u = strings.TrimSpace(u); u != "" && u != "off" && !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
+			jsonErr(w, http.StatusBadRequest, "anime list addresses must start with https:// (or be empty for the default, or off)")
+			return
+		}
+	}
+	next.Metadata.AnimeTitlesURL, next.Metadata.AnimeIDsURL = strings.TrimSpace(in.Metadata.AnimeTitlesURL), strings.TrimSpace(in.Metadata.AnimeIDsURL)
 	if in.TorBox.Token != "" {
 		next.TorBox.Token = secret.String(strings.TrimSpace(in.TorBox.Token))
 	}

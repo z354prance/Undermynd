@@ -57,7 +57,7 @@
     var brand=el('a','brand');brand.href='/admin';var bi=el('img');bi.src='/assets/logo.svg';bi.alt='';brand.appendChild(bi);brand.appendChild(el('span','',  '~/undermynd'));side.appendChild(brand);
     function nav(t,label){var b=el('button',t===tab?'on':'',label);tabBtns[t]=b;b.onclick=function(){stopLive();tab=t;detailId=null;app()};side.appendChild(b)}
     nav('overview','Overview');nav('jobs','Jobs');nav('requests','Requests');nav('library','Library');nav('reencode','Re-encode');
-    [['Connections',[['arrs','Arrs & categories'],['clients','Download clients'],['transcode','Transcode']]],['Public site',[['playback','Playback'],['public','Public page']]],['Automation',[['rss','Feeds']]],['Server',[['system','Settings'],['log','Log']]]].forEach(function(g){
+    [['Connections',[['arrs','Arrs & categories'],['clients','Download clients'],['transcode','Transcode'],['metadata','Metadata']]],['Public site',[['playback','Playback'],['public','Public page']]],['Automation',[['rss','Feeds']]],['Server',[['system','Settings'],['log','Log']]]].forEach(function(g){
       side.appendChild(el('div','sgroup',g[0]));
       g[1].forEach(function(p){nav(p[0],p[1])})});
     side.appendChild(el('span','sp'));var pub=el('a','sidelink','public page');pub.href='/';side.appendChild(pub);
@@ -301,7 +301,7 @@
   }
   function pane(body){
     body.replaceChildren();
-    ({arrs:arrsPane,clients:clientsPane,transcode:transcodePane,playback:playbackPane,public:publicPane,rss:rssPane,system:systemPane})[tab](body);
+    ({arrs:arrsPane,clients:clientsPane,transcode:transcodePane,metadata:metadataPane,playback:playbackPane,public:publicPane,rss:rssPane,system:systemPane})[tab](body);
     if(tab!=='system'&&tab!=='rss')split(body);
   }
   // A settings card becomes a row: its title and explanation on the left, the fields on the right.
@@ -390,6 +390,35 @@
     S.categories.forEach(function(k){var d=el('div','kv');d.appendChild(el('span','k',k.name));d.appendChild(chip(k.transcode,k.transcode?'transcode on':'skips Tdarr'));if(k.transcode)d.appendChild(el('span','v','on failure: '+(k.onTranscodeFail==='passthrough'?'keep the original':'fail the grab')));cc.appendChild(d)});
     cc.appendChild(help('Change transcode and the failure policy on the Arrs & categories tab.'));body.appendChild(cc);
     saveBar(body,function(m){save(function(b){b.tdarr={url:url.value,apiKey:key.value,libraryId:lib.value,maxInFlight:+mx.value,stallMinutes:+st.value,inDir:inn.value,outDir:out.value,timeoutMinutes:+to.value}},m)})
+  }
+
+  function metadataPane(body){
+    var M=S.metadata||{};
+    body.appendChild(head('Metadata','Show information (seasons, episodes, other titles) comes from TMDB with your own free API key. Two anime lists add more titles and IDs; they are optional and refresh weekly.'));
+    var c=el('div','card');var h=el('h4','','TMDB ');h.appendChild(chip(M.hasTmdbKey,M.hasTmdbKey?'key set':'no key'));c.appendChild(h);
+    var g=el('div','grid3');
+    var k=row(g,'API key',{type:'password',ph:M.hasTmdbKey?'set — leave blank to keep':'TMDB → Settings → API',help:'the short API key or the long read access token both work'});
+    c.appendChild(g);
+    var tb=el('button','','test key');var tm=el('span','msg');tm.style.marginLeft='12px';
+    tb.onclick=function(){tm.className='msg';tm.textContent='testing…';api('POST','/metadata/test',{key:k.value}).then(function(){tm.className='msg ok';tm.textContent='TMDB accepted the key'}).catch(function(e){tm.className='msg err';tm.textContent=e.message})};
+    c.appendChild(tb);c.appendChild(tm);body.appendChild(c);
+    var c2=el('div','card');c2.appendChild(el('h4','','Anime lists'));
+    var g2=el('div','grid3');
+    var tu=row(g2,'titles list address',{value:M.animeTitlesUrl,ph:'default: anime-offline-database',help:'empty for the default, off to turn it off'});
+    var iu=row(g2,'ID mapping address',{value:M.animeIdsUrl,ph:'default: Kometa Anime-IDs',help:'empty for the default, off to turn it off'});
+    c2.appendChild(g2);
+    var ls=el('p','hint','status: checking…');c2.appendChild(ls);
+    function drawStatus(){api('GET','/metadata/status').then(function(r){
+      if(!r.enabled){ls.textContent='metadata needs the database (UNDERMYND_STORE is set to json)';return}
+      var L=r.lists||{};if(!L.checked||L.checked.indexOf('0001')===0){ls.textContent='not downloaded yet';return}
+      ls.textContent='last checked '+new Date(L.checked).toLocaleString()+' · '+(L.titles||0)+' anime with titles'+(L.titlesDate?' (list dated '+L.titlesDate+')':'')+' · '+(L.ids||0)+' ID mappings'+(L.titlesError?' · titles: '+L.titlesError:'')+(L.idsError?' · IDs: '+L.idsError:'')
+    }).catch(function(){ls.textContent='status unknown'})}
+    drawStatus();
+    var rb=el('button','','download now');var rm=el('span','msg');rm.style.marginLeft='12px';
+    rb.onclick=function(){rm.className='msg';rm.textContent='starting…';api('POST','/metadata/lists/refresh',{}).then(function(){rm.className='msg ok';rm.textContent='downloading in the background; check back in a minute';setTimeout(drawStatus,60000)}).catch(function(e){rm.className='msg err';rm.textContent=e.message})};
+    c2.appendChild(rb);c2.appendChild(rm);body.appendChild(c2);
+    var cr=el('p','hint');cr.appendChild(document.createTextNode('Attribution for these sources is on the '));var a=el('a','','credits page');a.href='/credits';a.target='_blank';cr.appendChild(a);cr.appendChild(document.createTextNode('.'));body.appendChild(cr);
+    saveBar(body,function(m){save(function(b){b.metadata={tmdbKey:k.value,animeTitlesUrl:tu.value,animeIdsUrl:iu.value}},m).then(function(){pane(body)})})
   }
 
   function playbackPane(body){

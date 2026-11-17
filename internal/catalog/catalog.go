@@ -35,8 +35,11 @@ type Series struct {
 	Numbering string // BySeason | ByAbsolute
 	Folder    string
 	Monitored bool
-	Added     time.Time
-	Updated   time.Time
+	// EpisodeOrder is "" for TMDB's own seasons, or the id of the TMDB episode
+	// group whose seasons the releases and the library follow.
+	EpisodeOrder string
+	Added        time.Time
+	Updated      time.Time
 }
 
 type Episode struct {
@@ -117,9 +120,9 @@ func (c *Catalog) AddSeries(s Series) (Series, error) {
 		return Series{}, fmt.Errorf("numbering must be %q or %q", BySeason, ByAbsolute)
 	}
 	now := c.now()
-	res, err := c.DB.Exec(`INSERT INTO series (kind, title, year, tmdb_id, tvdb_id, imdb_id, numbering, folder, monitored, added, updated)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.Kind, s.Title, s.Year, nullID(s.TMDBID), nullID(s.TVDBID), s.IMDBID, s.Numbering, s.Folder, s.Monitored, now, now)
+	res, err := c.DB.Exec(`INSERT INTO series (kind, title, year, tmdb_id, tvdb_id, imdb_id, numbering, folder, monitored, episode_order, added, updated)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.Kind, s.Title, s.Year, nullID(s.TMDBID), nullID(s.TVDBID), s.IMDBID, s.Numbering, s.Folder, s.Monitored, s.EpisodeOrder, now, now)
 	if err != nil {
 		return Series{}, err
 	}
@@ -130,12 +133,12 @@ func (c *Catalog) AddSeries(s Series) (Series, error) {
 	return c.Series(s.ID)
 }
 
-const seriesCols = `id, kind, title, year, COALESCE(tmdb_id, 0), COALESCE(tvdb_id, 0), imdb_id, numbering, folder, monitored, added, updated`
+const seriesCols = `id, kind, title, year, COALESCE(tmdb_id, 0), COALESCE(tvdb_id, 0), imdb_id, numbering, folder, monitored, episode_order, added, updated`
 
 func scanSeries(r interface{ Scan(...any) error }) (Series, error) {
 	var s Series
 	var added, updated string
-	err := r.Scan(&s.ID, &s.Kind, &s.Title, &s.Year, &s.TMDBID, &s.TVDBID, &s.IMDBID, &s.Numbering, &s.Folder, &s.Monitored, &added, &updated)
+	err := r.Scan(&s.ID, &s.Kind, &s.Title, &s.Year, &s.TMDBID, &s.TVDBID, &s.IMDBID, &s.Numbering, &s.Folder, &s.Monitored, &s.EpisodeOrder, &added, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Series{}, ErrNotFound
 	}
@@ -176,6 +179,63 @@ func (c *Catalog) SetNumbering(id int64, numbering string) error {
 		return fmt.Errorf("numbering must be %q or %q", BySeason, ByAbsolute)
 	}
 	return c.exec1(`UPDATE series SET numbering = ?, updated = ? WHERE id = ?`, numbering, c.now(), id)
+}
+
+// ErrHasFiles is returned when a series' episodes cannot be renumbered because
+// files are already recorded against them.
+var ErrHasFiles = errors.New("files are already recorded for this series; its episode order can only change before that")
+
+// ReplaceEpisodes swaps a series' whole episode list for eps and records the
+// episode order they follow. It refuses once files are recorded, so no file is
+// ever silently re-pointed to a different episode.
+func (c *Catalog) ReplaceEpisodes(seriesID int64, order string, eps []Episode) error {
+	tx, err := c.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var n int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM file_episodes fe JOIN episodes e ON e.id = fe.episode_id WHERE e.series_id = ?`, seriesID).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return ErrHasFiles
+	}
+	if _, err := tx.Exec(`DELETE FROM episodes WHERE series_id = ?`, seriesID); err != nil {
+		return err
+	}
+	for _, e := range eps {
+		if _, err := tx.Exec(`INSERT INTO episodes (series_id, season, number, absolute, title, air_date) VALUES (?, ?, ?, ?, ?, ?)`,
+			seriesID, e.Season, e.Number, nullInt(e.Absolute), e.Title, e.AirDate); err != nil {
+			return err
+		}
+	}
+	res, err := tx.Exec(`UPDATE series SET episode_order = ?, updated = ? WHERE id = ?`, order, c.now(), seriesID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return tx.Commit()
+}
+
+// SeriesDue lists up to limit series last updated before cutoff, oldest first.
+func (c *Catalog) SeriesDue(cutoff time.Time, limit int) ([]Series, error) {
+	rows, err := c.DB.Query(`SELECT `+seriesCols+` FROM series WHERE tmdb_id IS NOT NULL AND updated < ? ORDER BY updated LIMIT ?`, db.Stamp(cutoff), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Series
+	for rows.Next() {
+		s, err := scanSeries(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
 }
 
 // SetMonitored turns monitoring of a series on or off.

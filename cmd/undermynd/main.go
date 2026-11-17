@@ -18,9 +18,11 @@ import (
 	_ "time/tzdata" // so TZ works in a minimal image
 
 	"github.com/z354prance/undermynd/internal/auth"
+	"github.com/z354prance/undermynd/internal/catalog"
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/db"
 	"github.com/z354prance/undermynd/internal/logbuf"
+	"github.com/z354prance/undermynd/internal/metadata"
 	"github.com/z354prance/undermynd/internal/pipeline"
 	"github.com/z354prance/undermynd/internal/progress"
 	"github.com/z354prance/undermynd/internal/qbitapi"
@@ -99,6 +101,7 @@ func main() {
 	var (
 		st    *store.Store
 		blobs state.Blobs = state.Files{Dir: env.ConfigDir}
+		dbh   *sql.DB
 	)
 	legacyJobs := filepath.Join(env.ConfigDir, "jobs.json")
 	if strings.EqualFold(os.Getenv("UNDERMYND_STORE"), "json") {
@@ -118,6 +121,7 @@ func main() {
 			logger.Fatalf("store: %v", err)
 		}
 		blobs = db.Blobs{DB: h, LegacyDir: env.ConfigDir}
+		dbh = h
 		go keepBackups(logger, h, filepath.Join(env.ConfigDir, "backups"))
 	}
 	au, err := auth.New(env.ConfigDir)
@@ -166,6 +170,10 @@ func main() {
 	site.Storage.Persist(filepath.Join(env.ConfigDir, "storage-scan.json"))
 	go site.Storage.Run(ctx, func() time.Duration { return time.Duration(cfg.Get().StorageScanMinutes) * time.Minute })
 	go pt.Run(ctx)
+	if dbh != nil {
+		site.Metadata = newMetadata(dbh, cfg, logger)
+		go site.Metadata.Run(ctx, func() bool { return cfg.Get().Metadata.TMDBKey != "" })
+	}
 	rp := rss.New(cfg, eng, logger)
 	rp.State = blobs
 	site.RSS = rp
@@ -246,5 +254,30 @@ func keepBackups(logger *log.Logger, h *sql.DB, dir string) {
 			}
 		}
 		time.Sleep(time.Hour)
+	}
+}
+
+// newMetadata builds the metadata service over the database, reading the TMDB
+// key and the anime list addresses from the settings each time they are used.
+func newMetadata(h *sql.DB, cfg *config.Config, logger *log.Logger) *metadata.Service {
+	listURL := func(set, def string) func() string {
+		return func() string {
+			switch v := strings.TrimSpace(set); v {
+			case "":
+				return def
+			case "off":
+				return ""
+			}
+			return strings.TrimSpace(set)
+		}
+	}
+	return &metadata.Service{
+		TMDB: metadata.NewTMDB(h, func() string { return string(cfg.Get().Metadata.TMDBKey) }),
+		Lists: metadata.NewLists(h,
+			func() string { return listURL(cfg.Get().Metadata.AnimeTitlesURL, metadata.DefaultAnimeTitlesURL)() },
+			func() string { return listURL(cfg.Get().Metadata.AnimeIDsURL, metadata.DefaultAnimeIDsURL)() }),
+		Catalog: catalog.New(h),
+		Log:     logger,
+		Now:     time.Now,
 	}
 }
