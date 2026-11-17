@@ -229,13 +229,14 @@ func (s *Server) animeShow(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, ae)
 	}
+	places, _ := s.Anime.Cat.Places(ser)
 	aliases, _ := s.Anime.Cat.SeriesAliases(ser.ID)
 	if aliases == nil {
 		aliases = []string{}
 	}
 	writeJSON(w, map[string]any{
 		"series": row, "tmdbId": ser.TMDBID, "tvdbId": ser.TVDBID, "updated": ser.Updated, "monitored": ser.Monitored,
-		"episodes": out, "aliases": aliases, "files": len(files),
+		"episodes": out, "aliases": aliases, "files": len(files), "places": places,
 	})
 }
 

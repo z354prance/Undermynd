@@ -192,6 +192,18 @@ var migrations = []string{
 		mal_id        INTEGER NOT NULL DEFAULT 0
 	);
 	CREATE INDEX anime_ids_tvdb ON anime_ids(tvdb_id);`,
+
+	// 4: a series kept in more than one folder, as when a sequel that TMDB
+	// counts as a later season has its own folder (Bleach and Bleach
+	// Thousand-Year Blood War). first_season is the TMDB season the folder's
+	// season 1 is.
+	`CREATE TABLE series_folders (
+		folder       TEXT PRIMARY KEY,
+		series_id    INTEGER NOT NULL REFERENCES series(id) ON DELETE CASCADE,
+		first_season INTEGER NOT NULL,
+		numbering    TEXT NOT NULL
+	);
+	CREATE INDEX series_folders_series ON series_folders(series_id);`,
 }
 
 // Version is the schema version this build expects.

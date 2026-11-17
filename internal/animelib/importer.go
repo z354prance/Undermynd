@@ -46,6 +46,11 @@ type Option struct {
 	// named with the same season and number (a v2, or a second group's
 	// release). They are fine; files of different numbers that collide are not.
 	Copies int `json:"copies,omitempty"`
+	// ExtraOf, when set, keeps this folder as an extra folder of a series
+	// already in the catalog, its season 1 being TMDB season FirstSeason.
+	ExtraOf     int64  `json:"extraOf,omitempty"`
+	ExtraTitle  string `json:"extraTitle,omitempty"`
+	FirstSeason int    `json:"firstSeason,omitempty"`
 }
 
 // Folder is one show folder in an import.
@@ -230,7 +235,7 @@ type examined struct {
 // checked against TMDB's episode orders.
 func (im *Importer) examine(ctx context.Context, path string, was *Folder) examined {
 	f := &Folder{Path: path, Name: filepath.Base(path)}
-	if ser, err := im.Cat.SeriesByFolder(path); err == nil {
+	if ser, _, err := im.Cat.SeriesByAnyFolder(path); err == nil {
 		f.State, f.SeriesID = Imported, ser.ID
 		f.Match = &metadata.Candidate{TMDBID: ser.TMDBID, Name: ser.Title, Year: yearStr(ser.Year)}
 		return examined{Folder: f}
@@ -452,6 +457,9 @@ const maxOrders = 8
 // evaluate tries the match's episode orders against the folder's files and sets
 // the folder's options and state.
 func (im *Importer) evaluate(ctx context.Context, f *Folder, files []DiskFile) error {
+	if ser, err := im.Cat.SeriesByTMDB(f.Match.TMDBID); err == nil && ser.Folder != f.Path {
+		return im.evaluateExtra(ctx, f, files, ser)
+	}
 	orders, err := im.Meta.Orders(ctx, f.Match.TMDBID)
 	if err != nil {
 		f.State, f.Reason = Failed, "reading the show from TMDB: "+err.Error()
@@ -534,6 +542,107 @@ func (im *Importer) evaluate(ctx context.Context, f *Folder, files []DiskFile) e
 			notes = append(notes, fmt.Sprintf("%d episode(s) have two copies in the folder (a v2 or a second group); both are recorded", best.Copies))
 		}
 		f.Note = strings.Join(notes, "; ")
+	}
+	return nil
+}
+
+// evaluateExtra reads a folder whose show is already in the catalog under
+// another folder: TMDB counts its sequel as a later season (Bleach Thousand-Year
+// Blood War is Bleach season 17). Each TMDB season is tried as the folder's
+// season 1, in both numberings; episodes another folder already has files for
+// are not taken twice.
+func (im *Importer) evaluateExtra(ctx context.Context, f *Folder, files []DiskFile, ser catalog.Series) error {
+	eps, err := im.Cat.Episodes(ser.ID)
+	if err != nil {
+		return err
+	}
+	recorded, err := im.Cat.SeriesFiles(ser.ID)
+	if err != nil {
+		return err
+	}
+	taken := map[int64]bool{}
+	for _, r := range recorded {
+		if !strings.HasPrefix(r.Path, strings.TrimSuffix(f.Path, string(filepath.Separator))+string(filepath.Separator)) {
+			taken[r.EpisodeID] = true
+		}
+	}
+	seasons := map[int]bool{}
+	for _, e := range eps {
+		if e.Season > 0 {
+			seasons[e.Season] = true
+		}
+	}
+	f.Options, f.Unmapped, f.Note = nil, nil, ""
+	var bestMap map[int]int
+	var bestFiles []DiskFile
+	for first := 1; first <= len(eps); first++ {
+		if !seasons[first] {
+			continue
+		}
+		var prev map[int]int
+		for _, num := range []string{catalog.BySeason, catalog.ByAbsolute} {
+			moved := shift(files, eps, first, num)
+			m, d := MapFiles(moved, eps, num)
+			if len(m) == 0 || (prev != nil && same(prev, m)) {
+				continue
+			}
+			prev = m
+			clash := false
+			for _, j := range m {
+				if taken[eps[j].ID] {
+					clash = true
+					break
+				}
+			}
+			if clash {
+				continue
+			}
+			fit := Fit{Numbering: num, Mapped: len(m), Distinct: d, m: m}
+			opt := Option{OrderName: ser.Title + " from TMDB season " + fmt.Sprint(first), Numbering: num, Mapped: len(m), Distinct: d,
+				Copies: Copies(moved, fit), ExtraOf: ser.ID, ExtraTitle: ser.Title, FirstSeason: first}
+			if n, ok := Extras(moved, eps, fit); ok {
+				opt.Extras = n
+			}
+			f.Options = append(f.Options, opt)
+			if bestMap == nil || better(fit, Fit{Mapped: len(bestMap), Distinct: distinctOf(bestMap)}) {
+				bestMap, bestFiles = m, files
+			}
+		}
+	}
+	if len(f.Options) == 0 {
+		f.State = Needs
+		f.Reason = fmt.Sprintf("%s is already in the library from %s, and these files fit none of its seasons that are still free", ser.Title, ser.Folder)
+		return nil
+	}
+	sort.SliceStable(f.Options, func(i, j int) bool {
+		a, b := f.Options[i], f.Options[j]
+		if a.Distinct+a.Copies != b.Distinct+b.Copies {
+			return a.Distinct+a.Copies > b.Distinct+b.Copies
+		}
+		return a.FirstSeason > b.FirstSeason
+	})
+	for i, d := range bestFiles {
+		if _, ok := bestMap[i]; d.OK && !ok && len(f.Unmapped) < 10 {
+			f.Unmapped = append(f.Unmapped, d.Rel)
+		}
+	}
+	full := 0
+	for _, o := range f.Options {
+		if fits(o, f.Files) {
+			full++
+		}
+	}
+	best := f.Options[0]
+	switch {
+	case !fits(best, f.Files):
+		f.State = Needs
+		f.Reason = fmt.Sprintf("%s is already in the library from %s; these files fit its later seasons only partly", ser.Title, ser.Folder)
+	case full > 1:
+		f.State = Needs
+		f.Reason = fmt.Sprintf("%s is already in the library from %s; choose which of its seasons this folder holds", ser.Title, ser.Folder)
+	default:
+		f.State, f.Reason = Ready, ""
+		f.Note = fmt.Sprintf("kept with %s (from %s) as TMDB season %d onward", ser.Title, ser.Folder, best.FirstSeason)
 	}
 	return nil
 }
@@ -648,6 +757,49 @@ func (im *Importer) Confirm(ctx context.Context, path string, option int) (SyncR
 		return SyncResult{}, errors.New("choose the show and how its files are numbered first")
 	}
 	opt := snap.Options[option]
+	if opt.ExtraOf == 0 {
+		if existing, err := im.Cat.SeriesByTMDB(snap.Match.TMDBID); err == nil && existing.Folder != path {
+			// Another folder of the same show was added since this one was
+			// read: read it again as an extra folder of that show.
+			files, err := ScanFolder(path)
+			if err != nil {
+				return SyncResult{}, err
+			}
+			nf := snap
+			im.count(&nf, files)
+			if err := im.evaluateExtra(ctx, &nf, files, existing); err != nil {
+				return SyncResult{}, err
+			}
+			im.mu.Lock()
+			if f, err := im.folder(path); err == nil {
+				*f = nf
+			}
+			im.save()
+			im.mu.Unlock()
+			if nf.State != Ready {
+				return SyncResult{}, errors.New(nf.Reason)
+			}
+			opt = nf.Options[0]
+		}
+	}
+	if opt.ExtraOf != 0 {
+		if err := im.Cat.AddSeriesFolder(opt.ExtraOf, path, opt.FirstSeason, opt.Numbering); err != nil {
+			return SyncResult{}, err
+		}
+		_ = im.Cat.AddSeriesAlias(opt.ExtraOf, snap.Name, "folder")
+		res, err := im.Sync(opt.ExtraOf)
+		if err != nil {
+			return res, err
+		}
+		im.mu.Lock()
+		if f, err := im.folder(path); err == nil {
+			f.prev, f.State, f.SeriesID, f.Reason = f.State, Imported, opt.ExtraOf, ""
+		}
+		im.save()
+		im.mu.Unlock()
+		im.Log.Printf("anime import: %s kept with %s from TMDB season %d: %d files recorded", snap.Name, opt.ExtraTitle, opt.FirstSeason, res.Recorded)
+		return res, nil
+	}
 	ser, err := im.Meta.AddSeries(ctx, snap.Match.TMDBID, "anime", path, opt.Numbering)
 	if err != nil {
 		if ser.ID != 0 {
@@ -740,17 +892,20 @@ func (im *Importer) Remove(seriesID int64) error {
 	if err != nil {
 		return err
 	}
+	places, _ := im.Cat.Places(ser)
 	if err := im.Cat.RemoveSeries(seriesID); err != nil {
 		return err
 	}
 	im.loadStatus()
 	im.mu.Lock()
 	defer im.mu.Unlock()
-	if f, err := im.folder(ser.Folder); err == nil {
-		f.SeriesID = 0
-		f.State, f.Reason = Needs, "removed from the library: confirm again to add it back"
-		if f.prev != "" && f.prev != Imported {
-			f.State, f.Reason = f.prev, ""
+	for _, pl := range places {
+		if f, err := im.folder(pl.Folder); err == nil {
+			f.SeriesID = 0
+			f.State, f.Reason = Needs, "removed from the library: rescan to add it back"
+			if f.prev != "" && f.prev != Imported && !pl.Extra {
+				f.State, f.Reason = f.prev, ""
+			}
 		}
 	}
 	im.save()
@@ -775,15 +930,12 @@ func (im *Importer) Sync(seriesID int64) (SyncResult, error) {
 	if err != nil {
 		return res, err
 	}
-	if ser.Folder == "" {
-		return res, errors.New("the series has no folder")
-	}
-	if _, err := os.Stat(ser.Folder); err != nil {
-		return res, fmt.Errorf("folder %s: %w", ser.Folder, err)
-	}
-	files, err := ScanFolder(ser.Folder)
+	places, err := im.Cat.Places(ser)
 	if err != nil {
 		return res, err
+	}
+	if len(places) == 0 {
+		return res, errors.New("the series has no folder")
 	}
 	eps, err := im.Cat.Episodes(seriesID)
 	if err != nil {
@@ -797,42 +949,69 @@ func (im *Importer) Sync(seriesID int64) (SyncResult, error) {
 	for _, k := range known {
 		have[k.Path] = true
 	}
-	m, _ := MapFiles(files, eps, ser.Numbering)
 	onDisk := map[string]bool{}
-	for i, d := range files {
-		if !d.OK {
-			continue
-		}
-		res.Files++
-		onDisk[d.Path] = true
-		j, ok := m[i]
-		if !ok {
-			if len(res.Unmapped) < 20 {
-				res.Unmapped = append(res.Unmapped, d.Rel)
+	var unread []string // folders that could not be read or read as empty
+	for _, pl := range places {
+		if _, err := os.Stat(pl.Folder); err != nil {
+			unread = append(unread, pl.Folder)
+			if !pl.Extra {
+				return res, fmt.Errorf("folder %s: %w", pl.Folder, err)
 			}
 			continue
 		}
-		if have[d.Path] {
-			continue
-		}
-		if _, err := im.Cat.AddFile(catalog.File{Path: d.Path, Size: d.Size, EpisodeIDs: []int64{eps[j].ID}, Resolution: d.Res}); err != nil {
+		files, err := ScanFolder(pl.Folder)
+		if err != nil {
 			return res, err
 		}
-		res.Recorded++
-	}
-	if res.Files == 0 {
-		return res, nil
+		m, _ := MapPlace(files, eps, pl.FirstSeason, pl.Numbering)
+		n := 0
+		for i, d := range files {
+			if !d.OK {
+				continue
+			}
+			n++
+			res.Files++
+			onDisk[d.Path] = true
+			j, ok := m[i]
+			if !ok {
+				if len(res.Unmapped) < 20 {
+					res.Unmapped = append(res.Unmapped, d.Rel)
+				}
+				continue
+			}
+			if have[d.Path] {
+				continue
+			}
+			if _, err := im.Cat.AddFile(catalog.File{Path: d.Path, Size: d.Size, EpisodeIDs: []int64{eps[j].ID}, Resolution: d.Res}); err != nil {
+				return res, err
+			}
+			res.Recorded++
+		}
+		if n == 0 {
+			unread = append(unread, pl.Folder)
+		}
 	}
 	for _, k := range known {
-		if !onDisk[k.Path] {
-			if _, err := os.Stat(k.Path); errors.Is(err, os.ErrNotExist) {
-				if err := im.Cat.RemoveFile(k.Path); err == nil {
-					res.Removed++
-				}
+		if onDisk[k.Path] || under(k.Path, unread) {
+			continue
+		}
+		if _, err := os.Stat(k.Path); errors.Is(err, os.ErrNotExist) {
+			if err := im.Cat.RemoveFile(k.Path); err == nil {
+				res.Removed++
 			}
 		}
 	}
 	return res, nil
+}
+
+// under says whether path is inside one of the folders.
+func under(path string, folders []string) bool {
+	for _, f := range folders {
+		if strings.HasPrefix(path, strings.TrimSuffix(f, string(filepath.Separator))+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 // SyncAll checks every anime series' folder.
