@@ -1,0 +1,16 @@
+# B4 check against real sources. Runs only on this spike branch; never merged.
+name: B4 real-source check
+on:
+  push:
+    branches: ["spike/b4-check"]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.x"
+      - env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+        run: go run ./tools/b4check
