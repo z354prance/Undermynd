@@ -30,9 +30,10 @@ type onwayItem struct {
 }
 
 type onwaySeason struct {
-	Season   int `json:"season"`
-	Total    int `json:"total"`
-	Imported int `json:"imported"`
+	Season   int    `json:"season"`
+	Total    int    `json:"total"`
+	Imported int    `json:"imported"`
+	Pixels   string `json:"pixels,omitempty"` // see progress.Season
 }
 
 type onwayShow struct {
@@ -69,6 +70,12 @@ func (s *Server) kindOf(category string) string {
 
 // onway builds the On the way lists from the jobs and the waiting requests.
 func (s *Server) onway(w http.ResponseWriter, r *http.Request) {
+	upgrade := map[string]bool{}
+	if s.Progress != nil {
+		for _, id := range s.Progress.Snapshot().Upgrades {
+			upgrade[id] = true
+		}
+	}
 	shows := map[string]*onwayShow{}
 	var others []onwayItem
 	for _, j := range s.Store.List() {
@@ -93,7 +100,7 @@ func (s *Server) onway(w http.ResponseWriter, r *http.Request) {
 			state = "stalled"
 		}
 		kind := s.kindOf(j.Category)
-		it := onwayItem{Kind: kind, Stage: st[0], State: state, Progress: job.Overall(j), Since: j.Updated}
+		it := onwayItem{Kind: kind, Stage: st[0], State: state, Progress: job.Overall(j), Since: j.Updated, Upgrade: upgrade[j.ID]}
 		rel, isEp := library.Parse(j.Name)
 		if kind == "movie" || kind == "music" || !isEp {
 			it.Title, it.Sub = movieTitle(j.Name)
@@ -129,7 +136,7 @@ func (s *Server) onway(w http.ResponseWriter, r *http.Request) {
 			if shows[k] == nil || hasSeason(bars[k], x.Season) {
 				continue
 			}
-			bars[k] = append(bars[k], onwaySeason{Season: x.Season, Total: x.Total, Imported: x.Imported})
+			bars[k] = append(bars[k], onwaySeason{Season: x.Season, Total: x.Total, Imported: x.Imported, Pixels: x.Pixels})
 		}
 	}
 	out := []onwayShow{}

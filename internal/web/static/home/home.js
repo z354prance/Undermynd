@@ -118,12 +118,15 @@
   function bar(seasons) {
     var b = el("span", "bar"); b.setAttribute("role", "img");
     var imp = 0, tot = 0;
-    seasons.forEach(function (s) { imp += s.imported; tot += s.total; var g = el("span", "s"); for (var i = 0; i < s.total; i++) { var p = el("i"); if (i < s.imported) p.className = "h"; g.appendChild(p); } b.appendChild(g); });
+    // One pixel per episode in episode order: green in the library, white
+    // when a better copy is on the way (upgrade), dim otherwise.
+    seasons.forEach(function (s) { imp += s.imported; tot += s.total; var g = el("span", "s"); g.title = "Season " + s.season + ": " + s.imported + " / " + s.total; var px = s.pixels || "";
+      for (var i = 0; i < s.total; i++) { var p = el("i"), c = px ? px.charAt(i) : (i < s.imported ? "h" : "."); if (c === "h") p.className = "h"; else if (c === "u") p.className = "u"; g.appendChild(p); } b.appendChild(g); });
     b.setAttribute("aria-label", imp + " of " + tot + " episodes in the library");
     return b;
   }
   function epRow(it) {
-    var r = el("div", "ep"); r.appendChild(seg(it.stage, it.state, it.progress, 30, 8));
+    var r = el("div", "ep"); r.appendChild(seg(it.stage, it.state, it.progress, 38, 8));
     r.appendChild(el("span", "code", it.code || ""));
     if (it.upgrade) { var u = el("span", "up"); u.title = "Upgrade of a file already in the library"; u.appendChild(icon("up", 13, "#fff")); r.appendChild(u); }
     r.appendChild(el("span", "stage " + stageTone(it), stageLabel(it))); return r;
@@ -149,7 +152,7 @@
         L.appendChild(c);
       });
       d.others.forEach(function (it) {
-        var r = el("div", "slim " + it.kind); r.appendChild(seg(it.stage, it.state, it.progress, 40, 7));
+        var r = el("div", "slim " + it.kind); r.appendChild(seg(it.stage, it.state, it.progress, 46, 7));
         var t = el("div", "txt"), n = el("div", "nm"); n.appendChild(el("span", "name", it.title + (it.sub && it.kind === "movie" ? " (" + it.sub + ")" : "")));
         if (it.upgrade) { var u = el("span", "up"); u.title = "Upgrade of a file already in the library"; u.appendChild(icon("up", 13, "#fff")); n.appendChild(u); }
         t.appendChild(n); var st = stageLabel(it); if (it.kind === "music" && it.sub) st = it.sub + " · " + st.charAt(0).toLowerCase() + st.slice(1);
@@ -308,8 +311,10 @@
     panel.appendChild(tabs);
     var rows = { discover: [["trending", "Trending"], ["popular-movies", "Popular movies"], ["upcoming", "Upcoming"]], movies: [["popular-movies", "Popular movies"], ["upcoming", "Upcoming"], ["trending-movies", "Trending movies"]], series: [["popular-tv", "Popular series"], ["trending-tv", "Trending series"]] }[view.tab] || [];
     rows.forEach(function (rw) {
-      var sec = el("section", "rp-row"); sec.appendChild(el("h3", "", rw[1])); var strip = el("div", view.tab === "anime" ? "rp-grid" : "rp-strip"); strip.appendChild(el("span", "empty", "Loading…")); sec.appendChild(strip); panel.appendChild(sec);
-      list(rw[0]).then(function (items) { strip.replaceChildren(); items.forEach(function (x) { strip.appendChild(card(x, rw[0] === "anime" ? "anime" : null)); }); if (!items.length) sec.remove(); }).catch(function () { sec.remove(); });
+      var sec = el("section", "rp-row"); sec.appendChild(el("h3", "", rw[1])); var strip = el("div", "rp-strip"); strip.appendChild(el("span", "empty", "Loading…")); var sw = el("div", "rp-sw"); sw.appendChild(strip);
+      [["l", -1, "Scroll left"], ["r", 1, "Scroll right"]].forEach(function (a) { var bt = el("button", "rp-arrow " + a[0]); bt.type = "button"; bt.setAttribute("aria-label", a[2]); bt.textContent = a[1] < 0 ? "\u2039" : "\u203a"; bt.onclick = function (e) { e.stopPropagation(); strip.scrollBy({ left: a[1] * strip.clientWidth * 0.85, behavior: "smooth" }); }; sw.appendChild(bt); });
+      sec.appendChild(sw); panel.appendChild(sec);
+      list(rw[0]).then(function (items) { strip.replaceChildren(); items.forEach(function (x) { strip.appendChild(card(x)); }); if (!items.length) sec.remove(); }).catch(function () { sec.remove(); });
     });
   }
   function results(q) {

@@ -246,3 +246,4 @@ body.ui .term>.body{padding:0;max-width:none}
 body.ui .hv-body button::first-letter{text-transform:uppercase}
 body.ui:not(.wide) .term{max-width:none;margin:0;border:0;border-radius:0;background:none;box-shadow:none;min-height:100vh}
 body.ui:not(.wide) .body{padding:0}
+body.ui .hv-sbar .s i.u{background:#fff}

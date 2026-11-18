@@ -129,3 +129,23 @@ func TestCompleteShowDropsOff(t *testing.T) {
 		t.Fatalf("a complete show should not be listed: %d", n)
 	}
 }
+
+func TestSeasonPixelsFollowEpisodeOrder(t *testing.T) {
+	now := time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC)
+	aired := "2026-01-01T00:00:00Z"
+	eps := []arr.Episode{
+		{ID: 3, Season: 1, Number: 3, Monitored: true, AirDateUTC: aired},
+		{ID: 1, Season: 1, Number: 1, Monitored: true, HasFile: true, AirDateUTC: aired},
+		{ID: 2, Season: 1, Number: 2, Monitored: true, HasFile: true, AirDateUTC: aired},
+		{ID: 4, Season: 1, Number: 4, Monitored: true, AirDateUTC: aired},
+		{ID: 5, Season: 1, Number: 5, Monitored: true, AirDateUTC: "2027-01-01T00:00:00Z"}, // not aired: not counted
+		{ID: 6, Season: 1, Number: 6, Monitored: false, HasFile: true},                   // unmonitored: not counted
+	}
+	queued := map[int64]bool{2: true, 4: true}
+	active := map[int64]bool{2: true, 4: true}
+	c := progress.CountSeasons(eps, queued, now, 30)
+	progress.SeasonPixels(c, eps, queued, active, now, 30)
+	if got := c[1]; got.Pixels != "hu.w" || got.Total != 4 || got.Imported != 2 {
+		t.Fatalf("season 1 = %+v, want pixels hu.w, 2 of 4", got)
+	}
+}

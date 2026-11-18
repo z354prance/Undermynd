@@ -28,6 +28,10 @@ type Season struct {
 	Season   int    `json:"season"`
 	Imported int    `json:"imported"`
 	Total    int    `json:"total"`
+	// Pixels has one letter per counted episode, in episode order: h in the
+	// library, u in the library with a better copy on the way (an upgrade),
+	// w on the way, . still wanted.
+	Pixels string `json:"pixels,omitempty"`
 }
 
 // Recent is a run of imports of one title on one day: "3 episodes of X".
@@ -43,10 +47,12 @@ type Recent struct {
 }
 
 type Snapshot struct {
-	Recent    []Recent  `json:"recent"`
-	Seasons   []Season  `json:"seasons"`
-	Missing   []Missing `json:"missing"`
-	Errors    []string  `json:"errors"`
+	Recent  []Recent  `json:"recent"`
+	Seasons []Season  `json:"seasons"`
+	Missing []Missing `json:"missing"`
+	Errors  []string  `json:"errors"`
+	// Upgrades are the jobs whose episodes are already in the library.
+	Upgrades  []string  `json:"upgrades,omitempty"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
@@ -142,6 +148,8 @@ func (t *Tracker) Refresh(ctx context.Context) {
 
 	// 1. Learn which series and episodes the active Sonarr jobs are for.
 	queued := map[string]map[int64]bool{}
+	active := map[int64]bool{} // episodes of jobs still on the way (not imported)
+	activeJobs := map[string]bool{}
 	live := map[string]bool{}
 	for _, j := range t.Store.List() {
 		if j.State == job.Cleaned || j.State == job.Failed || j.Source == "rss" || j.Source == "watch" {
@@ -160,7 +168,13 @@ func (t *Tracker) Refresh(ctx context.Context) {
 			}
 			t.grabs[j.ID] = g
 		}
+		if j.State != job.Imported {
+			activeJobs[j.ID] = true
+		}
 		for _, g := range t.grabs[j.ID] {
+			if j.State != job.Imported && g.EpisodeID != 0 {
+				active[g.EpisodeID] = true
+			}
 			key := cat.Name + ":" + strconv.FormatInt(g.SeriesID, 10)
 			if queued[key] == nil {
 				queued[key] = map[int64]bool{}
@@ -181,6 +195,7 @@ func (t *Tracker) Refresh(ctx context.Context) {
 
 	// 2. Season counts for every tracked series.
 	seasons := []Season{}
+	hasFile := map[int64]bool{}
 	for key, tr := range t.tracked {
 		cat, ok := s.Category(tr.Category)
 		if !ok || !usable(cat) {
@@ -207,7 +222,11 @@ func (t *Tracker) Refresh(ctx context.Context) {
 		if len(q) == 0 {
 			q = map[int64]bool{0: true} // tracked earlier; keep it active until complete
 		}
+		for _, e := range eps {
+			hasFile[e.ID] = e.HasFile
+		}
 		counts := CountSeasons(eps, q, now, runtime)
+		SeasonPixels(counts, eps, q, active, now, runtime)
 		complete := len(eps) > 0
 		for _, n := range counts {
 			if n.Imported < n.Total {
@@ -224,6 +243,16 @@ func (t *Tracker) Refresh(ctx context.Context) {
 			seasons = append(seasons, n)
 		}
 	}
+	var upgrades []string
+	for id := range activeJobs {
+		for _, g := range t.grabs[id] {
+			if g.EpisodeID != 0 && hasFile[g.EpisodeID] {
+				upgrades = append(upgrades, id)
+				break
+			}
+		}
+	}
+	sort.Strings(upgrades)
 	sort.Slice(seasons, func(i, j int) bool {
 		if seasons[i].Show != seasons[j].Show {
 			return strings.ToLower(seasons[i].Show) < strings.ToLower(seasons[j].Show)
@@ -282,23 +311,32 @@ func (t *Tracker) Refresh(ctx context.Context) {
 	if t.recent == nil {
 		t.recent = []Recent{}
 	}
-	t.snap = Snapshot{Recent: t.recent, Seasons: seasons, Missing: t.missing, Errors: errs, UpdatedAt: now}
+	t.snap = Snapshot{Recent: t.recent, Seasons: seasons, Missing: t.missing, Errors: errs, Upgrades: upgrades, UpdatedAt: now}
 }
 
 // CountSeasons counts monitored episodes per season of a series that is active:
 // those with a file, plus aired ones without. Episodes not yet aired (or whose
 // broadcast has not ended) and undated ones are not missing; a queued episode counts.
+// counted says whether an episode belongs in its season's count: monitored,
+// and in the library, on the way, or already aired.
+func counted(ep arr.Episode, queued map[int64]bool, now time.Time, runtime int) bool {
+	if !ep.Monitored {
+		return false
+	}
+	if !ep.HasFile && !queued[ep.ID] {
+		aired, err := time.Parse(time.RFC3339, ep.AirDateUTC)
+		if err != nil || aired.Add(time.Duration(max(runtime, 0))*time.Minute).After(now) {
+			return false
+		}
+	}
+	return true
+}
+
 func CountSeasons(eps []arr.Episode, queued map[int64]bool, now time.Time, runtime int) map[int]Season {
 	counts := map[int]Season{}
 	for _, ep := range eps {
-		if !ep.Monitored {
+		if !counted(ep, queued, now, runtime) {
 			continue
-		}
-		if !ep.HasFile && !queued[ep.ID] {
-			aired, err := time.Parse(time.RFC3339, ep.AirDateUTC)
-			if err != nil || aired.Add(time.Duration(max(runtime, 0))*time.Minute).After(now) {
-				continue
-			}
 		}
 		c := counts[ep.Season]
 		c.Season = ep.Season
@@ -309,6 +347,36 @@ func CountSeasons(eps []arr.Episode, queued map[int64]bool, now time.Time, runti
 		counts[ep.Season] = c
 	}
 	return counts
+}
+
+// SeasonPixels fills each season's pixel string from the same episodes
+// CountSeasons counted, in episode order.
+func SeasonPixels(counts map[int]Season, eps []arr.Episode, queued, active map[int64]bool, now time.Time, runtime int) {
+	by := map[int][]arr.Episode{}
+	for _, ep := range eps {
+		if counted(ep, queued, now, runtime) {
+			by[ep.Season] = append(by[ep.Season], ep)
+		}
+	}
+	for n, list := range by {
+		sort.Slice(list, func(i, j int) bool { return list[i].Number < list[j].Number })
+		b := make([]byte, 0, len(list))
+		for _, ep := range list {
+			switch {
+			case ep.HasFile && active[ep.ID]:
+				b = append(b, 'u')
+			case ep.HasFile:
+				b = append(b, 'h')
+			case active[ep.ID]:
+				b = append(b, 'w')
+			default:
+				b = append(b, '.')
+			}
+		}
+		c := counts[n]
+		c.Pixels = string(b)
+		counts[n] = c
+	}
 }
 
 // groupRecent folds imports of the same title on the same day into one entry,
