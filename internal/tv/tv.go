@@ -84,6 +84,13 @@ type Series struct {
 	Downloading int    `json:"downloading"`
 	Size        int64  `json:"size"`
 	NextAir     string `json:"nextAir,omitempty"`
+	Poster      string `json:"poster"`
+	Fanart      string `json:"fanart"`
+	Overview    string `json:"overview"`
+	Genres      string `json:"genres"`
+	Network     string `json:"network"`
+	Ended       bool   `json:"ended"`
+	Seasons     int    `json:"seasons"`
 }
 
 // Episode is one episode with its file and state.
@@ -107,13 +114,15 @@ type Episode struct {
 	Status    string    `json:"status"` // have, missing, downloading, cutoff unmet, unaired, unmonitored
 }
 
-const seriesCols = `id, title, year, COALESCE(tmdb_id, 0), COALESCE(tvdb_id, 0), imdb_id, folder, monitored, category, profile, runtime, series_type`
+const seriesCols = `id, title, year, COALESCE(tmdb_id, 0), COALESCE(tvdb_id, 0), imdb_id, folder, monitored, category, profile, runtime, series_type,
+	poster, fanart, overview, genres, network, ended`
 const episodeCols = `id, series_id, season, number, COALESCE(absolute, 0), title, air_date, monitored, file_path, file_quality,
 	file_score, file_version, file_size, job_id, searched, note`
 
 func scanSeries(r interface{ Scan(...any) error }) (Series, error) {
 	var s Series
-	err := r.Scan(&s.ID, &s.Title, &s.Year, &s.TMDB, &s.TVDB, &s.IMDB, &s.Folder, &s.Monitored, &s.Category, &s.Profile, &s.Runtime, &s.Type)
+	err := r.Scan(&s.ID, &s.Title, &s.Year, &s.TMDB, &s.TVDB, &s.IMDB, &s.Folder, &s.Monitored, &s.Category, &s.Profile, &s.Runtime, &s.Type,
+		&s.Poster, &s.Fanart, &s.Overview, &s.Genres, &s.Network, &s.Ended)
 	return s, err
 }
 
@@ -194,7 +203,12 @@ func (s *Service) List(category string) ([]Series, error) {
 	}
 	for i := range out {
 		x := &out[i]
+		seen := map[int]bool{}
 		for _, e := range all[x.ID] {
+			if e.Season > 0 && !seen[e.Season] {
+				seen[e.Season] = true
+				x.Seasons++
+			}
 			s.status(&e, x.Monitored, s.profileOf(ps, x.Profile))
 			x.Size += e.Size
 			switch e.Status {
@@ -300,17 +314,34 @@ func (s *Service) native(category string) bool {
 // ---------------------------------------------------------------- import
 
 type sonarrSeries struct {
-	ID               int64  `json:"id"`
-	Title            string `json:"title"`
-	Year             int    `json:"year"`
-	TVDB             int64  `json:"tvdbId"`
-	TMDB             int64  `json:"tmdbId"`
-	IMDB             string `json:"imdbId"`
-	Path             string `json:"path"`
-	Monitored        bool   `json:"monitored"`
-	Runtime          int    `json:"runtime"`
-	QualityProfileID int    `json:"qualityProfileId"`
-	SeriesType       string `json:"seriesType"`
+	ID               int64    `json:"id"`
+	Title            string   `json:"title"`
+	Year             int      `json:"year"`
+	TVDB             int64    `json:"tvdbId"`
+	TMDB             int64    `json:"tmdbId"`
+	IMDB             string   `json:"imdbId"`
+	Path             string   `json:"path"`
+	Monitored        bool     `json:"monitored"`
+	Runtime          int      `json:"runtime"`
+	QualityProfileID int      `json:"qualityProfileId"`
+	SeriesType       string   `json:"seriesType"`
+	Overview         string   `json:"overview"`
+	Genres           []string `json:"genres"`
+	Network          string   `json:"network"`
+	Status           string   `json:"status"`
+	Images           []struct {
+		CoverType string `json:"coverType"`
+		RemoteURL string `json:"remoteUrl"`
+	} `json:"images"`
+}
+
+// SetArt records a series' poster, backdrop, overview, genres, network and
+// whether it has ended; empty values keep what is there.
+func (s *Service) SetArt(id int64, poster, fanart, overview, genres, network string, ended bool) {
+	s.DB.Exec(`UPDATE series SET poster = CASE WHEN ? != '' THEN ? ELSE poster END, fanart = CASE WHEN ? != '' THEN ? ELSE fanart END,
+		overview = CASE WHEN ? != '' THEN ? ELSE overview END, genres = CASE WHEN ? != '' THEN ? ELSE genres END,
+		network = CASE WHEN ? != '' THEN ? ELSE network END, ended = ? WHERE id = ?`,
+		poster, poster, fanart, fanart, overview, overview, genres, genres, network, network, ended, id)
 }
 
 type sonarrEpisode struct {
@@ -418,6 +449,17 @@ func (s *Service) Import(ctx context.Context, category string) (ImportResult, er
 			sr.Runtime, typ, now, id); err != nil {
 			return res, err
 		}
+		var poster, fanart string
+		for _, im := range sr.Images {
+			u := strings.Replace(im.RemoteURL, "/t/p/original/", "/t/p/w500/", 1)
+			switch im.CoverType {
+			case "poster":
+				poster = u
+			case "fanart":
+				fanart = strings.Replace(im.RemoteURL, "/t/p/original/", "/t/p/w1280/", 1)
+			}
+		}
+		s.SetArt(id, poster, fanart, sr.Overview, strings.Join(sr.Genres, ", "), sr.Network, sr.Status == "ended")
 		var eps []sonarrEpisode
 		if err := cl.Get(ctx, "/episode?seriesId="+strconv.FormatInt(sr.ID, 10), &eps); err != nil {
 			res.Problems = append(res.Problems, sr.Title+": episodes: "+err.Error())
@@ -521,6 +563,15 @@ func (s *Service) refresh(ctx context.Context, seriesID, tmdbID int64) error {
 	tv, err := s.TMDB.TV(ctx, tmdbID, true)
 	if err != nil {
 		return err
+	}
+	var genres []string
+	for _, g := range tv.Genres {
+		genres = append(genres, g.Name)
+	}
+	var poster string
+	s.DB.QueryRow(`SELECT poster FROM series WHERE id = ?`, seriesID).Scan(&poster)
+	if poster == "" {
+		s.SetArt(seriesID, metadata.Image(tv.PosterPath, "w500"), metadata.Image(tv.BackdropPath, "w1280"), tv.Overview, strings.Join(genres, ", "), "", tv.Status == "Ended" || tv.Status == "Canceled")
 	}
 	var known int
 	s.DB.QueryRow(`SELECT COUNT(*) FROM episodes WHERE series_id = ?`, seriesID).Scan(&known)

@@ -447,6 +447,20 @@ var migrations = []string{
 		created   TEXT NOT NULL,
 		last_used TEXT NOT NULL DEFAULT ''
 	);`,
+	// 18: posters and descriptions for the library pages (design v3).
+	`ALTER TABLE movies ADD COLUMN poster TEXT NOT NULL DEFAULT '';
+	ALTER TABLE movies ADD COLUMN fanart TEXT NOT NULL DEFAULT '';
+	ALTER TABLE movies ADD COLUMN overview TEXT NOT NULL DEFAULT '';
+	ALTER TABLE movies ADD COLUMN genres TEXT NOT NULL DEFAULT '';
+	ALTER TABLE series ADD COLUMN poster TEXT NOT NULL DEFAULT '';
+	ALTER TABLE series ADD COLUMN fanart TEXT NOT NULL DEFAULT '';
+	ALTER TABLE series ADD COLUMN overview TEXT NOT NULL DEFAULT '';
+	ALTER TABLE series ADD COLUMN genres TEXT NOT NULL DEFAULT '';
+	ALTER TABLE series ADD COLUMN network TEXT NOT NULL DEFAULT '';
+	ALTER TABLE series ADD COLUMN ended INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE artists ADD COLUMN poster TEXT NOT NULL DEFAULT '';
+	ALTER TABLE artists ADD COLUMN fanart TEXT NOT NULL DEFAULT '';
+	ALTER TABLE artists ADD COLUMN overview TEXT NOT NULL DEFAULT '';`,
 }
 
 // Version is the schema version this build expects.
