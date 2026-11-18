@@ -139,7 +139,7 @@ func TestSeasonPixelsFollowEpisodeOrder(t *testing.T) {
 		{ID: 2, Season: 1, Number: 2, Monitored: true, HasFile: true, AirDateUTC: aired},
 		{ID: 4, Season: 1, Number: 4, Monitored: true, AirDateUTC: aired},
 		{ID: 5, Season: 1, Number: 5, Monitored: true, AirDateUTC: "2027-01-01T00:00:00Z"}, // not aired: not counted
-		{ID: 6, Season: 1, Number: 6, Monitored: false, HasFile: true},                   // unmonitored: not counted
+		{ID: 6, Season: 1, Number: 6, Monitored: false, HasFile: true},                     // unmonitored: not counted
 	}
 	queued := map[int64]bool{2: true, 4: true}
 	active := map[int64]bool{2: true, 4: true}
