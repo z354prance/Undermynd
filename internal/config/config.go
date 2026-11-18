@@ -69,6 +69,20 @@ type Category struct {
 	OnTranscodeFail string `json:"onTranscodeFail"`
 }
 
+// IsArr says whether an arr (Sonarr, Radarr, Lidarr) handles the category.
+func (c Category) IsArr() bool {
+	return c.Kind == "sonarr" || c.Kind == "radarr" || c.Kind == "lidarr"
+}
+
+// OwnLibrary is the library folder of a category no arr handles: "" for arr
+// categories, whose library the arr keeps (an older build may have saved one).
+func (c Category) OwnLibrary() string {
+	if c.IsArr() {
+		return ""
+	}
+	return c.LibraryDir
+}
+
 // Metadata is where show information comes from (roadmap B4).
 type Metadata struct {
 	TMDBKey secret.String `json:"tmdbKey"` // TMDB API key (v3) or read access token (v4)

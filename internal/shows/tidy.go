@@ -178,7 +178,7 @@ func (s *Service) TidyList() ([]TidySummary, time.Time, error) {
 	for _, root := range s.Roots() {
 		ents, err := os.ReadDir(root.Dir)
 		if err != nil {
-			return nil, time.Time{}, fmt.Errorf("%s: %w", root.Dir, err)
+			continue // the Anime page reports a missing library folder
 		}
 		for _, e := range ents {
 			if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {

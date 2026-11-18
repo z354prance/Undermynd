@@ -656,7 +656,7 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	var v settingsView
 	for _, k := range c.Categories {
 		v.Categories = append(v.Categories, categoryView{Name: k.Name, Kind: k.Kind, ArrURL: k.ArrURL,
-			HasArrAPIKey: k.ArrAPIKey != "", Transcode: k.Transcode, OnFail: k.OnTranscodeFail, LibraryDir: k.LibraryDir, KeepNames: k.KeepNames})
+			HasArrAPIKey: k.ArrAPIKey != "", Transcode: k.Transcode, OnFail: k.OnTranscodeFail, LibraryDir: k.OwnLibrary(), KeepNames: k.KeepNames})
 	}
 	v.QBit.URL, v.QBit.Username, v.QBit.HasPassword, v.QBit.SaveDir = c.QBit.URL, c.QBit.Username, c.QBit.Password != "", c.QBit.SaveDir
 	v.Feeds, v.Rules, v.Watches = c.Feeds, c.Rules, c.Watches
@@ -701,7 +701,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		nc := config.Category{Name: name, Kind: c.Kind, ArrURL: strings.TrimSpace(c.ArrURL), Transcode: c.Transcode, OnTranscodeFail: c.OnFail, KeepNames: c.KeepNames}
-		if lib := strings.TrimSpace(c.LibraryDir); lib != "" {
+		if lib := strings.TrimSpace(c.LibraryDir); lib != "" && !nc.IsArr() {
 			lib = filepath.Clean(lib)
 			if !filepath.IsAbs(lib) {
 				jsonErr(w, http.StatusBadRequest, "category "+name+": the library folder must be a full path starting with /")
