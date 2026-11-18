@@ -144,7 +144,20 @@ type Requests struct {
 	URL     string        `json:"url"`
 	APIKey  secret.String `json:"apiKey"`
 	UserID  int64         `json:"userId"`
+	// Mode is "seerr" (the default: requests go through Seerr) or "native"
+	// (Undermynd searches TMDB, keeps the requests, and on approval adds movies
+	// to Radarr, shows to Sonarr and anime to the Anime page).
+	Mode string `json:"mode,omitempty"`
+	// AutoApprove approves native requests as they come in. Off by default.
+	AutoApprove bool `json:"autoApprove,omitempty"`
+	// MovieCategory and TVCategory name the Radarr and Sonarr categories
+	// approved requests go to; empty takes the first of that kind.
+	MovieCategory string `json:"movieCategory,omitempty"`
+	TVCategory    string `json:"tvCategory,omitempty"`
 }
+
+// Native says requests are kept by Undermynd rather than Seerr.
+func (r Requests) Native() bool { return r.Mode == "native" }
 
 // Access lets visitors ask for a media server account; see the access package.
 type Access struct {

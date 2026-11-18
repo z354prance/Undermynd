@@ -181,7 +181,11 @@ type EpisodeGroupSummary struct {
 }
 
 type TV struct {
-	ID           int64           `json:"id"`
+	ID               int64  `json:"id"`
+	OriginalLanguage string `json:"original_language"`
+	Genres           []struct {
+		ID int `json:"id"`
+	} `json:"genres"`
 	Name         string          `json:"name"`
 	OriginalName string          `json:"original_name"`
 	FirstAirDate string          `json:"first_air_date"`
@@ -277,4 +281,97 @@ func (t *TMDB) FindByTVDB(ctx context.Context, tvdbID int64) (int64, error) {
 		return 0, nil
 	}
 	return r.TV[0].ID, nil
+}
+
+// MediaResult is a movie or show from TMDB's searches and lists.
+type MediaResult struct {
+	ID               int64   `json:"id"`
+	MediaType        string  `json:"media_type"`
+	Title            string  `json:"title"`
+	Name             string  `json:"name"`
+	OriginalTitle    string  `json:"original_title"`
+	OriginalName     string  `json:"original_name"`
+	ReleaseDate      string  `json:"release_date"`
+	FirstAirDate     string  `json:"first_air_date"`
+	Overview         string  `json:"overview"`
+	PosterPath       string  `json:"poster_path"`
+	GenreIDs         []int   `json:"genre_ids"`
+	OriginalLanguage string  `json:"original_language"`
+	Popularity       float64 `json:"popularity"`
+}
+
+// Anime says whether TMDB has it as Japanese animation.
+func (m MediaResult) Anime() bool {
+	if m.OriginalLanguage != "ja" {
+		return false
+	}
+	for _, g := range m.GenreIDs {
+		if g == 16 {
+			return true
+		}
+	}
+	return false
+}
+
+// SearchMulti searches movies and shows together.
+func (t *TMDB) SearchMulti(ctx context.Context, query string) ([]MediaResult, error) {
+	var r struct {
+		Results []MediaResult `json:"results"`
+	}
+	if err := t.get(ctx, "/search/multi", url.Values{"query": {query}, "include_adult": {"false"}}, time.Hour, &r); err != nil {
+		return nil, err
+	}
+	out := r.Results[:0]
+	for _, m := range r.Results {
+		if m.MediaType == "movie" || m.MediaType == "tv" {
+			out = append(out, m)
+		}
+	}
+	return out, nil
+}
+
+// Trending lists this week's trending movies and shows; kind is "all",
+// "movie" or "tv".
+func (t *TMDB) Trending(ctx context.Context, kind string) ([]MediaResult, error) {
+	var r struct {
+		Results []MediaResult `json:"results"`
+	}
+	if err := t.get(ctx, "/trending/"+kind+"/week", nil, 3*time.Hour, &r); err != nil {
+		return nil, err
+	}
+	for i := range r.Results {
+		if r.Results[i].MediaType == "" {
+			r.Results[i].MediaType = kind
+		}
+	}
+	return r.Results, nil
+}
+
+// MovieInfo is what a movie request needs.
+type MovieInfo struct {
+	ID               int64  `json:"id"`
+	Title            string `json:"title"`
+	ReleaseDate      string `json:"release_date"`
+	IMDB             string `json:"imdb_id"`
+	OriginalLanguage string `json:"original_language"`
+}
+
+// Movie looks a movie up.
+func (t *TMDB) Movie(ctx context.Context, id int64) (MovieInfo, error) {
+	var m MovieInfo
+	err := t.get(ctx, fmt.Sprintf("/movie/%d", id), nil, 24*time.Hour, &m)
+	return m, err
+}
+
+// Anime says whether TMDB has the show as Japanese animation.
+func (t TV) Anime() bool {
+	if t.OriginalLanguage != "ja" {
+		return false
+	}
+	for _, g := range t.Genres {
+		if g.ID == 16 {
+			return true
+		}
+	}
+	return false
 }
