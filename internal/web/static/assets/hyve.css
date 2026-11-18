@@ -280,3 +280,15 @@ body.ui .seg .race{stroke-dasharray:45 100;animation:hvrace 1.4s cubic-bezier(.4
 body.ui .seg .race.slow{animation-duration:2.8s;opacity:.55}
 @keyframes hvrace{from{stroke-dashoffset:45}to{stroke-dashoffset:-100}}
 @media (prefers-reduced-motion:reduce){body.ui .seg .race{animation:none}}
+
+/* anime season view: one proportional segment per season or numbered run */
+body.ui .a-ssw{display:flex;align-items:center;gap:10px;min-width:220px;max-width:340px}
+body.ui .a-ss{display:flex;gap:3px;flex:1;min-width:0;height:20px}
+body.ui .a-seg{position:relative;flex:1 1 0;min-width:26px;border-radius:5px;background:#2b2e32;overflow:hidden}
+body.ui .a-seg{background:#3fb97a}body.ui .a-seg.gap{background:#d9a23a}
+body.ui .a-seg u{position:absolute;top:0;bottom:0;background:#151617;transform:translateX(-50%)}
+body.ui .a-seg.none{background:transparent;border:1px dashed var(--line,#303336)}
+body.ui .a-seg b{position:relative;display:block;padding:0 6px;font:600 11px/20px var(--mono);color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6);white-space:nowrap;overflow:hidden;text-overflow:clip}
+body.ui .a-sscnt{flex:none;font:13px var(--mono);color:var(--text)}
+body.ui .a-sscnt em{font-style:normal;color:#d9a23a}
+@media (max-width:760px){body.ui .a-ssw{min-width:150px}}
