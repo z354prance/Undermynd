@@ -111,12 +111,13 @@ button.more{border:0;background:none;padding:4px 0 0;color:var(--accent);font-si
 @keyframes blink{0%,49%{opacity:1}50%,100%{opacity:.15}}
 @keyframes flick{0%,100%{opacity:1}8%{opacity:.2}12%{opacity:1}40%{opacity:.9}44%{opacity:.1}50%{opacity:1}78%{opacity:.4}82%{opacity:1}}
 .pc{flex:none}
-/* race: a streak running through the empty part of a ring (pathLength 100) */
-.race{stroke-dasharray:45 100;animation:race 1.4s cubic-bezier(.45,.05,.55,.95) infinite}
-.race.slow{animation-duration:2.8s;opacity:.55}
-@keyframes race{from{stroke-dashoffset:45}to{stroke-dashoffset:-100}}
-.pc .race{stroke-dasharray:22 100;animation:racep 2.2s cubic-bezier(.45,.05,.55,.95) infinite;opacity:.45}
-@keyframes racep{from{stroke-dashoffset:22}to{stroke-dashoffset:-100}}
+/* flow (the old wire's): thin dashes running along the current section */
+.flow{stroke-dasharray:3 3;animation:flow 1.2s linear infinite}
+.flow.slow{animation-duration:2.4s;opacity:.6}
+@keyframes flow{from{stroke-dashoffset:12}to{stroke-dashoffset:0}}
+.seg .cur{opacity:.28}
+.seg .in-trk{stroke:#2e3134}
+.pc .head{fill:#fff;filter:drop-shadow(0 0 3px rgba(255,255,255,.6))}
 @media (prefers-reduced-motion:reduce){.seg *,.pc *{animation:none!important}}
 
 /* recently added */

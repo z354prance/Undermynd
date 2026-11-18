@@ -275,11 +275,13 @@ body.ui .hv-badge{position:absolute;top:7px;right:7px;min-width:24px;height:24px
 body.ui .hv-more{margin-top:14px}
 @media (max-width:760px){body.ui .hv-pgrid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:12px 10px}body.ui .hv-pgrid.sq{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}}
 
-/* race: a streak running through the empty part of a ring (pathLength 100) */
-body.ui .seg .race{stroke-dasharray:45 100;animation:hvrace 1.4s cubic-bezier(.45,.05,.55,.95) infinite}
-body.ui .seg .race.slow{animation-duration:2.8s;opacity:.55}
-@keyframes hvrace{from{stroke-dashoffset:45}to{stroke-dashoffset:-100}}
-@media (prefers-reduced-motion:reduce){body.ui .seg .race{animation:none}}
+/* flow (the old wire's): thin dashes running through the empty part of a ring */
+body.ui .seg .flow{stroke-dasharray:3 3;animation:hvflow 1.2s linear infinite}
+body.ui .seg .flow.slow{animation-duration:2.4s;opacity:.6}
+body.ui .seg .cur{opacity:.28}
+body.ui .seg .in-trk{stroke:#2e3134}
+@keyframes hvflow{from{stroke-dashoffset:12}to{stroke-dashoffset:0}}
+@media (prefers-reduced-motion:reduce){body.ui .seg .flow{animation:none}}
 
 /* anime season view: one proportional segment per season or numbered run */
 body.ui .a-ssw{display:flex;align-items:center;gap:10px;min-width:220px;max-width:340px}

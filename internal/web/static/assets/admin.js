@@ -126,10 +126,13 @@
     STAGES6.forEach(function(st,i){
       if(i<at||state==='done'){arc(i,'dn');return}
       if(i>at){arc(i,'trk');return}
-      if(state==='working'){arc(i,'trk');var f=Math.min(1,pct/100);if(pct>0){arc(i,'k-'+st,0,f);txt=String(pct)}if(f<1){var r=arc(i,'race k-'+st,f,1);r.setAttribute('pathLength','100');phase(r,1400)}}
+      if(state==='working'||state==='waiting'){
+        // Only the current section moves; its own progress is a thin ring on the inner edge.
+        arc(i,'trk');arc(i,'cur k-'+st);var fl=arc(i,'flow k-'+st+(state==='waiting'?' slow':''));fl.setAttribute('stroke-width',2.6);phase(fl,state==='waiting'?2400:1200);
+        if(state==='working'){var ci=svgN('circle',{cx:30,cy:30,r:15,fill:'none','stroke-width':2.2});ci.setAttribute('class','in-trk');s.appendChild(ci);
+          if(pct>0){var dg=Math.PI/180,e=Math.min(359.9,pct*3.6);var ip=svgN('path',{d:'M30 15 A15 15 0 '+(e>180?1:0)+' 1 '+(30+15*Math.sin(e*dg)).toFixed(2)+' '+(30-15*Math.cos(e*dg)).toFixed(2),fill:'none','stroke-width':2.2,'stroke-linecap':'round'});ip.setAttribute('class','in k-'+st);s.appendChild(ip);txt=String(pct)}}}
       else if(state==='stalled'){phase(arc(i,'stall'),1100);txt='!';tc='rt y'}
-      else if(state==='failed'){phase(arc(i,'fail'),1600);txt='×';tc='rt r'}
-      else{arc(i,'trk');var wr=arc(i,'race slow k-'+st);wr.setAttribute('pathLength','100');phase(wr,2800)}});
+      else if(state==='failed'){phase(arc(i,'fail'),1600);txt='×';tc='rt r'}});
     var t=svgN('text',{x:30,y:36,'text-anchor':'middle','class':tc});t.textContent=txt;s.appendChild(t);return s}
   var JOBSTAGE={received:['found','waiting'],submitted:['found','working'],downloading:['download','working'],pulling:['transfer','working'],downloaded:['convert','waiting'],queued_transcode:['convert','waiting'],transcoding:['convert','working'],verifying:['convert','working'],ready:['ready','waiting'],imported:['ready','done'],cleaned:['ready','done']};
   var FAILAT={download:'download',transfer:'transfer',convert:'convert',ready:'ready'};
