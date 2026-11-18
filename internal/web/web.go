@@ -10,6 +10,7 @@ import (
 	"github.com/z354prance/undermynd/internal/tdarr"
 	"io/fs"
 	"log"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -72,6 +73,8 @@ func New(s *store.Store, e *pipeline.Engine, c *config.Config, a *auth.Auth, l *
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	sub, _ := fs.Sub(staticFS, "static")
+	// The container has no MIME table; fonts must say what they are.
+	mime.AddExtensionType(".woff2", "font/woff2")
 	files := http.FileServer(http.FS(sub))
 
 	// ---- public: no sign-in, reads only the public view
