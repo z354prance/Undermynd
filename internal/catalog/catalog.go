@@ -1,4 +1,4 @@
-// Package catalog is Undermynd's own list of what the library holds and should
+// Package catalog is HyveMynd's own list of what the library holds and should
 // hold: series with their seasons and episodes, movies, the other titles each is
 // known by, the files on disk, and which jobs are fetching what. It is the base
 // the native anime library, requests and the movie and TV engine build on.

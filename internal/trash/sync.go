@@ -10,7 +10,7 @@ import (
 	"github.com/z354prance/undermynd/internal/decision"
 )
 
-// Syncer applies guide profiles to Undermynd's profiles.
+// Syncer applies guide profiles to HyveMynd's profiles.
 type Syncer struct {
 	Client *Client
 	Store  *decision.Store
@@ -42,7 +42,7 @@ func (s *Syncer) plan(ctx context.Context, app string, ids []string, size string
 	return im, Merge(app, &im, ps, fs, sz), nil
 }
 
-// Preview lists what applying would change, and the conditions Undermynd
+// Preview lists what applying would change, and the conditions HyveMynd
 // cannot check.
 func (s *Syncer) Preview(ctx context.Context, app string, ids []string, size string) ([]Change, []string, error) {
 	im, ch, err := s.plan(ctx, app, ids, size)

@@ -14,7 +14,7 @@ import (
 
 // Handler serves the indexers to the arrs as Torznab and Newznab endpoints:
 // /indexers/<id>/api passes a search to that indexer (its own key stays in
-// Undermynd), and /indexers/all-torrent/api and /indexers/all-usenet/api search
+// HyveMynd), and /indexers/all-torrent/api and /indexers/all-usenet/api search
 // every usable indexer of that protocol at once. key is the key the arrs
 // send (the download client password).
 func (s *Service) Handler(key func() string) http.Handler {
@@ -164,7 +164,7 @@ type xfeed struct {
 func feed(protocol string, results []Result) any {
 	var f xfeed
 	f.Version, f.NS, f.NSNew = "2.0", "http://torznab.com/schemas/2015/feed", "http://www.newznab.com/DTD/2010/feeds/attributes/"
-	f.Channel.Title = "Undermynd"
+	f.Channel.Title = "HyveMynd"
 	for _, r := range results {
 		it := xitem{Title: r.Title, GUID: r.GUID, Link: r.Link, Comments: r.Info, Size: r.Size}
 		if it.GUID == "" {
@@ -241,7 +241,7 @@ type xcat struct {
 
 func aggregateCaps(protocol string) any {
 	var c xcaps
-	c.Server.Title = "Undermynd (all " + protocol + " indexers)"
+	c.Server.Title = "HyveMynd (all " + protocol + " indexers)"
 	c.Limits.Max, c.Limits.Default = 100, 100
 	c.Searching.Search = mode{"yes", "q"}
 	c.Searching.TV = mode{"yes", "q,season,ep,tvdbid"}

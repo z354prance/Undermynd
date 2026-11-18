@@ -9,7 +9,7 @@ import (
 )
 
 // The public dashboard is Overmynd's page (static/dash), unchanged except for the
-// name and logo. It reads the same /api/v1 routes Overmynd served; Undermynd answers
+// name and logo. It reads the same /api/v1 routes Overmynd served; HyveMynd answers
 // them from its own job store and the arrs, so the page needs no other change.
 
 func (s *Server) dashboardRoutes(mux *http.ServeMux, files http.Handler) {
@@ -41,7 +41,7 @@ func (s *Server) dashboardRoutes(mux *http.ServeMux, files http.Handler) {
 	})
 	mux.HandleFunc("GET /api/v1/auth/status", func(w http.ResponseWriter, r *http.Request) {
 		// "authenticated" stays false: the public page has no admin screens here. "admin" only
-		// switches on the approve/deny buttons for the Undermynd admin session.
+		// switches on the approve/deny buttons for the HyveMynd admin session.
 		writeJSON(w, map[string]any{"authenticated": false, "setup_required": false, "admin": s.signedIn(r)})
 	})
 	mux.HandleFunc("GET /api/v1/media-request/status", s.requestStatus)
@@ -58,7 +58,7 @@ func (s *Server) dashboardRoutes(mux *http.ServeMux, files http.Handler) {
 
 // Each place a job can be is a "service" to the page, so cards say where it is.
 var serviceIDs = map[string]int64{"torboxarr": 1, "qbittorrent": 2, "nzbget": 3, "tdarr": 4, "undermynd": 5}
-var serviceNames = map[string]string{"torboxarr": "TorBox", "qbittorrent": "qBittorrent", "nzbget": "NZBGet", "tdarr": "Tdarr", "undermynd": "Undermynd"}
+var serviceNames = map[string]string{"torboxarr": "TorBox", "qbittorrent": "qBittorrent", "nzbget": "NZBGet", "tdarr": "Tdarr", "undermynd": "HyveMynd"}
 
 type v1Download struct {
 	ID              string   `json:"id"`

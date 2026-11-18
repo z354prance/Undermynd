@@ -1,5 +1,5 @@
 // Package movies runs native movie categories (roadmap F4): the library is
-// read from Radarr once, then Undermynd keeps it: it searches its own indexers
+// read from Radarr once, then HyveMynd keeps it: it searches its own indexers
 // for monitored movies that are missing or below their profile's cutoff, grabs
 // the best release into the pipeline, and imports the finished file under its
 // own naming (or, in a dry run, only says where it would go).
@@ -284,7 +284,7 @@ func (s *Service) Import(ctx context.Context, category string) (ImportResult, er
 			res.Updated++
 		}
 		// A download under way is kept; the file is Radarr's view until
-		// Undermynd imports one itself.
+		// HyveMynd imports one itself.
 		if _, err := s.DB.Exec(`UPDATE movies SET title = ?, year = ?, imdb_id = ?, folder = ?, monitored = ?, category = ?, profile = ?,
 			runtime = ?, file_path = ?, file_quality = ?, file_score = ?, file_version = ?, file_size = ?, updated = ? WHERE id = ?`,
 			m.Title, m.Year, m.IMDB, folder, m.Monitored, category, prof, m.Runtime, file, quality, score, version, size, now, id); err != nil {

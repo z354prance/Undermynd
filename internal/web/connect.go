@@ -138,7 +138,7 @@ func (s *Server) notificationsTest(w http.ResponseWriter, r *http.Request) {
 		if n.Name == in.Name {
 			ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 			defer cancel()
-			if err := s.Notify.Send(ctx, n, notify.Event{Event: "test", Item: "Undermynd can reach " + n.Name}); err != nil {
+			if err := s.Notify.Send(ctx, n, notify.Event{Event: "test", Item: "HyveMynd can reach " + n.Name}); err != nil {
 				jsonErr(w, http.StatusBadGateway, err.Error())
 				return
 			}

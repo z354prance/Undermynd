@@ -162,8 +162,8 @@ func (a *Auth) Setup(key, password string) (SetupResult, error) {
 		a.acct = nil
 		return SetupResult{}, err
 	}
-	u := url.URL{Scheme: "otpauth", Host: "totp", Path: "/Undermynd:admin"}
-	q := url.Values{"secret": {sec}, "issuer": {"Undermynd"}}
+	u := url.URL{Scheme: "otpauth", Host: "totp", Path: "/HyveMynd:admin"}
+	q := url.Values{"secret": {sec}, "issuer": {"HyveMynd"}}
 	u.RawQuery = q.Encode()
 	return SetupResult{TOTPSecret: sec, OTPAuthURI: u.String()}, nil
 }

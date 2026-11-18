@@ -68,7 +68,7 @@ type Imported struct {
 	Profiles []Profile
 	Formats  []Format
 	Sizes    map[string]SizeLimit
-	Skipped  []string // conditions Undermynd cannot check, by format
+	Skipped  []string // conditions HyveMynd cannot check, by format
 }
 
 var (

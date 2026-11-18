@@ -61,7 +61,7 @@ type Category struct {
 	// LibraryDir, for categories no arr handles, is a library of show folders the
 	// finished episodes are placed into, matched by title.
 	LibraryDir string `json:"libraryDir,omitempty"`
-	// Native (roadmap F4, F5) means Undermynd, not the arr, searches, grabs
+	// Native (roadmap F4, F5) means HyveMynd, not the arr, searches, grabs
 	// and imports this category's movies or shows into LibraryDir. The arr is
 	// still read for the starting library.
 	Native bool `json:"native,omitempty"`
@@ -103,11 +103,11 @@ type NZBGet struct {
 }
 
 // Tdarr hands videos to a Tdarr library by folder. Create a library in Tdarr that
-// watches InDir and writes to OutDir (folder to folder); Undermynd does not touch any other library.
+// watches InDir and writes to OutDir (folder to folder); HyveMynd does not touch any other library.
 type Tdarr struct {
-	URL            string        `json:"url"` // optional; with it Undermynd watches Tdarr over its API
+	URL            string        `json:"url"` // optional; with it HyveMynd watches Tdarr over its API
 	APIKey         secret.String `json:"apiKey"`
-	LibraryID      string        `json:"libraryId"` // the dedicated Undermynd library
+	LibraryID      string        `json:"libraryId"` // the dedicated HyveMynd library
 	MaxInFlight    int           `json:"maxInFlight"`
 	StallMinutes   int           `json:"stallMinutes"`
 	InDir          string        `json:"inDir"`
@@ -127,7 +127,7 @@ type Playback struct {
 	// importer places, so it shows up without waiting for a library scan. Off
 	// by default: Emby finds new files by itself.
 	RefreshAfterPlace bool `json:"refreshAfterPlace,omitempty"`
-	// PathFrom and PathTo map Undermynd's paths to the media server's when
+	// PathFrom and PathTo map HyveMynd's paths to the media server's when
 	// they differ ("/media" here is "/mnt/user/media" there).
 	PathFrom string `json:"pathFrom,omitempty"`
 	PathTo   string `json:"pathTo,omitempty"`
@@ -149,7 +149,7 @@ type Requests struct {
 	APIKey  secret.String `json:"apiKey"`
 	UserID  int64         `json:"userId"`
 	// Mode is "seerr" (the default: requests go through Seerr) or "native"
-	// (Undermynd searches TMDB, keeps the requests, and on approval adds movies
+	// (HyveMynd searches TMDB, keeps the requests, and on approval adds movies
 	// to Radarr, shows to Sonarr and anime to the Anime page).
 	Mode string `json:"mode,omitempty"`
 	// AutoApprove approves native requests as they come in. Off by default.
@@ -160,7 +160,7 @@ type Requests struct {
 	TVCategory    string `json:"tvCategory,omitempty"`
 }
 
-// Native says requests are kept by Undermynd rather than Seerr.
+// Native says requests are kept by HyveMynd rather than Seerr.
 func (r Requests) Native() bool { return r.Mode == "native" }
 
 // Access lets visitors ask for a media server account; see the access package.
@@ -204,7 +204,7 @@ type Watch struct {
 	Enabled  bool   `json:"enabled"`
 }
 
-// Shadow mode (roadmap F3): for every grab Sonarr or Radarr makes, Undermynd
+// Shadow mode (roadmap F3): for every grab Sonarr or Radarr makes, HyveMynd
 // searches its own indexers and records what it would have picked.
 type Shadow struct {
 	Enabled bool `json:"enabled"`
@@ -284,7 +284,7 @@ type Music struct {
 	SearchPerHour int `json:"searchPerHour,omitempty"`
 }
 
-// Notification is one place Undermynd tells about what happens (roadmap I1).
+// Notification is one place HyveMynd tells about what happens (roadmap I1).
 type Notification struct {
 	Name    string        `json:"name"`
 	Kind    string        `json:"kind"` // webhook, discord, ntfy
@@ -518,7 +518,7 @@ func SafeName(s string) string {
 	return s
 }
 
-// Work is the folder for everything Undermynd creates while a job is in flight.
+// Work is the folder for everything HyveMynd creates while a job is in flight.
 func (e Env) Work() string {
 	if e.WorkDir != "" {
 		return e.WorkDir

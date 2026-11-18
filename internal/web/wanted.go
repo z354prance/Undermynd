@@ -147,7 +147,7 @@ type importFile struct {
 	EpLabel  string  `json:"episodeLabel,omitempty"`
 }
 
-// manualImportList lists the video files in a folder with what Undermynd
+// manualImportList lists the video files in a folder with what HyveMynd
 // reads from each name and the movie or episodes it would go to.
 func (s *Server) manualImportList(w http.ResponseWriter, r *http.Request) {
 	dir := r.URL.Query().Get("path")

@@ -192,7 +192,7 @@ func TestIndexers(t *testing.T) {
 		t.Fatalf("import twice: %v", again)
 	}
 
-	// The arrs' side: Torznab endpoints with Undermynd's key.
+	// The arrs' side: Torznab endpoints with HyveMynd's key.
 	srv := httptest.NewServer(svc.Handler(func() string { return "UK" }))
 	defer srv.Close()
 	call := func(path string, v url.Values) string {

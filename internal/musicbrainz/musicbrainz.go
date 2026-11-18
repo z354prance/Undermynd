@@ -81,7 +81,7 @@ func (c *Client) get(ctx context.Context, path string, q url.Values, ttl time.Du
 		}
 		agent := c.Agent
 		if agent == "" {
-			agent = "Undermynd/1.0 ( https://github.com/z354prance/Undermynd )"
+			agent = "HyveMynd/1.0 ( https://github.com/z354prance/HyveMynd )"
 		}
 		req.Header.Set("User-Agent", agent)
 		req.Header.Set("Accept", "application/json")

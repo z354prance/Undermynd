@@ -38,7 +38,7 @@ func TestSend(t *testing.T) {
 	}
 	var wh Event
 	json.Unmarshal([]byte(strings.Split(got["/webhook"], "|")[0]), &wh)
-	if wh.Item != "Heat (1995)" || !strings.Contains(got["/discord"], `"content":"Imported: Heat (1995) (Bluray-1080p)`) || !strings.HasSuffix(got["/ntfy"], "|Undermynd: imported") {
+	if wh.Item != "Heat (1995)" || !strings.Contains(got["/discord"], `"content":"Imported: Heat (1995) (Bluray-1080p)`) || !strings.HasSuffix(got["/ntfy"], "|HyveMynd: imported") {
 		t.Fatalf("%v", got)
 	}
 	start := time.Now()

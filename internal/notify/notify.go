@@ -107,11 +107,11 @@ func (n *Notifier) Send(ctx context.Context, t config.Notification, e Event) err
 	headers := map[string]string{}
 	switch t.Kind {
 	case "discord":
-		body, _ = json.Marshal(map[string]any{"username": "Undermynd", "content": e.Text()})
+		body, _ = json.Marshal(map[string]any{"username": "HyveMynd", "content": e.Text()})
 	case "ntfy":
 		body = []byte(e.Text())
 		ctype = "text/plain"
-		headers["Title"] = "Undermynd: " + e.Event
+		headers["Title"] = "HyveMynd: " + e.Event
 		headers["Tags"] = map[string]string{"failed": "warning", "imported": "white_check_mark", "request": "inbox_tray"}[e.Event]
 	case "webhook", "":
 		body, _ = json.Marshal(e)
@@ -132,7 +132,7 @@ func (n *Notifier) Send(ctx context.Context, t config.Notification, e Event) err
 			return err
 		}
 		req.Header.Set("Content-Type", ctype)
-		req.Header.Set("User-Agent", "Undermynd")
+		req.Header.Set("User-Agent", "HyveMynd")
 		for k, v := range headers {
 			if v != "" {
 				req.Header.Set(k, v)

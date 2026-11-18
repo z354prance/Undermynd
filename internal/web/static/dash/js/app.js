@@ -1834,7 +1834,7 @@ async function serviceAPIRequest(url, options = {}) {
     ...options,
     credentials: "same-origin",
     headers: {
-      "X-Undermynd-Request": "1",
+      "X-HyveMynd-Request": "1",
       ...(options.body ? { "Content-Type": "application/json" } : {}),
       ...(options.headers || {}),
     },

@@ -2,7 +2,7 @@
   var root=document.getElementById('root'),logoutBtn=document.getElementById('logout'),timer=null;
   function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
   function api(method,path,body){
-    return fetch('/admin/api'+path,{method:method,headers:{'Content-Type':'application/json','X-Undermynd-Request':'1'},body:body?JSON.stringify(body):undefined,credentials:'same-origin'})
+    return fetch('/admin/api'+path,{method:method,headers:{'Content-Type':'application/json','X-HyveMynd-Request':'1'},body:body?JSON.stringify(body):undefined,credentials:'same-origin'})
       .then(function(r){return r.json().catch(function(){return {}}).then(function(d){if(!r.ok){var e=new Error(d.error||('HTTP '+r.status));e.status=r.status;throw e}return d})});
   }
   function field(form,label,type,name,ph){form.appendChild(el('label','',label));var i=el('input');i.type=type||'text';i.name=name;if(ph)i.placeholder=ph;i.autocomplete=type==='password'?'current-password':'off';form.appendChild(i);return i}
@@ -156,7 +156,7 @@
   function setReqBadge(n){if(!tabBtns.requests)return;tabBtns.requests.textContent='Requests';if(n){var bd=el('span','badge',String(n));tabBtns.requests.appendChild(bd)}}
   function logView(body){
     body.appendChild(el('h2','ptitle','Log'));
-    body.appendChild(el('p','hint','The container log since Undermynd last started, newest at the bottom. Type a job id (the short code after "job"), or words like tdarr or failed, to narrow it. The last 2000 lines are kept.'));
+    body.appendChild(el('p','hint','The container log since HyveMynd last started, newest at the bottom. Type a job id (the short code after "job"), or words like tdarr or failed, to narrow it. The last 2000 lines are kept.'));
     var bar=el('div','rebar');var q=el('input');q.placeholder='filter';q.style.minWidth='220px';bar.appendChild(q);
     var fl=el('label','','');var follow=el('input');follow.type='checkbox';follow.checked=true;fl.appendChild(follow);fl.appendChild(document.createTextNode(' follow'));bar.appendChild(fl);
     var info=el('span','msg');bar.appendChild(info);body.appendChild(bar);
@@ -367,7 +367,7 @@
     var ty=el('select','a-input');ty.setAttribute('aria-label','kind of search');ty.style.maxWidth='160px';[['search','anything'],['tv','TV'],['movie','movies'],['music','music']].forEach(function(o){var op=new Option(o[1],o[0]);op.selected=iView.type===o[0];ty.appendChild(op)});
     var go=el('button','a-btn primary','Search');go.type='button';sb.appendChild(q);sb.appendChild(ty);sb.appendChild(go);c.appendChild(sb);var res=el('div');c.appendChild(res);
     var listBox=el('div','a-tw');c.appendChild(el('h3','a-dim','Indexers'));c.appendChild(listBox);
-    c.appendChild(el('div','a-dim a-small','For Sonarr and Radarr: add a Torznab (torrents) or Newznab (usenet) indexer with the same address as their Undermynd download client, plus /indexers/all-torrent or /indexers/all-usenet (every indexer at once), or /indexers/<number> for one; API path /api; API key: the download client password.'));
+    c.appendChild(el('div','a-dim a-small','For Sonarr and Radarr: add a Torznab (torrents) or Newznab (usenet) indexer with the same address as their HyveMynd download client, plus /indexers/all-torrent or /indexers/all-usenet (every indexer at once), or /indexers/<number> for one; API path /api; API key: the download client password.'));
     var cats=[];
     api('GET','/indexers').then(function(d){cats=d.categories||[];if(!d.indexers.length){listBox.appendChild(el('div','a-empty','No indexers yet. Import them from Prowlarr, or add one by its Torznab or Newznab address.'));return}
       var t=el('table','a-t'),hr=el('tr');['Name','Kind','Priority','Status','Today','',''].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tb=el('tbody');
@@ -399,7 +399,7 @@
     api('GET','/indexers').then(function(d){(d.categories||[]).forEach(function(n){csel.appendChild(new Option(n,n))})}).catch(function(){});
     cb.onclick=function(){cb.disabled=true;cout.replaceChildren(el('div','a-dim','Reading up to 1,000 grabs from the arr\'s history…'));api('GET','/parser/check?category='+encodeURIComponent(csel.value)).then(function(r){cb.disabled=false;cout.replaceChildren();
       var bf=Object.keys(r.byField||{}).map(function(k){return r.byField[k]+' '+k}).join(', ');cout.appendChild(el('div','',r.total?('Agrees on '+r.agree+' of '+r.total+' grabs ('+(r.rate*100).toFixed(1)+'%)'+(bf?'. Differences: '+bf+'.':'.')):'The arr\'s history has no grabs.'));
-      if(!r.diffs||!r.diffs.length)return;var t=el('table','a-t'),hr=el('tr');['Release','What','Arr','Undermynd'].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tb=el('tbody');
+      if(!r.diffs||!r.diffs.length)return;var t=el('table','a-t'),hr=el('tr');['Release','What','Arr','HyveMynd'].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tb=el('tbody');
       r.diffs.slice(0,500).forEach(function(x){var tr=el('tr');var n=el('td','a-mono',x.title);if(x.series)n.appendChild(el('div','a-dim a-small',x.series));tr.appendChild(n);tr.appendChild(el('td','a-dim',x.field));tr.appendChild(el('td','',x.arr));tr.appendChild(el('td','',x.ours));tb.appendChild(tr)});t.appendChild(tb);var tw=el('div','a-tw');tw.appendChild(t);cout.appendChild(tw)}).catch(function(e){cb.disabled=false;cout.replaceChildren();setMsg(msg,e.message,true)})};
   }
   // Connect: API tokens and notifications (roadmap I1).
@@ -432,7 +432,7 @@
         var t=el('table','a-t'),hr=el('tr');['Artist','Albums','Size',''].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tb=el('tbody');
         list.slice(0,3000).forEach(function(x){var tr=el('tr');var n=el('td');var a=el('a','',x.name);a.href='#';a.onclick=function(e){e.preventDefault();muArtist(x.id)};n.appendChild(a);if(!x.monitored)n.appendChild(el('span','a-dim a-small',' · unmonitored'));tr.appendChild(n);
           var pct=x.albums?Math.round(100*x.have/x.albums):100;var pb=el('div','a-pbar'+(x.have<x.albums?' gap':''));var fill=el('div','a-pfill');fill.style.width=pct+'%';pb.appendChild(fill);pb.appendChild(el('span','',x.have+' / '+x.albums));var ec=el('td');ec.appendChild(pb);tr.appendChild(ec);tr.appendChild(el('td','a-dim',aSize(x.size)));
-          var ac=el('td','a-acts');var l=el('label','a-check');var cb=el('input');cb.type='checkbox';cb.checked=x.monitored;cb.setAttribute('aria-label','monitor '+x.name);cb.onchange=function(){api('PUT','/music/'+x.id,{monitored:cb.checked})};l.appendChild(cb);ac.appendChild(l);ac.appendChild(aIcon('x','remove '+x.name,function(){if(confirm('Remove '+x.name+' from Undermynd? The files stay on disk.'))api('DELETE','/music/'+x.id).then(function(){app()})}));tr.appendChild(ac);tb.appendChild(tr)});
+          var ac=el('td','a-acts');var l=el('label','a-check');var cb=el('input');cb.type='checkbox';cb.checked=x.monitored;cb.setAttribute('aria-label','monitor '+x.name);cb.onchange=function(){api('PUT','/music/'+x.id,{monitored:cb.checked})};l.appendChild(cb);ac.appendChild(l);ac.appendChild(aIcon('x','remove '+x.name,function(){if(confirm('Remove '+x.name+' from HyveMynd? The files stay on disk.'))api('DELETE','/music/'+x.id).then(function(){app()})}));tr.appendChild(ac);tb.appendChild(tr)});
         t.appendChild(tb);var tw=el('div','a-tw');tw.appendChild(t);box.appendChild(tw)}
       cs.onchange=function(){muView.cat=cs.value;draw()};q.oninput=function(){muView.q=q.value;draw()};draw()}).catch(function(e){if(e.status===401)fail(e);else setMsg(msg,e.message,true)})}
   function muArtist(id){var md=aModal('Artist','1100px');var msg=aMsg();md.body.appendChild(msg);var box=el('div','a-dim','Loading…');md.body.appendChild(box);var cn=el('button','a-btn','Close');cn.type='button';cn.onclick=function(){md.close();app()};md.foot.appendChild(cn);
@@ -449,14 +449,14 @@
       var t=el('table','a-t'),hr=el('tr');['','Release','Quality','Size','Why not',''].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tb=el('tbody');
       r.verdicts.forEach(function(v,i){var ok=!v.rejected||!v.rejected.length;var tr=el('tr');tr.appendChild(el('td',ok?'a-ok':'a-dim',ok?(i===0?'★':'✓'):'✗'));var n=el('td','a-mono a-small',v.result.title);n.appendChild(el('div','a-dim',v.result.indexer+(v.result.protocol==='torrent'?' · '+v.result.seeders+' seeders':'')));tr.appendChild(n);
         tr.appendChild(el('td','',v.quality));tr.appendChild(el('td','a-dim',aSize(v.result.size)));tr.appendChild(el('td','a-small',(v.rejected||[]).join('; ')));
-        var g=el('td','a-acts');var b=el('button','a-dl');b.type='button';b.setAttribute('aria-label','grab '+v.result.title);b.appendChild(svg('dl'));b.onclick=function(){if(!ok&&!confirm('Undermynd would turn this release down: '+v.rejected.join('; ')+'. Grab it anyway?'))return;b.disabled=true;api('POST','/music/albums/'+a.id+'/grab',{indexerId:v.result.indexerId,guid:v.result.guid,title:v.result.title}).then(function(){b.classList.add('done');setMsg(m2,'Grabbed '+v.result.title+'.')}).catch(function(e){b.disabled=false;setMsg(m2,e.message,true)})};g.appendChild(b);tr.appendChild(g);tb.appendChild(tr)});
+        var g=el('td','a-acts');var b=el('button','a-dl');b.type='button';b.setAttribute('aria-label','grab '+v.result.title);b.appendChild(svg('dl'));b.onclick=function(){if(!ok&&!confirm('HyveMynd would turn this release down: '+v.rejected.join('; ')+'. Grab it anyway?'))return;b.disabled=true;api('POST','/music/albums/'+a.id+'/grab',{indexerId:v.result.indexerId,guid:v.result.guid,title:v.result.title}).then(function(){b.classList.add('done');setMsg(m2,'Grabbed '+v.result.title+'.')}).catch(function(e){b.disabled=false;setMsg(m2,e.message,true)})};g.appendChild(b);tr.appendChild(g);tb.appendChild(tr)});
       t.appendChild(tb);var tw=el('div','a-tw');tw.appendChild(t);box.appendChild(tw)}).catch(function(e){box.replaceChildren();setMsg(m2,e.message,true)})}
   function muImport(d,after){var md=aModal('Import from Lidarr','620px');var f=aForm();md.body.appendChild(f.el);var msg=aMsg();
     var cs=el('select','a-input');cs.id='mui';d.categories.forEach(function(x){cs.appendChild(new Option(x.name,x.name))});f.row('Category',cs,'Reads every artist and album, what is monitored, and which albums have files (their folder and quality). Paths under Lidarr\'s root folders are read as under the library folder. Importing again updates.','mui');md.body.appendChild(msg);
     var cn=el('button','a-btn','Close');cn.type='button';cn.onclick=function(){md.close();after()};var ok=el('button','a-btn primary','Import');ok.type='button';ok.onclick=function(){ok.disabled=true;setMsg(msg,'importing…');api('POST','/music/import',{category:cs.value}).then(function(r){ok.disabled=false;setMsg(msg,r.artists+' artists, '+r.albums+' albums.'+(r.problems&&r.problems.length?' Notes: '+r.problems.slice(0,10).join('; '):''))}).catch(function(e){ok.disabled=false;setMsg(msg,e.message,true)})};md.foot.appendChild(cn);md.foot.appendChild(ok)}
   function muSettings(d,after){var md=aModal('Music settings','760px');var f=aForm();md.body.appendChild(f.el);var msg=aMsg();var st=d.settings||{};
     var cs=el('select','a-input');cs.id='msc2';d.categories.forEach(function(x){cs.appendChild(new Option(x.name,x.name))});f.row('Category',cs,null,'msc2');
-    var nat=el('input');nat.type='checkbox';nat.id='msn2';f.row('Native',nat,'Undermynd searches, grabs and imports this category\'s albums itself. Turn off Lidarr\'s monitoring so both do not grab.','msn2');
+    var nat=el('input');nat.type='checkbox';nat.id='msn2';f.row('Native',nat,'HyveMynd searches, grabs and imports this category\'s albums itself. Turn off Lidarr\'s monitoring so both do not grab.','msn2');
     var dir=el('input','a-input');dir.id='msd2';dir.placeholder='/media/Music';f.row('Library folder',dir,'Where the artist folders are, as this container sees it.','msd2');
     function pick(){var x=d.categories.filter(function(c){return c.name===cs.value})[0]||{};nat.checked=!!x.native;dir.value=x.libraryDir||''}cs.onchange=pick;pick();
     var dry=el('input');dry.type='checkbox';dry.id='msr2';dry.checked=!!st.dryRun;f.row('Dry run',dry,'Leave finished downloads where they are and only say where they would go.','msr2');
@@ -520,7 +520,7 @@
         list.slice(0,2000).forEach(function(x){var tr=el('tr');var n=el('td');var a=el('a','',x.title+(x.year?' ('+x.year+')':''));a.href='#';a.onclick=function(e){e.preventDefault();tvSeries(x.id,d)};n.appendChild(a);if(!x.monitored)n.appendChild(el('span','a-dim a-small',' · unmonitored'));if(x.type!=='standard')n.appendChild(el('span','a-dim a-small',' · '+x.type));tr.appendChild(n);
           var pct=x.episodes?Math.round(100*x.have/x.episodes):100;var ec=el('td');var pb=el('div','a-pbar'+(x.missing?' gap':''));var fill=el('div','a-pfill');fill.style.width=pct+'%';pb.appendChild(fill);pb.appendChild(el('span','',x.have+' / '+x.episodes+(x.downloading?' · '+x.downloading+' downloading':'')));ec.appendChild(pb);tr.appendChild(ec);
           tr.appendChild(el('td',x.missing?'a-warn':'a-dim',String(x.missing)));tr.appendChild(el('td','a-dim',x.nextAir||''));tr.appendChild(el('td','a-dim',x.profile));tr.appendChild(el('td','a-dim',aSize(x.size)));
-          var ac=el('td','a-acts');ac.appendChild(aIcon('edit','edit '+x.title,function(){tvEdit(x,d,function(){app()})}));ac.appendChild(aIcon('x','remove '+x.title,function(){if(confirm('Remove '+x.title+' from Undermynd? Its files stay on disk.'))api('DELETE','/tv/'+x.id).then(function(){app()})}));tr.appendChild(ac);tb.appendChild(tr)});
+          var ac=el('td','a-acts');ac.appendChild(aIcon('edit','edit '+x.title,function(){tvEdit(x,d,function(){app()})}));ac.appendChild(aIcon('x','remove '+x.title,function(){if(confirm('Remove '+x.title+' from HyveMynd? Its files stay on disk.'))api('DELETE','/tv/'+x.id).then(function(){app()})}));tr.appendChild(ac);tb.appendChild(tr)});
         t.appendChild(tb);var tw=el('div','a-tw');tw.appendChild(t);box.appendChild(tw)}
       cs.onchange=function(){tView.cat=cs.value;draw()};q.oninput=function(){tView.q=q.value;draw()};draw()}).catch(function(e){if(e.status===401)fail(e);else setMsg(msg,e.message,true)})}
   function tvSeries(id,d){var md=aModal('Series','1100px');var msg=aMsg();md.body.appendChild(msg);var box=el('div','a-dim','Loading…');md.body.appendChild(box);var cn=el('button','a-btn','Close');cn.type='button';cn.onclick=function(){md.close();app()};md.foot.appendChild(cn);
@@ -542,7 +542,7 @@
       var t=el('table','a-t'),hr=el('tr');['','Release','Quality','Score','Size','Why not',''].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tb=el('tbody');
       r.rows.forEach(function(x,i){var dd=x.decision,ok=!dd.rejected||!dd.rejected.length;var tr=el('tr');tr.appendChild(el('td',ok?'a-ok':'a-dim',ok?(i===0?'★':'✓'):'✗'));var n=el('td','a-mono a-small',x.result.title);n.appendChild(el('div','a-dim',x.result.indexer+(x.result.protocol==='torrent'?' · '+x.result.seeders+' seeders':'')+((dd.formats||[]).length?' · '+dd.formats.join(', '):'')));tr.appendChild(n);
         tr.appendChild(el('td','',dd.quality));tr.appendChild(el('td','',String(dd.score)));tr.appendChild(el('td','a-dim',aSize(x.result.size)));tr.appendChild(el('td','a-small',(dd.rejected||[]).join('; ')));
-        var g=el('td','a-acts');var b=el('button','a-dl');b.type='button';b.setAttribute('aria-label','grab '+x.result.title);b.appendChild(svg('dl'));b.onclick=function(){if(!ok&&!confirm('Undermynd would turn this release down: '+dd.rejected.join('; ')+'. Grab it anyway?'))return;b.disabled=true;api('POST','/tv/'+id+'/grab',{indexerId:x.result.indexerId,guid:x.result.guid,title:x.result.title,season:what.season||0,episodeId:what.episode||0}).then(function(){b.classList.add('done');setMsg(m2,'Grabbed '+x.result.title+'.')}).catch(function(e){b.disabled=false;setMsg(m2,e.message,true)})};g.appendChild(b);tr.appendChild(g);tb.appendChild(tr)});
+        var g=el('td','a-acts');var b=el('button','a-dl');b.type='button';b.setAttribute('aria-label','grab '+x.result.title);b.appendChild(svg('dl'));b.onclick=function(){if(!ok&&!confirm('HyveMynd would turn this release down: '+dd.rejected.join('; ')+'. Grab it anyway?'))return;b.disabled=true;api('POST','/tv/'+id+'/grab',{indexerId:x.result.indexerId,guid:x.result.guid,title:x.result.title,season:what.season||0,episodeId:what.episode||0}).then(function(){b.classList.add('done');setMsg(m2,'Grabbed '+x.result.title+'.')}).catch(function(e){b.disabled=false;setMsg(m2,e.message,true)})};g.appendChild(b);tr.appendChild(g);tb.appendChild(tr)});
       t.appendChild(tb);var tw=el('div','a-tw');tw.appendChild(t);box.appendChild(tw)}).catch(function(e){box.replaceChildren();setMsg(m2,e.message,true)})}
   function tvEdit(x,d,after){var md=aModal('Edit · '+x.title,'620px');var f=aForm();md.body.appendChild(f.el);var msg=aMsg();
     var mo=el('input');mo.type='checkbox';mo.id='tm';mo.checked=x.monitored;f.row('Monitored',mo,'Search for its monitored episodes when missing or below the cutoff.','tm');
@@ -554,7 +554,7 @@
     var cn=el('button','a-btn','Close');cn.type='button';cn.onclick=function(){md.close();after()};var ok=el('button','a-btn primary','Import');ok.type='button';ok.onclick=function(){ok.disabled=true;setMsg(msg,'importing… (a large library takes a few minutes)');api('POST','/tv/import',{category:cs.value}).then(function(r){ok.disabled=false;setMsg(msg,r.added+' added, '+r.updated+' updated, '+r.episodes+' episodes.'+(r.problems&&r.problems.length?' Notes: '+r.problems.slice(0,10).join('; '):''))}).catch(function(e){ok.disabled=false;setMsg(msg,e.message,true)})};md.foot.appendChild(cn);md.foot.appendChild(ok)}
   function tvSettings(d,after){var md=aModal('TV settings','760px');var f=aForm();md.body.appendChild(f.el);var msg=aMsg();var st=d.settings||{};
     var cs=el('select','a-input');cs.id='tsc';d.categories.forEach(function(x){cs.appendChild(new Option(x.name,x.name))});f.row('Category',cs,null,'tsc');
-    var nat=el('input');nat.type='checkbox';nat.id='tsn';f.row('Native',nat,'Undermynd searches, grabs and imports this category\'s shows itself. Turn off Sonarr\'s monitoring so both do not grab.','tsn');
+    var nat=el('input');nat.type='checkbox';nat.id='tsn';f.row('Native',nat,'HyveMynd searches, grabs and imports this category\'s shows itself. Turn off Sonarr\'s monitoring so both do not grab.','tsn');
     var dir=el('input','a-input');dir.id='tsd';dir.placeholder='/media/TV';f.row('Library folder',dir,'Where the show folders are, as this container sees it.','tsd');
     function pick(){var x=d.categories.filter(function(c){return c.name===cs.value})[0]||{};nat.checked=!!x.native;dir.value=x.libraryDir||''}cs.onchange=pick;pick();
     var dry=el('input');dry.type='checkbox';dry.id='tsr';dry.checked=!!st.dryRun;f.row('Dry run',dry,'Leave finished downloads where they are and only say where they would go.','tsr');
@@ -584,7 +584,7 @@
         list.slice(0,1000).forEach(function(m){var tr=el('tr');var n=el('td','',m.title+(m.year?' ('+m.year+')':''));if(m.note)n.appendChild(el('div','a-dim a-small',m.note));tr.appendChild(n);
           tr.appendChild(el('td',m.status==='have'?'a-ok':m.status==='missing'||m.status==='cutoff unmet'?'a-warn':'a-dim',m.status));tr.appendChild(el('td','',m.quality||''));tr.appendChild(el('td','a-dim',m.profile));tr.appendChild(el('td','a-dim',aSize(m.size)));
           var mo=el('td');var l=el('label','a-check');var cb=el('input');cb.type='checkbox';cb.checked=m.monitored;cb.setAttribute('aria-label','monitor '+m.title);cb.onchange=function(){api('PUT','/movies/'+m.id,{monitored:cb.checked,profile:''}).then(function(){m.monitored=cb.checked}).catch(function(e){setMsg(msg,e.message,true)})};l.appendChild(cb);l.appendChild(el('span','a-dim',' monitored'));mo.appendChild(l);tr.appendChild(mo);
-          var a=el('td','a-acts');a.appendChild(aIcon('search','search for '+m.title,function(){movSearch(m,d)}));a.appendChild(aIcon('edit','edit '+m.title,function(){movEdit(m,d,function(){app()})}));a.appendChild(aIcon('x','remove '+m.title,function(){if(confirm('Remove '+m.title+' from Undermynd? Its files stay on disk.'))api('DELETE','/movies/'+m.id).then(function(){app()})}));tr.appendChild(a);tb.appendChild(tr)});
+          var a=el('td','a-acts');a.appendChild(aIcon('search','search for '+m.title,function(){movSearch(m,d)}));a.appendChild(aIcon('edit','edit '+m.title,function(){movEdit(m,d,function(){app()})}));a.appendChild(aIcon('x','remove '+m.title,function(){if(confirm('Remove '+m.title+' from HyveMynd? Its files stay on disk.'))api('DELETE','/movies/'+m.id).then(function(){app()})}));tr.appendChild(a);tb.appendChild(tr)});
         t.appendChild(tb);var tw=el('div','a-tw');tw.appendChild(t);box.appendChild(tw)}
       cs.onchange=function(){mView.cat=cs.value;draw()};q.oninput=function(){mView.q=q.value;draw()};draw()}).catch(function(e){if(e.status===401)fail(e);else setMsg(msg,e.message,true)})}
   function movSearch(m,d){var md=aModal('Search · '+m.title+(m.year?' ('+m.year+')':''),'1100px');var msg=aMsg();md.body.appendChild(msg);var box=el('div','a-dim','Searching every indexer…');md.body.appendChild(box);
@@ -593,7 +593,7 @@
       var t=el('table','a-t'),hr=el('tr');['','Release','Quality','Score','Size','Why not',''].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tb=el('tbody');
       r.rows.forEach(function(x,i){var dd=x.decision,ok=!dd.rejected||!dd.rejected.length;var tr=el('tr');tr.appendChild(el('td',ok?'a-ok':'a-dim',ok?(i===0?'★':'✓'):'✗'));var n=el('td','a-mono a-small',x.result.title);n.appendChild(el('div','a-dim',x.result.indexer+(x.result.protocol==='torrent'?' · '+x.result.seeders+' seeders':'')+((dd.formats||[]).length?' · '+dd.formats.join(', '):'')));tr.appendChild(n);
         tr.appendChild(el('td','',dd.quality));tr.appendChild(el('td','',String(dd.score)));tr.appendChild(el('td','a-dim',aSize(x.result.size)));tr.appendChild(el('td','a-small',(dd.rejected||[]).join('; ')));
-        var g=el('td','a-acts');var b=el('button','a-dl');b.type='button';b.setAttribute('aria-label','grab '+x.result.title);b.appendChild(svg('dl'));b.onclick=function(){if(!ok&&!confirm('Undermynd would turn this release down: '+dd.rejected.join('; ')+'. Grab it anyway?'))return;b.disabled=true;api('POST','/movies/'+m.id+'/grab',{indexerId:x.result.indexerId,guid:x.result.guid,title:x.result.title}).then(function(){b.classList.add('done');setMsg(msg,'Grabbed '+x.result.title+'.')}).catch(function(e){b.disabled=false;setMsg(msg,e.message,true)})};g.appendChild(b);tr.appendChild(g);tb.appendChild(tr)});
+        var g=el('td','a-acts');var b=el('button','a-dl');b.type='button';b.setAttribute('aria-label','grab '+x.result.title);b.appendChild(svg('dl'));b.onclick=function(){if(!ok&&!confirm('HyveMynd would turn this release down: '+dd.rejected.join('; ')+'. Grab it anyway?'))return;b.disabled=true;api('POST','/movies/'+m.id+'/grab',{indexerId:x.result.indexerId,guid:x.result.guid,title:x.result.title}).then(function(){b.classList.add('done');setMsg(msg,'Grabbed '+x.result.title+'.')}).catch(function(e){b.disabled=false;setMsg(msg,e.message,true)})};g.appendChild(b);tr.appendChild(g);tb.appendChild(tr)});
       t.appendChild(tb);var tw=el('div','a-tw');tw.appendChild(t);box.appendChild(tw)}).catch(function(e){box.replaceChildren();setMsg(msg,e.message,true)})}
   function movEdit(m,d,after){var md=aModal('Edit · '+m.title,'620px');var f=aForm();md.body.appendChild(f.el);var msg=aMsg();
     var mo=el('input');mo.type='checkbox';mo.id='mm';mo.checked=m.monitored;f.row('Monitored',mo,'Search for it when missing or below the cutoff.','mm');
@@ -605,7 +605,7 @@
     var cn=el('button','a-btn','Close');cn.type='button';cn.onclick=function(){md.close();after()};var ok=el('button','a-btn primary','Import');ok.type='button';ok.onclick=function(){ok.disabled=true;setMsg(msg,'importing…');api('POST','/movies/import',{category:cs.value}).then(function(r){ok.disabled=false;setMsg(msg,r.added+' added, '+r.updated+' updated.'+(r.problems&&r.problems.length?' Problems: '+r.problems.slice(0,10).join('; '):''))}).catch(function(e){ok.disabled=false;setMsg(msg,e.message,true)})};md.foot.appendChild(cn);md.foot.appendChild(ok)}
   function movSettings(d,after){var md=aModal('Movie settings','760px');var f=aForm();md.body.appendChild(f.el);var msg=aMsg();var st=d.settings||{};
     var cs=el('select','a-input');cs.id='msc';d.categories.forEach(function(x){cs.appendChild(new Option(x.name,x.name))});f.row('Category',cs,null,'msc');
-    var nat=el('input');nat.type='checkbox';nat.id='msn';f.row('Native',nat,'Undermynd searches, grabs and imports this category\'s movies itself. Turn off Radarr\'s monitoring for them so both do not grab.','msn');
+    var nat=el('input');nat.type='checkbox';nat.id='msn';f.row('Native',nat,'HyveMynd searches, grabs and imports this category\'s movies itself. Turn off Radarr\'s monitoring for them so both do not grab.','msn');
     var dir=el('input','a-input');dir.id='msd';dir.placeholder='/media/Movies';f.row('Library folder',dir,'Where the movie folders are, as this container sees it.','msd');
     function pick(){var x=d.categories.filter(function(c){return c.name===cs.value})[0]||{};nat.checked=!!x.native;dir.value=x.libraryDir||''}cs.onchange=pick;pick();
     var dry=el('input');dry.type='checkbox';dry.id='msr';dry.checked=!!st.dryRun;f.row('Dry run',dry,'Leave finished downloads where they are and only say where they would go.','msr');
@@ -639,15 +639,15 @@
       profTry(tryBox,d,msg)}).catch(function(e){if(e.status===401)fail(e);else setMsg(msg,e.message,true)});
   }
   function shadowPanel(box,msg){api('GET','/shadow').then(function(d){var st=d.settings,r=d.report;
-    box.appendChild(el('div','a-dim a-small','For every grab Sonarr or Radarr makes, Undermynd searches its own indexers for the same movie or episode and decides with the profile of the same name (import the profiles first). Nothing is grabbed. Checked every 10 minutes.'));
+    box.appendChild(el('div','a-dim a-small','For every grab Sonarr or Radarr makes, HyveMynd searches its own indexers for the same movie or episode and decides with the profile of the same name (import the profiles first). Nothing is grabbed. Checked every 10 minutes.'));
     var row=el('div','a-row');var l=el('label','a-check');var on=el('input');on.type='checkbox';on.checked=!!st.enabled;l.appendChild(on);l.appendChild(el('span','',' on'));row.appendChild(l);
     var ph=el('input','a-input');ph.type='number';ph.min='0';ph.max='500';ph.style.maxWidth='110px';ph.value=String(st.perHour||20);ph.setAttribute('aria-label','searches an hour');row.appendChild(el('span','a-dim','searches an hour'));row.appendChild(ph);
     var sv=el('button','a-btn','Save');sv.type='button';sv.onclick=function(){api('PUT','/shadow/settings',{enabled:on.checked,perHour:+ph.value||0}).then(function(){setMsg(msg,'Shadow mode '+(on.checked?'on':'off')+'.')}).catch(function(e){setMsg(msg,e.message,true)})};row.appendChild(sv);
     var ck=el('button','a-btn','Check now');ck.type='button';ck.onclick=function(){ck.disabled=true;setMsg(msg,'Comparing new grabs…');api('POST','/shadow/check').then(function(x){ck.disabled=false;setMsg(msg,'Compared '+x.compared+' new grab(s).');app()}).catch(function(e){ck.disabled=false;setMsg(msg,e.message,true)})};row.appendChild(ck);box.appendChild(row);
     if(!r.total){box.appendChild(el('div','a-empty','No grabs compared in the last 14 days.'));return}
-    var names={same:'same release',equal:'as good',better:'Undermynd better',worse:'arr better',rejected:'Undermynd would refuse the arr\'s pick',none:'nothing found',skipped:'not compared'};
+    var names={same:'same release',equal:'as good',better:'HyveMynd better',worse:'arr better',rejected:'HyveMynd would refuse the arr\'s pick',none:'nothing found',skipped:'not compared'};
     box.appendChild(el('div','','Last 14 days: agrees on '+r.agree+' of '+r.compared+' compared grabs'+(r.compared?' ('+(r.rate*100).toFixed(1)+'%)':'')+'. '+Object.keys(r.byVerdict).map(function(k){return r.byVerdict[k]+' '+(names[k]||k)}).join(', ')+'.'));
-    var t=el('table','a-t'),hr=el('tr');['When','For','Arr grabbed','Undermynd would pick','Verdict'].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tb=el('tbody');
+    var t=el('table','a-t'),hr=el('tr');['When','For','Arr grabbed','HyveMynd would pick','Verdict'].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tb=el('tbody');
     r.rows.forEach(function(x){var tr=el('tr');tr.appendChild(el('td','a-dim',ago(x.at)));var f=el('td','',x.item);f.appendChild(el('div','a-dim a-small',x.category+(x.profile?' · '+x.profile:'')));tr.appendChild(f);
       var a=el('td','a-mono a-small',x.arrTitle);a.appendChild(el('div','a-dim',x.arrQuality+' · score '+x.arrScore+(x.arrIndexer?' · '+x.arrIndexer:'')));tr.appendChild(a);
       var o=el('td','a-mono a-small',x.ourTitle||'—');if(x.ourTitle)o.appendChild(el('div','a-dim',x.ourQuality+' · score '+x.ourScore));tr.appendChild(o);
@@ -711,7 +711,7 @@
       function body(){return {app:ap.value,profiles:picked[ap.value],size:sz.value,keep:kp.checked}}
       function show(r,done){out.replaceChildren();var ch=r.changes||[];var real=ch.filter(function(c){return c.action!=='keep'});out.appendChild(el('div','',done?(real.length?'Applied '+real.length+' change(s).':'Nothing changed.'):(real.length?real.length+' change(s):':'Nothing would change.')));
         if(ch.length){var t=el('table','a-t'),hr=el('tr');['What','Name','Change','Detail'].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tb=el('tbody');ch.forEach(function(c){var r2=el('tr');[c.kind,c.name,c.action,c.detail||''].forEach(function(x,i){r2.appendChild(el('td',i===3?'a-small a-dim':'',x))});tb.appendChild(r2)});t.appendChild(tb);var tw=el('div','a-tw');tw.appendChild(t);out.appendChild(tw)}
-        if(r.unchecked&&r.unchecked.length)out.appendChild(el('div','a-small a-warn','Not checked by Undermynd: '+r.unchecked.join('; ')))}
+        if(r.unchecked&&r.unchecked.length)out.appendChild(el('div','a-small a-warn','Not checked by HyveMynd: '+r.unchecked.join('; ')))}
       var pv=el('button','a-btn','Preview');pv.type='button';pv.onclick=function(){if(!picked[ap.value].length&&!sz.value){setMsg(msg,'Pick a profile or the quality sizes.',true);return}pv.disabled=true;api('POST','/trash/preview',body()).then(function(r){pv.disabled=false;show(r,false)}).catch(function(e){pv.disabled=false;setMsg(msg,e.message,true)})};
       var ok=el('button','a-btn primary','Apply');ok.type='button';ok.onclick=function(){if(!picked[ap.value].length&&!sz.value){setMsg(msg,'Pick a profile or the quality sizes.',true);return}ok.disabled=true;api('POST','/trash/apply',body()).then(function(r){ok.disabled=false;show(r,true);setMsg(msg,'Applied.'+(kp.checked?' Kept in sync daily.':''))}).catch(function(e){ok.disabled=false;setMsg(msg,e.message,true)})};
       md.foot.insertBefore(ok,cn);md.foot.insertBefore(pv,ok)}).catch(function(e){box.replaceChildren();setMsg(msg,e.message,true)})}
@@ -719,7 +719,7 @@
     if(!d.arrCategories.length){md.body.appendChild(el('div','a-empty','No category is connected to Sonarr or Radarr.'));return}
     var cs=el('select','a-input');cs.id='ic2';d.arrCategories.forEach(function(n){cs.appendChild(new Option(n,n))});f.row('Category',cs,'Copies its arr\'s quality profiles, custom formats (with their scores) and quality sizes. Importing again replaces what came from the same category.','ic2');md.body.appendChild(msg);
     var cn=el('button','a-btn','Close');cn.type='button';cn.onclick=function(){md.close();after()};var ok=el('button','a-btn primary','Import');ok.type='button';
-    ok.onclick=function(){ok.disabled=true;setMsg(msg,'importing…');api('POST','/profiles/import',{category:cs.value}).then(function(r){ok.disabled=false;setMsg(msg,'Imported '+r.profiles+' profile(s), '+r.formats+' custom format(s)'+(r.sizes?', '+r.sizes+' quality sizes':'')+'.'+(r.unchecked&&r.unchecked.length?' Not checked by Undermynd: '+r.unchecked.join('; ')+'.':''))}).catch(function(e){ok.disabled=false;setMsg(msg,e.message,true)})};md.foot.appendChild(cn);md.foot.appendChild(ok)}
+    ok.onclick=function(){ok.disabled=true;setMsg(msg,'importing…');api('POST','/profiles/import',{category:cs.value}).then(function(r){ok.disabled=false;setMsg(msg,'Imported '+r.profiles+' profile(s), '+r.formats+' custom format(s)'+(r.sizes?', '+r.sizes+' quality sizes':'')+'.'+(r.unchecked&&r.unchecked.length?' Not checked by HyveMynd: '+r.unchecked.join('; ')+'.':''))}).catch(function(e){ok.disabled=false;setMsg(msg,e.message,true)})};md.foot.appendChild(cn);md.foot.appendChild(ok)}
   function idxEdit(i,after){var md=aModal(i.id?'Edit · '+i.name:'Add indexer','860px');var f=aForm();md.body.appendChild(f.el);
     var nm=el('input','a-input');nm.id='in';nm.value=i.name||'';f.row('Name',nm,null,'in');
     var kd=el('select','a-input');kd.id='ik';[['torznab','torrents (Torznab)'],['newznab','usenet (Newznab)']].forEach(function(o){var op=new Option(o[1],o[0]);op.selected=i.kind===o[0];kd.appendChild(op)});f.row('Kind',kd,null,'ik');
@@ -840,7 +840,7 @@
 
   function arrsPane(body){
     body.appendChild(head('Arrs & categories','Each category is a label an arr sends when it grabs something. It decides which arr confirms the import, and which folder the finished download lands in.'));
-    var conn=el('div','card');conn.appendChild(el('h4','','Connect an arr to Undermynd'));
+    var conn=el('div','card');conn.appendChild(el('h4','','Connect an arr to HyveMynd'));
     var host=location.hostname;
     conn.appendChild(help('In Sonarr, Radarr or Lidarr: Settings → Download Clients → add. Use SABnzbd for usenet and qBittorrent for torrents.'));
     [['host',host],['port','8081 (the LAN-only machine port)'],['SABnzbd API key','the client password (see the System tab)'],['qBittorrent login','username '+S.clientUser+' and the client password'],['category','one of the names below, exactly']].forEach(function(p){var d=el('div','kv');d.appendChild(el('span','k',p[0]));d.appendChild(el('span','v',p[1]));conn.appendChild(d)});
@@ -850,7 +850,7 @@
       var card=el('div','card cat kind-'+(c.kind||'none'));var f={};var g=el('div','grid3');f.orig=c.name||'';
       f.name=row(g,'category name',{value:c.name,help:'what the arr sends, e.g. tv'});
       var w=el('div','fld');w.appendChild(el('label','','arr type'));var k=el('select');[['sonarr','sonarr'],['radarr','radarr'],['lidarr','lidarr'],['rss','no arr (RSS / watch folder)']].forEach(function(p){var x=p[0];var o=el('option','',p[1]);o.value=x;if(c.kind===x)o.selected=true;k.appendChild(o)});w.appendChild(k);g.appendChild(w);f.kind=k;
-      f.arrUrl=row(g,'arr address',{value:c.arrUrl,ph:'http://10.0.0.5:8989',help:'so Undermynd can confirm the import'});
+      f.arrUrl=row(g,'arr address',{value:c.arrUrl,ph:'http://10.0.0.5:8989',help:'so HyveMynd can confirm the import'});
       f.arrApiKey=row(g,'arr API key',{type:'password',ph:c.hasArrApiKey?'set — leave blank to keep':'',help:'in the arr: Settings → General'});
       f.transcode=row(g,'transcode with Tdarr',{type:'checkbox',value:c.transcode,help:'off for music'});
       f.libraryDir=row(g,'library folder',{value:c.libraryDir,ph:'/media/Anime',help:'only for “no arr” categories: finished episodes are matched to a show folder here and renamed'});
@@ -869,7 +869,7 @@
   }
 
   function clientsPane(body){
-    body.appendChild(head('Download clients','Undermynd downloads through TorBox when a token is set. Otherwise usenet goes to NZBGet and torrents go to qBittorrent, both optional and local.'));
+    body.appendChild(head('Download clients','HyveMynd downloads through TorBox when a token is set. Otherwise usenet goes to NZBGet and torrents go to qBittorrent, both optional and local.'));
     var tb=el('div','card');var h=el('h4','','TorBox ');h.appendChild(chip(S.torbox.hasToken,S.torbox.hasToken?'token set':'no token'));tb.appendChild(h);
     var g=el('div','grid3');
     var tok=row(g,'API token',{type:'password',ph:S.torbox.hasToken?'set — leave blank to keep':'paste your token',help:'TorBox → Settings → API'});
@@ -896,17 +896,17 @@
   }
 
   function transcodePane(body){
-    body.appendChild(head('Transcode (Tdarr)','Videos for categories with transcode on are handed to a dedicated Tdarr library. Undermynd watches Tdarr over its API, so it can show progress and notice failures.'));
+    body.appendChild(head('Transcode (Tdarr)','Videos for categories with transcode on are handed to a dedicated Tdarr library. HyveMynd watches Tdarr over its API, so it can show progress and notice failures.'));
     var c0=el('div','card');var h0=el('h4','','Connection ');h0.appendChild(chip(!!S.tdarr.url,S.tdarr.url?'configured':'not set — folder hand-off only'));c0.appendChild(h0);
     var g0=el('div','grid3');
     var url=row(g0,'Tdarr address',{value:S.tdarr.url,ph:'http://10.0.0.8:8265',help:'the Tdarr server, port 8265 by default'});
     var key=row(g0,'API key',{type:'password',ph:S.tdarr.hasApiKey?'set — leave blank to keep':'only if Tdarr has authentication on',help:'Tdarr → Tools → API Keys'});
-    var lib=row(g0,'library ID',{value:S.tdarr.libraryId,help:'the ID of the dedicated Undermynd library (shown in the library’s settings)'});
+    var lib=row(g0,'library ID',{value:S.tdarr.libraryId,help:'the ID of the dedicated HyveMynd library (shown in the library’s settings)'});
     c0.appendChild(g0);var tb=el('button','','test connection');var tm=el('span','msg');tm.style.marginLeft='12px';
     tb.onclick=function(){tm.className='msg';tm.textContent='testing…';api('POST','/tdarr/test',{url:url.value,apiKey:key.value}).then(function(r){tm.className='msg ok';tm.textContent='connected: '+r.nodes+' node(s), '+r.busyWorkers+' busy worker(s)'}).catch(function(e){tm.className='msg err';tm.textContent=e.message})};
     c0.appendChild(tb);c0.appendChild(tm);body.appendChild(c0);
     var c=el('div','card');c.appendChild(el('h4','','Folders and limits'));var g=el('div','grid3');
-    var inn=row(g,'input folder (library source)',{value:S.tdarr.inDir,help:'the same path inside Undermynd and Tdarr'});
+    var inn=row(g,'input folder (library source)',{value:S.tdarr.inDir,help:'the same path inside HyveMynd and Tdarr'});
     var out=row(g,'output folder (library output)',{value:S.tdarr.outDir});
     var mx=row(g,'jobs with Tdarr at once',{type:'number',value:S.tdarr.maxInFlight,help:'others wait their turn; waiting is not a failure'});
     var st=row(g,'stall timeout (minutes)',{type:'number',value:S.tdarr.stallMinutes,help:'a worker holding a file with no progress this long counts as failed'});
@@ -985,9 +985,9 @@
     var c2=el('div','card');var h2=el('h4','','Media requests ');h2.appendChild(chip(!!R.enabled,R.enabled?'on':'off'));c2.appendChild(h2);
     var g2=el('div','grid3');
     var re=row(g2,'let visitors request media',{type:'checkbox',value:R.enabled,help:'shows the Request media box on the public page'});
-    var mw=el('div','fld');mw.appendChild(el('label','','kept by'));var md=el('select');[['seerr','Seerr (as now)'],['native','Undermynd (no Seerr)']].forEach(function(o){var op=new Option(o[1],o[0]);op.selected=(R.mode||'seerr')===o[0];md.appendChild(op)});mw.appendChild(md);
-    mw.appendChild(el('div','fh','Undermynd: visitors search TMDB here, requests wait below for you, and approving adds movies to Radarr, shows to Sonarr and anime to the Anime page. Seerr can then be turned off.'));g2.appendChild(mw);
-    var aa=row(g2,'approve every request by itself',{type:'checkbox',value:!!R.autoApprove,help:'Undermynd mode only. Off: every request waits for you.'});
+    var mw=el('div','fld');mw.appendChild(el('label','','kept by'));var md=el('select');[['seerr','Seerr (as now)'],['native','HyveMynd (no Seerr)']].forEach(function(o){var op=new Option(o[1],o[0]);op.selected=(R.mode||'seerr')===o[0];md.appendChild(op)});mw.appendChild(md);
+    mw.appendChild(el('div','fh','HyveMynd: visitors search TMDB here, requests wait below for you, and approving adds movies to Radarr, shows to Sonarr and anime to the Anime page. Seerr can then be turned off.'));g2.appendChild(mw);
+    var aa=row(g2,'approve every request by itself',{type:'checkbox',value:!!R.autoApprove,help:'HyveMynd mode only. Off: every request waits for you.'});
     var mc=row(g2,'Radarr category for movies',{value:R.movieCategory||'',ph:'first Radarr category'});var tc=row(g2,'Sonarr category for shows',{value:R.tvCategory||'',ph:'first Sonarr category'});
     var ru=row(g2,'Seerr address',{value:R.url,ph:'http://10.0.0.8:5055'});
     var rk=row(g2,'Seerr API key',{type:'password',ph:R.hasApiKey?'set — leave blank to keep':'Seerr → Settings → General',help:'never shown on the public page'});
@@ -1122,7 +1122,7 @@
       var c3=el('div','card');c3.appendChild(el('h4','','Tdarr'));var t1=el('div','kv');t1.appendChild(el('span','k','jobs with Tdarr'));t1.appendChild(el('span','v',d.tdarr.inFlight+' of '+d.tdarr.max));c3.appendChild(t1);
       var t2=el('div','kv');t2.appendChild(el('span','k','watched over the API'));t2.appendChild(chip(d.tdarr.api,d.tdarr.api?'yes':'no — folders only'));c3.appendChild(t2);g.appendChild(c3);
       [['Work folder',d.work],['Complete folder',d.complete]].forEach(function(p){var c=el('div','card');c.appendChild(el('h4','',p[0]));var a=el('div','kv');a.appendChild(el('span','k','path'));a.appendChild(el('span','v',p[1].path));c.appendChild(a);
-        var b=el('div','kv');b.appendChild(el('span','k','used by Undermynd'));b.appendChild(el('span','v',bytes(p[1].usedByUs)+(p[1].partial?' (partial count)':'')));c.appendChild(b);
+        var b=el('div','kv');b.appendChild(el('span','k','used by HyveMynd'));b.appendChild(el('span','v',bytes(p[1].usedByUs)+(p[1].partial?' (partial count)':'')));c.appendChild(b);
         if(p[1].totalBytes){var f=el('div','kv');f.appendChild(el('span','k','free on this disk'));f.appendChild(el('span','v',bytes(p[1].freeBytes)+' of '+bytes(p[1].totalBytes)));c.appendChild(f)}g.appendChild(c)});
       live.appendChild(g)}).catch(fail)}
     drawSystem();timer=setInterval(function(){if(tab==='system')drawSystem()},5000);
