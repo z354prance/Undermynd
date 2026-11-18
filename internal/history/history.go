@@ -36,6 +36,8 @@ const (
 type Log struct {
 	DB  *sql.DB
 	Now func() time.Time
+	// OnAdd, when set, is told about every event (notifications).
+	OnAdd func(Event)
 }
 
 // Add records an event. A nil log records nothing.
@@ -49,6 +51,10 @@ func (l *Log) Add(e Event) {
 	}
 	l.DB.Exec(`INSERT INTO history (at, kind, item_id, item, event, release, quality, category, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		db.Stamp(now), e.Kind, e.ItemID, e.Item, e.Event, e.Release, e.Quality, e.Category, e.Note)
+	if l.OnAdd != nil {
+		e.At = now
+		l.OnAdd(e)
+	}
 }
 
 // List returns events newest first, optionally of one item.

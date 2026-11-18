@@ -284,27 +284,39 @@ type Music struct {
 	SearchPerHour int `json:"searchPerHour,omitempty"`
 }
 
+// Notification is one place Undermynd tells about what happens (roadmap I1).
+type Notification struct {
+	Name    string        `json:"name"`
+	Kind    string        `json:"kind"` // webhook, discord, ntfy
+	URL     secret.String `json:"url"`
+	Enabled bool          `json:"enabled"`
+	// Events it is told about: grabbed, imported, failed, request, dry run,
+	// replaced; empty means all.
+	Events []string `json:"events,omitempty"`
+}
+
 type Settings struct {
-	Watches      []Watch    `json:"watches"`
-	IntakePaused bool       `json:"intakePaused"` // new grabs are accepted but held until resumed
-	Feeds        []Feed     `json:"feeds"`
-	Rules        []Rule     `json:"rules"`
-	Tdarr        Tdarr      `json:"tdarr"`
-	Playback     Playback   `json:"playback"`
-	Donations    Donations  `json:"donations"`
-	Requests     Requests   `json:"requests"`
-	Access       Access     `json:"access"`
-	NZBGet       NZBGet     `json:"nzbget"`
-	TorBox       TorBox     `json:"torbox"`
-	Categories   []Category `json:"categories"`
-	QBit         QBit       `json:"qbit"`
-	Metadata     Metadata   `json:"metadata"`
-	Shadow       Shadow     `json:"shadow"`
-	Movies       Movies     `json:"movies"`
-	TV           TV         `json:"tv"`
-	Trash        Trash      `json:"trash"`
-	Scheduler    Scheduler  `json:"scheduler"`
-	Music        Music      `json:"music"`
+	Watches       []Watch        `json:"watches"`
+	IntakePaused  bool           `json:"intakePaused"` // new grabs are accepted but held until resumed
+	Feeds         []Feed         `json:"feeds"`
+	Rules         []Rule         `json:"rules"`
+	Tdarr         Tdarr          `json:"tdarr"`
+	Playback      Playback       `json:"playback"`
+	Donations     Donations      `json:"donations"`
+	Requests      Requests       `json:"requests"`
+	Access        Access         `json:"access"`
+	NZBGet        NZBGet         `json:"nzbget"`
+	TorBox        TorBox         `json:"torbox"`
+	Categories    []Category     `json:"categories"`
+	QBit          QBit           `json:"qbit"`
+	Metadata      Metadata       `json:"metadata"`
+	Shadow        Shadow         `json:"shadow"`
+	Movies        Movies         `json:"movies"`
+	TV            TV             `json:"tv"`
+	Trash         Trash          `json:"trash"`
+	Scheduler     Scheduler      `json:"scheduler"`
+	Music         Music          `json:"music"`
+	Notifications []Notification `json:"notifications,omitempty"`
 
 	// Login the arrs use against the fake client API.
 	ClientUser     string        `json:"clientUser"`

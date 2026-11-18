@@ -438,6 +438,15 @@ var migrations = []string{
 	CREATE INDEX albums_artist ON albums(artist_id);
 	ALTER TABLE blocklist ADD COLUMN album_id INTEGER REFERENCES albums(id) ON DELETE CASCADE;
 	CREATE INDEX albums_job ON albums(job_id) WHERE job_id != '';`,
+	// 17: API tokens (roadmap I1), kept as hashes.
+	`CREATE TABLE api_tokens (
+		id        INTEGER PRIMARY KEY,
+		name      TEXT NOT NULL,
+		hash      TEXT NOT NULL UNIQUE,
+		hint      TEXT NOT NULL DEFAULT '',
+		created   TEXT NOT NULL,
+		last_used TEXT NOT NULL DEFAULT ''
+	);`,
 }
 
 // Version is the schema version this build expects.

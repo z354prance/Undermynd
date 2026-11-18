@@ -32,6 +32,7 @@ import (
 	"github.com/z354prance/undermynd/internal/movies"
 	"github.com/z354prance/undermynd/internal/music"
 	"github.com/z354prance/undermynd/internal/musicbrainz"
+	"github.com/z354prance/undermynd/internal/notify"
 	"github.com/z354prance/undermynd/internal/pipeline"
 	"github.com/z354prance/undermynd/internal/progress"
 	"github.com/z354prance/undermynd/internal/qbitapi"
@@ -44,6 +45,7 @@ import (
 	"github.com/z354prance/undermynd/internal/state"
 	"github.com/z354prance/undermynd/internal/storage"
 	"github.com/z354prance/undermynd/internal/store"
+	"github.com/z354prance/undermynd/internal/tokens"
 	"github.com/z354prance/undermynd/internal/trash"
 	"github.com/z354prance/undermynd/internal/tv"
 	"github.com/z354prance/undermynd/internal/watch"
@@ -260,6 +262,21 @@ func main() {
 		go site.Shadow.Run(ctx)
 		site.Budget = &scheduler.Budget{DB: dbh, Cfg: cfg, Now: time.Now}
 		site.History = &history.Log{DB: dbh, Now: time.Now}
+		site.Tokens = &tokens.Store{DB: dbh, Now: time.Now}
+		site.Notify = &notify.Notifier{Cfg: cfg, HTTP: &http.Client{Timeout: 20 * time.Second}, Log: logger}
+		site.Notify.Start(ctx)
+		site.History.OnAdd = func(e history.Event) {
+			site.Notify.Notify(notify.Event{Event: e.Event, Item: e.Item, Release: e.Release, Quality: e.Quality, Category: e.Category, Note: e.Note, At: e.At})
+		}
+		if site.Requests != nil {
+			site.Requests.OnRequest = func(r requests.Request) {
+				note := ""
+				if r.Requester != "" {
+					note = "asked by " + r.Requester
+				}
+				site.Notify.Notify(notify.Event{Event: "request", Item: fmt.Sprintf("%s (%d)", r.Title, r.Year), Category: r.Kind, Note: note})
+			}
+		}
 		site.History.Prune()
 		site.Movies = &movies.Service{Budget: site.Budget, History: site.History, DB: dbh, Catalog: catalog.New(dbh), Cfg: cfg, Profiles: site.Profiles, Indexers: site.Indexers, Jobs: st,
 			Move: pipeline.MoveFile, IsVideo: pipeline.IsVideo, Log: logger, Now: time.Now, Arr: site.Shadow.Arr}
