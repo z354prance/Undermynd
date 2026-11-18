@@ -39,6 +39,10 @@ type Profile struct {
 	Scores            map[string]int `json:"scores"`             // custom format name -> score
 	Language          string         `json:"language,omitempty"` // "" or "Any": any; "Original": skipped here
 	Source            string         `json:"source,omitempty"`   // where it was imported from
+	// GuideScores are the scores the TRaSH Guides gave at the last sync, so
+	// a score changed here since is kept at the next one (roadmap G-1).
+	GuideScores map[string]int `json:"guideScores,omitempty"`
+	GuideID     string         `json:"guideId,omitempty"`
 }
 
 // Spec is one condition of a custom format.

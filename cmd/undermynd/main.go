@@ -41,6 +41,7 @@ import (
 	"github.com/z354prance/undermynd/internal/state"
 	"github.com/z354prance/undermynd/internal/storage"
 	"github.com/z354prance/undermynd/internal/store"
+	"github.com/z354prance/undermynd/internal/trash"
 	"github.com/z354prance/undermynd/internal/tv"
 	"github.com/z354prance/undermynd/internal/watch"
 	"github.com/z354prance/undermynd/internal/web"
@@ -267,6 +268,9 @@ func main() {
 			return site.TV.ImportJob(ctx, j)
 		}
 		go site.TV.Run(ctx)
+		site.Trash = &trash.Syncer{Store: site.Profiles, Cfg: cfg, Log: logger,
+			Client: &trash.Client{HTTP: &http.Client{Timeout: 2 * time.Minute}, URL: func() string { return cfg.Get().Trash.URL }}}
+		go site.Trash.Run(ctx)
 		if site.Requests != nil {
 			site.Requests.Movies = site.Movies
 			site.Requests.TV = site.TV

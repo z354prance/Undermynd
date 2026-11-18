@@ -239,6 +239,18 @@ type TV struct {
 	SearchPerHour int `json:"searchPerHour,omitempty"`
 }
 
+// Trash is the TRaSH Guides sync (roadmap G-1): which guide profiles and
+// quality sizes to keep, by trash id, refreshed daily when Sync is on.
+type Trash struct {
+	Sync       bool     `json:"sync"`
+	Radarr     []string `json:"radarr,omitempty"`
+	Sonarr     []string `json:"sonarr,omitempty"`
+	SizeRadarr string   `json:"sizeRadarr,omitempty"` // a quality-size file, e.g. "movie"
+	SizeSonarr string   `json:"sizeSonarr,omitempty"` // e.g. "series"
+	// URL is the zip of the guides repository; empty is GitHub's.
+	URL string `json:"url,omitempty"`
+}
+
 type Settings struct {
 	Watches      []Watch    `json:"watches"`
 	IntakePaused bool       `json:"intakePaused"` // new grabs are accepted but held until resumed
@@ -257,6 +269,7 @@ type Settings struct {
 	Shadow       Shadow     `json:"shadow"`
 	Movies       Movies     `json:"movies"`
 	TV           TV         `json:"tv"`
+	Trash        Trash      `json:"trash"`
 
 	// Login the arrs use against the fake client API.
 	ClientUser     string        `json:"clientUser"`
