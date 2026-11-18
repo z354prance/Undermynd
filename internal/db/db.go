@@ -351,6 +351,26 @@ var migrations = []string{
 		at       TEXT NOT NULL
 	);
 	CREATE INDEX blocklist_movie ON blocklist(movie_id);`,
+	// 13: native TV (roadmap F5): a series' category, profile and type, and
+	// each episode's monitoring, file and download.
+	`ALTER TABLE series ADD COLUMN category TEXT NOT NULL DEFAULT '';
+	ALTER TABLE series ADD COLUMN profile TEXT NOT NULL DEFAULT '';
+	ALTER TABLE series ADD COLUMN runtime INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE series ADD COLUMN series_type TEXT NOT NULL DEFAULT 'standard';
+	ALTER TABLE series ADD COLUMN refreshed TEXT NOT NULL DEFAULT '';
+	ALTER TABLE episodes ADD COLUMN monitored INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE episodes ADD COLUMN file_path TEXT NOT NULL DEFAULT '';
+	ALTER TABLE episodes ADD COLUMN file_quality TEXT NOT NULL DEFAULT '';
+	ALTER TABLE episodes ADD COLUMN file_score INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE episodes ADD COLUMN file_version INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE episodes ADD COLUMN file_size INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE episodes ADD COLUMN job_id TEXT NOT NULL DEFAULT '';
+	ALTER TABLE episodes ADD COLUMN searched TEXT NOT NULL DEFAULT '';
+	ALTER TABLE episodes ADD COLUMN note TEXT NOT NULL DEFAULT '';
+	ALTER TABLE blocklist ADD COLUMN series_id INTEGER REFERENCES series(id) ON DELETE CASCADE;
+	CREATE INDEX series_category ON series(category);
+	CREATE INDEX episodes_job ON episodes(job_id) WHERE job_id != '';
+	CREATE INDEX blocklist_series ON blocklist(series_id);`,
 }
 
 // Version is the schema version this build expects.

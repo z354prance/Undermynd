@@ -363,3 +363,7 @@ body.ui .arr .a-ladder{display:grid;grid-template-columns:repeat(auto-fill,minma
 body.ui .arr .a-ladder label.a-check{margin:4px 0 0}
 body.ui .arr .a-scores .a-row{margin:4px 0}
 body.ui .arr .a-row label.a-check{margin:0}
+body.ui .arr .a-pbar{position:relative;min-width:140px;height:20px;border-radius:4px;background:rgba(255,255,255,.06);overflow:hidden;font-size:12px}
+body.ui .arr .a-pbar .a-pfill{position:absolute;inset:0 auto 0 0;background:#2f8f7f}
+body.ui .arr .a-pbar.gap .a-pfill{background:#a8662f}
+body.ui .arr .a-pbar span{position:relative;padding:0 8px;line-height:20px;color:var(--a-text)}

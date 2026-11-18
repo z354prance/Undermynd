@@ -24,6 +24,7 @@ import (
 	"github.com/z354prance/undermynd/internal/db"
 	"github.com/z354prance/undermynd/internal/decision"
 	"github.com/z354prance/undermynd/internal/indexers"
+	"github.com/z354prance/undermynd/internal/job"
 	"github.com/z354prance/undermynd/internal/logbuf"
 	"github.com/z354prance/undermynd/internal/mediaserver"
 	"github.com/z354prance/undermynd/internal/metadata"
@@ -39,6 +40,7 @@ import (
 	"github.com/z354prance/undermynd/internal/state"
 	"github.com/z354prance/undermynd/internal/storage"
 	"github.com/z354prance/undermynd/internal/store"
+	"github.com/z354prance/undermynd/internal/tv"
 	"github.com/z354prance/undermynd/internal/watch"
 	"github.com/z354prance/undermynd/internal/web"
 )
@@ -253,9 +255,18 @@ func main() {
 		go site.Shadow.Run(ctx)
 		site.Movies = &movies.Service{DB: dbh, Catalog: catalog.New(dbh), Cfg: cfg, Profiles: site.Profiles, Indexers: site.Indexers, Jobs: st,
 			Move: pipeline.MoveFile, IsVideo: pipeline.IsVideo, Log: logger, Now: time.Now, Arr: site.Shadow.Arr}
-		eng.Native = site.Movies.ImportJob
+		site.TV = &tv.Service{DB: dbh, Catalog: catalog.New(dbh), TMDB: site.Metadata.TMDB, Cfg: cfg, Profiles: site.Profiles, Indexers: site.Indexers, Jobs: st,
+			Move: pipeline.MoveFile, IsVideo: pipeline.IsVideo, Log: logger, Now: time.Now, Arr: site.Shadow.Arr}
+		eng.Native = func(ctx context.Context, j job.Job) (bool, []string, []string, error) {
+			if own, placed, left, err := site.Movies.ImportJob(ctx, j); own {
+				return own, placed, left, err
+			}
+			return site.TV.ImportJob(ctx, j)
+		}
+		go site.TV.Run(ctx)
 		if site.Requests != nil {
 			site.Requests.Movies = site.Movies
+			site.Requests.TV = site.TV
 		}
 		go site.Movies.Run(ctx)
 	}

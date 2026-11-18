@@ -24,6 +24,7 @@ import (
 	"github.com/z354prance/undermynd/internal/movies"
 	"github.com/z354prance/undermynd/internal/seerr"
 	"github.com/z354prance/undermynd/internal/shows"
+	"github.com/z354prance/undermynd/internal/tv"
 )
 
 // Seerr's media statuses, kept for the public page.
@@ -48,6 +49,8 @@ type Service struct {
 	// Movies keeps native movie categories (roadmap F4); approved movies for
 	// a native category go there instead of Radarr.
 	Movies *movies.Service
+	// TV keeps native TV categories (roadmap F5).
+	TV *tv.Service
 
 	mu      sync.Mutex
 	lib     map[string]libCache // by arr kind
@@ -98,6 +101,25 @@ func (s *Service) library(ctx context.Context, kind string) map[int64]arr.Have {
 		by := map[int64]arr.Have{}
 		for _, m := range ms {
 			by[m.TMDB] = arr.Have{TMDBID: m.TMDB, Monitored: m.Monitored, HasFile: m.File != ""}
+		}
+		return by
+	}
+	if cat := s.category(kind); kind == "tv" && s.TV != nil && s.nativeMovies(cat) {
+		list, err := s.TV.List(cat)
+		if err != nil {
+			return nil
+		}
+		by := map[int64]arr.Have{}
+		for _, x := range list {
+			if x.TMDB == 0 {
+				continue
+			}
+			h := arr.Have{TMDBID: x.TMDB, TVDBID: x.TVDB, Monitored: x.Monitored}
+			h.Stats.EpisodeFileCount, h.Stats.EpisodeCount = x.Have, x.Episodes
+			if x.Episodes > 0 {
+				h.Stats.Percent = 100 * float64(x.Have) / float64(x.Episodes)
+			}
+			by[x.TMDB] = h
 		}
 		return by
 	}
@@ -410,6 +432,24 @@ func (s *Service) handOn(ctx context.Context, r Request) (string, error) {
 		s.forgetLibrary("movie")
 		return "added to Radarr, searching", nil
 	case "tv":
+		if cat := s.category("tv"); s.TV != nil && s.nativeMovies(cat) {
+			x, err := s.TV.Add(ctx, cat, r.TMDBID, "", false)
+			if err != nil {
+				return "", err
+			}
+			// The latest season is wanted too, as a request means the show.
+			if _, eps, err := s.TV.Get(x.ID); err == nil && len(eps) > 0 {
+				last := 0
+				for _, e := range eps {
+					if e.Season > last && e.AirDate != "" {
+						last = e.Season
+					}
+				}
+				s.TV.Monitor(x.ID, last, 0, true)
+			}
+			go s.TV.SearchWanted(context.WithoutCancel(ctx))
+			return "added to " + cat + " (native), searching", nil
+		}
 		c := s.client("tv")
 		if c == nil {
 			return "", errors.New("no Sonarr category with an address is set")
