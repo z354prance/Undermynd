@@ -251,6 +251,25 @@ type Trash struct {
 	URL string `json:"url,omitempty"`
 }
 
+// Scheduler (roadmap G-2, Houndarr parity) paces every automatic search.
+type Scheduler struct {
+	// PerHour is the global budget of automatic searches across native
+	// movies, TV, anime gap filling and the arrs' backlog; 0 means 30.
+	PerHour int `json:"perHour,omitempty"`
+	// Batch is the most searches one run of a backlog sends; 0 means 5.
+	Batch int `json:"batch,omitempty"`
+	// GraceHours waits after an episode's air date before searching it, as
+	// releases need time to appear; 0 means 2.
+	GraceHours int `json:"graceHours,omitempty"`
+	// Backlog asks Sonarr and Radarr categories (not native ones) to search
+	// their missing and cutoff-unmet items in small batches, as Houndarr does.
+	Backlog bool `json:"backlog,omitempty"`
+	// MissingDays and CutoffDays are how long an item rests after a backlog
+	// search; 0 means 7 and 14.
+	MissingDays int `json:"missingDays,omitempty"`
+	CutoffDays  int `json:"cutoffDays,omitempty"`
+}
+
 type Settings struct {
 	Watches      []Watch    `json:"watches"`
 	IntakePaused bool       `json:"intakePaused"` // new grabs are accepted but held until resumed
@@ -270,6 +289,7 @@ type Settings struct {
 	Movies       Movies     `json:"movies"`
 	TV           TV         `json:"tv"`
 	Trash        Trash      `json:"trash"`
+	Scheduler    Scheduler  `json:"scheduler"`
 
 	// Login the arrs use against the fake client API.
 	ClientUser     string        `json:"clientUser"`

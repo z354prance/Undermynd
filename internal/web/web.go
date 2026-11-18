@@ -35,6 +35,7 @@ import (
 	"github.com/z354prance/undermynd/internal/progress"
 	"github.com/z354prance/undermynd/internal/requests"
 	"github.com/z354prance/undermynd/internal/rss"
+	"github.com/z354prance/undermynd/internal/scheduler"
 	"github.com/z354prance/undermynd/internal/secret"
 	"github.com/z354prance/undermynd/internal/shadow"
 	"github.com/z354prance/undermynd/internal/shows"
@@ -81,6 +82,9 @@ type Server struct {
 	History *history.Log
 	// Trash syncs profiles from the TRaSH Guides; nil without the database.
 	Trash *trash.Syncer
+	// Budget and Backlog pace automatic searches; nil without the database.
+	Budget  *scheduler.Budget
+	Backlog *scheduler.Backlog
 	// Requests keeps requests in Undermynd (native mode); nil without the database.
 	Requests *requests.Service
 	RSS      interface {
@@ -188,6 +192,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/api/movies", s.admin(s.moviesList))
 	mux.HandleFunc("GET /admin/api/tv", s.admin(s.tvList))
 	mux.HandleFunc("GET /admin/api/wanted", s.admin(s.wanted))
+	mux.HandleFunc("GET /admin/api/scheduler", s.admin(s.schedulerView))
+	mux.HandleFunc("PUT /admin/api/scheduler", s.guard(s.admin(s.schedulerPut)))
+	mux.HandleFunc("POST /admin/api/scheduler/backlog", s.guard(s.admin(s.backlogNow)))
 	mux.HandleFunc("GET /admin/api/calendar", s.admin(s.calendar))
 	mux.HandleFunc("GET /admin/api/history", s.admin(s.historyList))
 	mux.HandleFunc("GET /admin/api/manual-import", s.admin(s.manualImportList))
