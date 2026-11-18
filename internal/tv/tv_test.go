@@ -177,7 +177,7 @@ func TestNativeTV(t *testing.T) {
 	}
 	_, eps, _ := s.Get(sid)
 	for _, e := range eps {
-		if e.Season == 1 && e.Status != "have" || e.Season == 2 && e.Number == 2 && e.Status != "downloading" || e.Number == 3 && e.Status != "unaired" {
+		if e.Season == 1 && e.Status != "cutoff unmet" || e.Season == 2 && e.Number == 2 && e.Status != "downloading" || e.Number == 3 && e.Status != "unaired" {
 			t.Errorf("S%dE%d: %s", e.Season, e.Number, e.Status)
 		}
 	}
