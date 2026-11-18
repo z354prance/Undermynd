@@ -31,6 +31,7 @@ import (
 	"github.com/z354prance/undermynd/internal/logbuf"
 	"github.com/z354prance/undermynd/internal/metadata"
 	"github.com/z354prance/undermynd/internal/movies"
+	"github.com/z354prance/undermynd/internal/music"
 	"github.com/z354prance/undermynd/internal/musicbrainz"
 	"github.com/z354prance/undermynd/internal/pipeline"
 	"github.com/z354prance/undermynd/internal/progress"
@@ -88,6 +89,8 @@ type Server struct {
 	Backlog *scheduler.Backlog
 	// MusicBrainz reads artists and albums; nil without the database.
 	MusicBrainz *musicbrainz.Client
+	// Music keeps native music categories; nil without the database.
+	Music *music.Service
 	// Requests keeps requests in Undermynd (native mode); nil without the database.
 	Requests *requests.Service
 	RSS      interface {
@@ -196,6 +199,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/api/tv", s.admin(s.tvList))
 	mux.HandleFunc("GET /admin/api/wanted", s.admin(s.wanted))
 	mux.HandleFunc("GET /admin/api/musicbrainz/artists", s.admin(s.mbArtists))
+	mux.HandleFunc("GET /admin/api/music", s.admin(s.musicList))
+	mux.HandleFunc("POST /admin/api/music/add", s.guard(s.admin(s.musicAdd)))
+	mux.HandleFunc("POST /admin/api/music/import", s.guard(s.admin(s.musicImport)))
+	mux.HandleFunc("PUT /admin/api/music/settings", s.guard(s.admin(s.musicSettings)))
+	mux.HandleFunc("POST /admin/api/music/search-wanted", s.guard(s.admin(s.musicSearchWanted)))
+	mux.HandleFunc("PUT /admin/api/music/albums/{id}", s.guard(s.admin(s.musicAlbumEdit)))
+	mux.HandleFunc("POST /admin/api/music/albums/{id}/search", s.guard(s.admin(s.musicAlbumSearch)))
+	mux.HandleFunc("POST /admin/api/music/albums/{id}/grab", s.guard(s.admin(s.musicAlbumGrab)))
+	mux.HandleFunc("GET /admin/api/music/{id}", s.admin(s.musicArtist))
+	mux.HandleFunc("PUT /admin/api/music/{id}", s.guard(s.admin(s.musicArtistEdit)))
+	mux.HandleFunc("DELETE /admin/api/music/{id}", s.guard(s.admin(s.musicArtistDelete)))
 	mux.HandleFunc("GET /admin/api/musicbrainz/artists/{id}/albums", s.admin(s.mbAlbums))
 	mux.HandleFunc("GET /admin/api/scheduler", s.admin(s.schedulerView))
 	mux.HandleFunc("PUT /admin/api/scheduler", s.guard(s.admin(s.schedulerPut)))
@@ -262,7 +276,7 @@ func secure(next http.Handler) http.Handler {
 		admin := strings.HasPrefix(r.URL.Path, "/admin") || strings.HasPrefix(r.URL.Path, "/assets/")
 		if admin {
 			// The admin pages may be framed only by the same sites as the public page.
-			h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; frame-ancestors "+embed+"; base-uri 'none'; form-action 'self'")
+			h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https://coverartarchive.org https://*.archive.org; frame-ancestors "+embed+"; base-uri 'none'; form-action 'self'")
 		} else {
 			h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https://image.tmdb.org; style-src 'self' 'unsafe-inline'; frame-ancestors "+embed+"; base-uri 'none'; form-action 'self'")
 		}

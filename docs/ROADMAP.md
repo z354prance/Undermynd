@@ -1,10 +1,10 @@
-# Roadmap: folding the arr stack into Undermynd (v38, Nov 17, 2026)
+# Roadmap: folding the arr stack into Undermynd (v39, Nov 17, 2026)
 
 Goal: one app that does what Radarr, Sonarr, Lidarr, Prowlarr, Seerr, Houndarr and Recyclarr do today, so nothing else has to run or be configured. It will be renamed HyveMynd at the end.
 
 How to use this doc: the **milestones table** is the plan. Each milestone is one or a few pull requests, has a clear exit test, and lists what it depends on. Decisions and gates explain why the order is what it is. This file is kept in the repo (`docs/ROADMAP.md`) and in the Undermynd project (`design/roadmap-arr-consolidation.md`) with the same content. Supporting project docs: `design/metadata-sources.md`, `design/anime-pipeline.md`; in the repo: `docs/RENAME.md`.
 
-v13 restructured the plan into milestones. v14 to v17 answered every gate that blocks the start. v18 recorded Stage A progress. v19 recorded B1 merged and added B0 (Go upgrade). v20 closed A1. v21 closed B1 and B0. v22 recorded B2 merged. v23 recorded the B3 spike results. v24 recorded B4 (metadata layer) merged. v25 recorded C1 built. v26 recorded the C1 fixes and C2 built. v27 recorded that anime stays on the simple importer. v28 recorded C3 built. v29 recorded C4 built. v30 recorded E1 and F1 built. v31 recorded F2 built. v32 recorded F3 built. v33 recorded F4 built. v34 recorded F5 built. v35 recorded F6 built: Stage F is complete in code. v36 recorded G-1 built. v37 recorded G-2 built: Stage G is complete in code. v38 records H1 built.
+v13 restructured the plan into milestones. v14 to v17 answered every gate that blocks the start. v18 recorded Stage A progress. v19 recorded B1 merged and added B0 (Go upgrade). v20 closed A1. v21 closed B1 and B0. v22 recorded B2 merged. v23 recorded the B3 spike results. v24 recorded B4 (metadata layer) merged. v25 recorded C1 built. v26 recorded the C1 fixes and C2 built. v27 recorded that anime stays on the simple importer. v28 recorded C3 built. v29 recorded C4 built. v30 recorded E1 and F1 built. v31 recorded F2 built. v32 recorded F3 built. v33 recorded F4 built. v34 recorded F5 built. v35 recorded F6 built: Stage F is complete in code. v36 recorded G-1 built. v37 recorded G-2 built: Stage G is complete in code. v38 recorded H1 built. v39 records H2 built: Stage H is complete in code.
 
 ---
 
@@ -137,7 +137,7 @@ Notes: C3 and C4 search nyaa through RSS search URLs, so they do not wait for D1
 | ID | Milestone | Size | Depends on | Exit test |
 |---|---|---|---|---|
 | H1 | MusicBrainz metadata with a 1 request/second limiter and cache | M | B4 | Artist and album lists load. **Built** (`internal/musicbrainz`): artist search and lookup, albums/EPs/singles, editions with track lists (usual edition first), Cover Art Archive covers; one request a second with retry on 503, responses cached in the database; admin API `/admin/api/musicbrainz/...`. The Music page comes with H2 |
-| H2 | Music library, release matching, tagging, import | XL | H1, D1, G-1 | Lidarr off for two weeks |
+| H2 | Music library, release matching, tagging, import | XL | H1, D1, G-1 | Lidarr off for two weeks. **Built** (`internal/music`, migration 16, Music page): per-category native switch; import of Lidarr's artists and albums with files, folder and quality; add an artist from MusicBrainz (studio albums monitored, EPs, singles and live albums not); new albums from MusicBrainz weekly; wanted albums (missing, partial, below the cutoff) searched within the shared budget; releases judged by artist, album, year, quality (FLAC 24bit to MP3-192, wanted list and cutoff in settings), seeders, discographies and the blocklist; finished albums moved to `<Artist>/<Album (Year)>/` with disc folders and covers, the old album set aside; dry run. **Decision:** files keep the tags their release carries; Undermynd does not rewrite tags (Emby reads them as they are). Real-run check: import from Lidarr, dry run, then live; Lidarr's monitoring off |
 
 ### Stage I: Finish
 | ID | Milestone | Size | Depends on | Exit test |
@@ -221,6 +221,7 @@ The redesign doc says Settings, Library and Requests/Access are not designed yet
 - v16: requests need no sign-in; every request waits for admin approval. Stage E is one milestone. A4 done.
 - v17: G3 answered: TMDB plus anime-offline-database plus ID mapping.
 - v18: A1 merged (PR #2), A2 done (PR #3, Clone bug fixed), A3 done (README status, this file added to `docs/`). Merge rule recorded.
+- v39: H2 built: native music; tags are not rewritten.
 - v38: H1 built: MusicBrainz client.
 - v37: G-2 built: shared search budget, grace window, arr backlog search.
 - v36: G-1 built: TRaSH Guides sync.
