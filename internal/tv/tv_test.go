@@ -122,8 +122,9 @@ func TestNativeTV(t *testing.T) {
 	}
 	sid := list[0].ID
 
-	// Season 1 is all missing and finished: one season search. S02E02: one episode.
-	if n, err := s.SearchWanted(ctx); err != nil || n != 2 {
+	// Season 1 is all missing and finished: one season search. S02E02: one
+	// episode. S02E01 (WEBDL, below the Bluray cutoff): an upgrade search.
+	if n, err := s.SearchWanted(ctx); err != nil || n != 3 {
 		t.Fatalf("search wanted: %d %v", n, err)
 	}
 	got := strings.Join(idx.grabbed, " ")
