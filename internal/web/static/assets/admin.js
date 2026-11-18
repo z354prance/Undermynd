@@ -233,7 +233,7 @@
     if(aView.page==='show')return aShowPage(w,aView.folder);if(aView.page==='add')return aAddPage(w);aListPage(w)}
   function aListPage(w){
     var msg=aMsg(),host=el('div','a-content');
-    w.appendChild(aToolbar([aBtn('refresh','Rescan folders',function(b){b.disabled=true;api('POST','/shows/rescan',{}).then(function(){app()}).catch(function(e){b.disabled=false;setMsg(msg,e.message,true)})}),'|',
+    w.appendChild(aToolbar([aBtn('refresh','Rescan folders',function(b){b.disabled=true;api('POST','/shows/rescan',{}).then(function(){setTimeout(app,600)}).catch(function(e){b.disabled=false;setMsg(msg,e.message,true)})}),'|',
       aBtn('plus','Add New',function(){aView.page='add';app()}),'>',
       aBtn('filter',aView.filter==='following'?'Following':'All shows',function(){aView.filter=aView.filter==='following'?'all':'following';app()},aView.filter==='following'?'on':'')]));
     w.appendChild(host);host.appendChild(msg);
@@ -248,7 +248,7 @@
           var sub=el('div','a-dim a-small',(s.titles&&s.titles.length?'also '+s.titles.join(', '):''));if(s.handMade&&!s.followed)sub.textContent=(sub.textContent?sub.textContent+' · ':'')+'hand-made feed: '+s.handMade;c1.appendChild(sub);tr.appendChild(c1);
           var c2=el('td');if(s.followed)c2.appendChild(aGroups(s.groups));tr.appendChild(c2);
           var c3=el('td');if(s.followed)c3.appendChild(aLbl(s.quality));tr.appendChild(c3);
-          var c4=el('td');c4.appendChild(aBar(s));tr.appendChild(c4);
+          var c4=el('td');c4.appendChild(s.unscanned?el('span','a-dim a-small','not read yet'):aBar(s));tr.appendChild(c4);
           var c5=el('td');c5.appendChild(s.summary.gaps?aLbl(s.summary.gaps+' gap'+(s.summary.gaps>1?'s':''),'orange'):el('span','a-dim','—'));tr.appendChild(c5);
           tr.appendChild(el('td','a-dim',s.summary.latest?((s.summary.season>1?'S'+s.summary.season+' · ':'')+s.summary.latest):'—'));
           var c7=el('td');if(s.followed)c7.appendChild(aLbl('Following','teal'));var st=aStatus(s);if(st)c7.appendChild(el('div','a-dim a-small',st));tr.appendChild(c7);
@@ -258,6 +258,7 @@
         var fol=d.shows.filter(function(s){return s.followed}).length,gaps=d.shows.reduce(function(n,s){return n+s.summary.gaps},0);
         note.textContent=d.shows.length+' folders · '+fol+' followed · '+gaps+' gaps · showing '+Math.min(list.length,400)+'. The bar is episodes on disk out of the numbers from 1 to the newest; orange means numbers are missing in between. Status comes from AniList once a show has been opened or followed.'}
       q.oninput=function(){aView.q=q.value;draw()};draw();
+      if(d.scan&&d.scan.running){setMsg(msg,'Reading folders… '+d.scan.done+' of '+(d.scan.total||'?')+'. The list fills in as it goes.');clearInterval(timer);timer=setInterval(function(){if(tab!=='anime'||aView.page!=='list'){clearInterval(timer);return}api('GET','/shows').then(function(x){d.shows=x.shows;draw();if(x.scan.running)setMsg(msg,'Reading folders… '+x.scan.done+' of '+(x.scan.total||'?')+'.');else{clearInterval(timer);msg.textContent=''}}).catch(function(){})},3000)}
     }).catch(function(e){if(e.status===401)fail(e);else setMsg(msg,e.message,true)})}
   function aFollow(s,after){var on=!!s.followed;var b=el('button','a-mon'+(on?'':' off'));b.type='button';b.setAttribute('aria-label',(on?'following: ':'not following: ')+s.name);b.title=on?'Following: click to stop':'Not following: click to follow';b.appendChild(svg(on?'book':'bookoff'));
     b.onclick=function(e){e.stopPropagation();b.disabled=true;api('PUT','/shows/one',{folder:s.folder,followed:!on,groups:s.groups,quality:s.quality||'1080p',titles:s.titles,fromEpisode:on?s.fromEpisode:0,anilistId:s.anilistId||0}).then(after).catch(function(err){b.disabled=false;alert(err.message)})};return b}

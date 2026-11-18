@@ -263,3 +263,38 @@ func (s *Store) MarkGrabbed(folder, title string) error {
 	_, err := s.DB.Exec(`UPDATE show_releases SET grabbed = ? WHERE folder = ? AND title = ?`, stamp(s.Now()), folder, title)
 	return err
 }
+
+// PutSummary keeps what a folder holds.
+func (s *Store) PutSummary(folder string, sum Summary) error {
+	b, _ := json.Marshal(sum)
+	_, err := s.DB.Exec(`INSERT INTO show_folders (folder, summary, scanned) VALUES (?, ?, ?)
+		ON CONFLICT(folder) DO UPDATE SET summary = excluded.summary, scanned = excluded.scanned`, folder, string(b), stamp(s.Now()))
+	return err
+}
+
+// Summaries returns every kept folder summary.
+func (s *Store) Summaries() (map[string]Summary, error) {
+	rows, err := s.DB.Query(`SELECT folder, summary FROM show_folders`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]Summary{}
+	for rows.Next() {
+		var f, b string
+		if err := rows.Scan(&f, &b); err != nil {
+			return nil, err
+		}
+		var sum Summary
+		if json.Unmarshal([]byte(b), &sum) == nil {
+			out[f] = sum
+		}
+	}
+	return out, rows.Err()
+}
+
+// DropSummary forgets a folder that is gone.
+func (s *Store) DropSummary(folder string) error {
+	_, err := s.DB.Exec(`DELETE FROM show_folders WHERE folder = ?`, folder)
+	return err
+}

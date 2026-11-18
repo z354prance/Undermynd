@@ -244,6 +244,14 @@ var migrations = []string{
 		grabbed  TEXT NOT NULL DEFAULT '',
 		PRIMARY KEY (folder, title)
 	);`,
+
+	// 7: what each show folder holds, kept between restarts so the Anime page
+	// opens at once; refreshed in the background.
+	`CREATE TABLE show_folders (
+		folder  TEXT PRIMARY KEY,
+		summary TEXT NOT NULL,
+		scanned TEXT NOT NULL
+	);`,
 }
 
 // Version is the schema version this build expects.
