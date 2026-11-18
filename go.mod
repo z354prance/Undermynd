@@ -2,7 +2,10 @@ module github.com/z354prance/undermynd
 
 go 1.27.0
 
-require modernc.org/sqlite v1.62.0
+require (
+	github.com/dlclark/regexp2 v1.12.0
+	modernc.org/sqlite v1.62.0
+)
 
 require (
 	github.com/dustin/go-humanize v1.1.0 // indirect

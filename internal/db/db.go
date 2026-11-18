@@ -288,6 +288,25 @@ var migrations = []string{
 		grabs      INTEGER NOT NULL DEFAULT 0,
 		PRIMARY KEY (indexer_id, day)
 	);`,
+	// 10: quality profiles, custom formats and quality sizes (roadmap F2).
+	// Each is kept as JSON; source is the category it was imported from.
+	`CREATE TABLE profiles (
+		id     INTEGER PRIMARY KEY,
+		name   TEXT NOT NULL UNIQUE,
+		source TEXT NOT NULL DEFAULT '',
+		body   TEXT NOT NULL
+	);
+	CREATE TABLE custom_formats (
+		id     INTEGER PRIMARY KEY,
+		name   TEXT NOT NULL UNIQUE,
+		source TEXT NOT NULL DEFAULT '',
+		body   TEXT NOT NULL
+	);
+	CREATE TABLE quality_sizes (
+		quality TEXT PRIMARY KEY,
+		min     REAL NOT NULL DEFAULT 0,
+		max     REAL NOT NULL DEFAULT 0
+	);`,
 }
 
 // Version is the schema version this build expects.

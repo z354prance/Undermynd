@@ -358,3 +358,8 @@ body.ui .arr .a-card{display:flex;gap:18px;align-items:center;padding:16px;backg
 body.ui .arr .a-card-b{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
 body.ui .arr .a-card h3{margin:0;font:500 19px "IBM Plex Sans",system-ui,sans-serif;color:#fff}
 @media (max-width:760px){body.ui .arr .a-form{grid-template-columns:1fr}body.ui .arr .a-content{padding:14px 12px}}
+body.ui .arr .a-warn{color:#f0b27a}
+body.ui .arr .a-ladder{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0 16px}
+body.ui .arr .a-ladder label.a-check{margin:4px 0 0}
+body.ui .arr .a-scores .a-row{margin:4px 0}
+body.ui .arr .a-row label.a-check{margin:0}
