@@ -153,10 +153,19 @@ func TestFollowAndGrab(t *testing.T) {
 	if ft := svc.FolderTitles(lib); len(ft["Seitokai ni mo Ana wa Aru"]) != 1 {
 		t.Fatalf("folder titles: %v", ft)
 	}
-	// Gap search grabs 4.
-	gaps, err := svc.SearchGaps(ctx, sc.Folder)
-	if err != nil || len(gaps) != 1 || !strings.Contains(gaps[0], "- 04") {
-		t.Fatalf("gaps: %v %v", gaps, err)
+	// With gap filling on, the next check also grabs the missing 4, once.
+	cur, _, _ := svc.Get(sc.Folder)
+	cur.Settings.FillGaps = true
+	if _, err := svc.Save(sc.Folder, cur.Settings, false); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Hour)
+	started, err = svc.Check(ctx, sc.Folder)
+	if err != nil || len(started) != 1 || !strings.Contains(started[0], "- 04") {
+		t.Fatalf("gap fill: %v %v", started, err)
+	}
+	if gaps, err := svc.SearchGaps(ctx, sc.Folder); err != nil || len(gaps) != 0 {
+		t.Fatalf("4 was grabbed already: %v %v", gaps, err)
 	}
 	// Interactive search warns about what would not be picked.
 	res, err := svc.Search(ctx, sc.Folder, "", 0)

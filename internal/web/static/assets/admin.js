@@ -261,7 +261,7 @@
       if(d.scan&&d.scan.running){setMsg(msg,'Reading folders… '+d.scan.done+' of '+(d.scan.total||'?')+'. The list fills in as it goes.');clearInterval(timer);timer=setInterval(function(){if(tab!=='anime'||aView.page!=='list'){clearInterval(timer);return}api('GET','/shows').then(function(x){d.shows=x.shows;d.active=x.active;draw();if(x.scan.running)setMsg(msg,'Reading folders… '+x.scan.done+' of '+(x.scan.total||'?')+'.');else{clearInterval(timer);msg.textContent=''}}).catch(function(){})},3000)}
     }).catch(function(e){if(e.status===401)fail(e);else setMsg(msg,e.message,true)})}
   function aFollow(s,after){var on=!!s.followed;var b=el('button','a-mon'+(on?'':' off'));b.type='button';b.setAttribute('aria-label',(on?'following: ':'not following: ')+s.name);b.title=on?'Following: click to stop':'Not following: click to follow';b.appendChild(svg(on?'book':'bookoff'));
-    b.onclick=function(e){e.stopPropagation();b.disabled=true;api('PUT','/shows/one',{folder:s.folder,followed:!on,groups:s.groups,quality:s.quality||'1080p',titles:s.titles,fromEpisode:on?s.fromEpisode:0,anilistId:s.anilistId||0}).then(after).catch(function(err){b.disabled=false;alert(err.message)})};return b}
+    b.onclick=function(e){e.stopPropagation();b.disabled=true;api('PUT','/shows/one',{folder:s.folder,followed:!on,groups:s.groups,quality:s.quality||'1080p',titles:s.titles,fromEpisode:on?s.fromEpisode:0,anilistId:s.anilistId||0,fillGaps:s.followed?!!s.fillGaps:true}).then(after).catch(function(err){b.disabled=false;alert(err.message)})};return b}
   function aShowPage(w,folder){
     var msg=aMsg();var host=el('div');w.appendChild(host);
     api('GET','/shows/one?folder='+encodeURIComponent(folder)).then(function(d){var s=d.show;
@@ -280,7 +280,7 @@
       if(s.anilist){var al=el('div','a-dim');var link=el('a','',(s.anilist.english||s.anilist.romaji)+' on AniList');link.href=s.anilist.url;link.target='_blank';link.rel='noopener';al.appendChild(link);al.appendChild(document.createTextNode(' · '+aStatus(s)+(s.anilist.season?' · '+s.anilist.season.toLowerCase()+' '+s.anilist.year:'')));hd.appendChild(al)}
       else hd.appendChild(el('div','a-dim','AniList has no match for the folder name. Set the AniList id in Edit to show its status.'));
       if(s.titles&&s.titles.length)hd.appendChild(el('div','a-dim','Also matched as: '+s.titles.join(', ')));
-      if(s.followed)hd.appendChild(el('div','a-dim a-small','New episodes above '+(s.fromEpisode||0)+' are grabbed by themselves, from '+s.groups[0]+' first'+(s.groups.length>1?'; a later group only when an earlier one skips an episode':'')+'.'));
+      if(s.followed)hd.appendChild(el('div','a-dim a-small','New episodes above '+(s.fromEpisode||0)+' are grabbed by themselves, from '+s.groups[0]+' first'+(s.groups.length>1?'; a later group only when an earlier one skips an episode':'')+'. '+(s.fillGaps?'Gaps are searched for once a day'+(s.gapsChecked&&s.gapsChecked[0]!=='0'?' (last '+ago(s.gapsChecked)+' ago)':'')+'.':'Gaps are only searched for by hand.')));
       host.appendChild(hd);var c=el('div','a-content');host.appendChild(c);c.appendChild(msg);
       var by={};d.episodes.forEach(function(e){(by[e.season]=by[e.season]||[]).push(e)});
       Object.keys(by).map(Number).sort(function(a,b){return b-a}).forEach(function(sn){var list=by[sn].sort(function(a,b){return b.episode-a.episode});
@@ -324,13 +324,14 @@
   function aForm(){var f=el('div','a-form');return {el:f,row:function(label,ctl,help,id){var l=el('label','a-k',label);if(id)l.htmlFor=id;f.appendChild(l);var c=el('div');c.appendChild(ctl);if(help)c.appendChild(el('div','a-help',help));f.appendChild(c)}}}
   function aEditModal(s,after,defaults){var md=aModal('Edit · '+s.name,'860px');var f=aForm();md.body.appendChild(f.el);
     var fol=el('label','a-check');var cb=el('input');cb.type='checkbox';cb.checked=!!s.followed;fol.appendChild(cb);fol.appendChild(el('span','','Grab new episodes by themselves'));f.row('Following',fol);
+    var gl=el('label','a-check');var gc=el('input');gc.type='checkbox';gc.checked=s.followed?!!s.fillGaps:true;gl.appendChild(gc);gl.appendChild(el('span','','Also fill gaps (episodes missing between the ones in the folder), once a day'));f.row('Gaps',gl);
     var order=aOrder(s.groups&&s.groups.length?s.groups:(defaults||['SubsPlease']));f.row('Groups, in order',order.el,'The first group that releases an episode gets it. A later group is used only when an earlier one skipped that episode (it released a later one), or after a day.');
     var q=el('select','a-input');q.id='aq';['1080p','720p','480p','2160p','any'].forEach(function(v){var o=new Option(v==='any'?'any resolution':v,v);o.selected=(s.quality||'1080p')===v;q.appendChild(o)});f.row('Quality',q,null,'aq');
     var ti=el('textarea','a-input a-area');ti.id='at';ti.value=(s.titles||[]).join('\n');f.row('Other titles',ti,'One per line. Releases under any of these titles belong to this folder, for following and for the importer. The folder name always counts.','at');
     var fe=el('input','a-input');fe.id='af';fe.type='number';fe.min='0';fe.value=String(s.fromEpisode||0);f.row('Grab episodes above',fe,'Following starts from the newest episode on disk. Lower it to grab older ones too; gaps are separate (Search gaps).','af');
     var ai=el('input','a-input');ai.id='aa';ai.type='number';ai.min='0';ai.value=String(s.anilistId||0);f.row('AniList id',ai,'Only for the status shown (airing, episodes, next episode). 0 finds it by the folder name. The number is in the AniList address.','aa');
     var msg=aMsg();md.body.appendChild(msg);var cancel=el('button','a-btn','Cancel');cancel.type='button';cancel.onclick=md.close;var save=el('button','a-btn primary','Save');save.type='button';
-    save.onclick=function(){save.disabled=true;api('PUT','/shows/one',{folder:s.folder,followed:cb.checked,groups:order.value(),quality:q.value,titles:ti.value.split(/\n|,/),fromEpisode:Number(fe.value)||0,anilistId:Number(ai.value)||0}).then(function(){md.close();after()}).catch(function(e){save.disabled=false;setMsg(msg,e.message,true)})};
+    save.onclick=function(){save.disabled=true;api('PUT','/shows/one',{folder:s.folder,followed:cb.checked,groups:order.value(),quality:q.value,titles:ti.value.split(/\n|,/),fromEpisode:Number(fe.value)||0,anilistId:Number(ai.value)||0,fillGaps:gc.checked}).then(function(){md.close();after()}).catch(function(e){save.disabled=false;setMsg(msg,e.message,true)})};
     md.foot.appendChild(cancel);md.foot.appendChild(save)}
   function aAddPage(w){
     w.appendChild(aToolbar([aBtn('back','Library',function(){aView.page='list';app()}),'>']));var c=el('div','a-content');w.appendChild(c);
@@ -353,7 +354,7 @@
       var qs=el('select','a-input');qs.id='aqq';['1080p','720p','480p','any'].forEach(function(v){qs.appendChild(new Option(v==='any'?'any resolution':v,v))});f.row('Quality',qs,null,'aqq');
       var start=el('select','a-input');start.id='as';start.appendChild(new Option('every episode released so far ('+x.latest+')','all'));start.appendChild(new Option('new episodes only','new'));f.row('Start with',start,null,'as');
       var m=aMsg();b.appendChild(m);var ft=el('div','a-modal-f');var cn=el('button','a-btn','Cancel');cn.type='button';cn.onclick=function(){box.remove()};var ok=el('button','a-btn primary','Add and follow');ok.type='button';
-      ok.onclick=function(){ok.disabled=true;setMsg(m,'Adding and checking nyaa…');api('POST','/shows/add',{root:rs.value,name:nm.value,groups:order.value(),quality:qs.value,titles:nm.value.trim()===x.title?[]:[x.title],fromStart:start.value==='all',fromEpisode:start.value==='all'?0:x.latest}).then(function(r){
+      ok.onclick=function(){ok.disabled=true;setMsg(m,'Adding and checking nyaa…');api('POST','/shows/add',{root:rs.value,name:nm.value,groups:order.value(),quality:qs.value,titles:nm.value.trim()===x.title?[]:[x.title],fromStart:start.value==='all',fromEpisode:start.value==='all'?0:x.latest,fillGaps:true}).then(function(r){
         setMsg(m,(r.warning?r.warning+' ':'')+(r.started.length?'Started '+r.started.length+' download'+(r.started.length>1?'s':'')+'.':'Following; nothing to grab yet.'));setTimeout(function(){aView.page='show';aView.folder=r.show.folder;app()},1200)}).catch(function(e){ok.disabled=false;setMsg(m,e.message,true)})};
       ft.appendChild(cn);ft.appendChild(ok);box.appendChild(ft);after.after(box);nm.focus()}
   }
