@@ -25,23 +25,32 @@
   // ------------------------------------------------------------ segmented circle
   var STAGES = ["requested", "found", "download", "transfer", "convert", "ready"];
   var STAGE_NAME = { requested: "Requested", found: "Found", download: "Downloading", transfer: "Transferring", convert: "Converting", ready: "Ready" };
+  // The segmented circle: six arcs, one per stage. Each arc is its own path,
+  // so a dash pattern (the marching track) stays inside its arc.
+  function arcPath(a0, a1) {
+    var r = 9, p = function (a) { return (12 + r * Math.sin(a)).toFixed(3) + " " + (12 - r * Math.cos(a)).toFixed(3); };
+    return "M" + p(a0) + " A" + r + " " + r + " 0 0 1 " + p(a1);
+  }
+  // Animations keep their phase across redraws (the lists redraw every few
+  // seconds), so a pulse or blink never jumps back to its start.
+  function phase(node, ms) { node.style.animationDelay = -(Date.now() % ms) + "ms"; return node; }
+  var ANIM = { waiting: 2800, stalled: 1000, failed: 1600 };
   function seg(stage, state, progress, size) {
-    size = size || 22; var r = 9, C = 2 * Math.PI * r, part = C / 6, gap = 1.6, len = part - gap;
+    size = size || 22; var step = Math.PI / 3, gap = 0.17;
     var s = svgEl("svg", { viewBox: "0 0 24 24", width: size, height: size, class: "seg", role: "img", "aria-label": (STAGE_NAME[stage] || stage) + ", " + state });
-    var g = svgEl("g", { transform: "rotate(-90 12 12)" }); s.appendChild(g);
     var at = STAGES.indexOf(stage);
+    function arc(a0, a1, cls, col) { var d = svgEl("path", { d: arcPath(a0, a1), fill: "none", "stroke-width": 3 }); d.setAttribute("class", cls); if (col) d.setAttribute("stroke", col); s.appendChild(d); return d; }
     STAGES.forEach(function (st, i) {
-      var off = -(i * part);
-      var base = { cx: 12, cy: 12, r: r, fill: "none", "stroke-width": 3, "stroke-dasharray": len + " " + (C - len), "stroke-dashoffset": off };
-      if (i < at || state === "done") { var c = svgEl("circle", base); c.setAttribute("class", "f"); g.appendChild(c); return; }
-      if (i > at) { var t = svgEl("circle", base); t.setAttribute("class", "t"); g.appendChild(t); return; }
+      var a0 = i * step + gap / 2, a1 = (i + 1) * step - gap / 2;
+      if (i < at || state === "done") { arc(a0, a1, "f"); return; }
+      if (i > at) { arc(a0, a1, "t"); return; }
       var col = "var(--st-" + st + ")";
       if (state === "working") {
-        var track = svgEl("circle", base); track.setAttribute("class", "t march"); track.setAttribute("stroke", col); track.style.opacity = ".45"; g.appendChild(track);
-        var p = Math.max(.12, Math.min(1, progress || (st === "download" ? 0 : .5)));
-        var fill = svgEl("circle", Object.assign({}, base, { "stroke-dasharray": (len * p) + " " + (C - len * p) })); fill.setAttribute("stroke", col); g.appendChild(fill);
+        var p = Math.max(.08, Math.min(1, progress || .5)), mid = a0 + (a1 - a0) * p;
+        arc(a0, mid, "w", col);
+        if (p < 1) phase(arc(mid, a1, "march", col), 1200);
       } else {
-        var on = svgEl("circle", base); on.setAttribute("class", "on " + state); on.setAttribute("stroke", col); g.appendChild(on);
+        var on = arc(a0, a1, "on " + state, col); if (ANIM[state]) phase(on, ANIM[state]);
       }
     });
     return s;

@@ -88,16 +88,16 @@ button.more{border:0;background:none;padding:4px 0 0;color:var(--accent);font-si
 .bar .s i{background:#3a3d40}.bar .s i.h{background:var(--ok)}.bar .s i.u{background:#fff}
 
 /* segmented circle */
-.seg circle.f{stroke:var(--ok)}
-.seg circle.t{stroke:#3a3d40}
+.seg .f{stroke:var(--ok)}
+.seg .t{stroke:#3a3d40}
 .seg .on.waiting{animation:pulse 2.8s ease-in-out infinite}
 .seg .on.stalled{stroke:var(--warn)!important;animation:blink 1s steps(2,end) infinite}
 .seg .on.failed{stroke:var(--bad)!important;animation:flicker 1.6s linear infinite}
-.seg .march{stroke-dasharray:2 3;animation:march 1.2s linear infinite}
+.seg .march{stroke-width:2;stroke-dasharray:1.2 1.8;opacity:.7;animation:march 1.2s linear infinite}
 @keyframes pulse{50%{opacity:.35}}
 @keyframes blink{50%{opacity:.2}}
 @keyframes flicker{0%,100%{opacity:1}45%{opacity:1}50%{opacity:.25}55%{opacity:.9}60%{opacity:.3}}
-@keyframes march{to{stroke-dashoffset:-10}}
+@keyframes march{from{stroke-dashoffset:3}to{stroke-dashoffset:0}}
 @media (prefers-reduced-motion:reduce){.seg *{animation:none!important}}
 
 /* recently added */
