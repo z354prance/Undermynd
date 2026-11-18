@@ -257,6 +257,37 @@ var migrations = []string{
 	// itself, and when it last looked.
 	`ALTER TABLE shows ADD COLUMN fill_gaps INTEGER NOT NULL DEFAULT 1;
 	ALTER TABLE shows ADD COLUMN gaps_checked TEXT NOT NULL DEFAULT '';`,
+
+	// 9: indexers (roadmap D1): Torznab and Newznab indexers (direct, or
+	// through Prowlarr while it still runs), their health and daily use.
+	`CREATE TABLE indexers (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		name        TEXT NOT NULL UNIQUE,
+		kind        TEXT NOT NULL,
+		url         TEXT NOT NULL,
+		api_key     TEXT NOT NULL DEFAULT '',
+		categories  TEXT NOT NULL DEFAULT '',
+		priority    INTEGER NOT NULL DEFAULT 25,
+		enabled     INTEGER NOT NULL DEFAULT 1,
+		query_limit INTEGER NOT NULL DEFAULT 0,
+		grab_limit  INTEGER NOT NULL DEFAULT 0,
+		via         TEXT NOT NULL DEFAULT '',
+		added       TEXT NOT NULL
+	);
+	CREATE TABLE indexer_status (
+		indexer_id     INTEGER PRIMARY KEY REFERENCES indexers(id) ON DELETE CASCADE,
+		failures       INTEGER NOT NULL DEFAULT 0,
+		disabled_until TEXT NOT NULL DEFAULT '',
+		last_error     TEXT NOT NULL DEFAULT '',
+		last_ok        TEXT NOT NULL DEFAULT ''
+	);
+	CREATE TABLE indexer_usage (
+		indexer_id INTEGER NOT NULL REFERENCES indexers(id) ON DELETE CASCADE,
+		day        TEXT NOT NULL,
+		queries    INTEGER NOT NULL DEFAULT 0,
+		grabs      INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (indexer_id, day)
+	);`,
 }
 
 // Version is the schema version this build expects.

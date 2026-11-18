@@ -56,14 +56,14 @@
     var shell=el('div','shell'),side=el('nav','side');
     var brand=el('a','brand');brand.href='/admin';var bi=el('img');bi.src='/assets/logo.svg';bi.alt='';brand.appendChild(bi);brand.appendChild(el('span','',  '~/undermynd'));side.appendChild(brand);
     function nav(t,label){var b=el('button',t===tab?'on':'',label);tabBtns[t]=b;b.onclick=function(){stopLive();tab=t;detailId=null;if(t==='anime'){aView.page='list'}app()};side.appendChild(b)}
-    nav('overview','Overview');nav('jobs','Jobs');nav('requests','Requests');nav('anime','Anime');nav('library','Library');nav('reencode','Re-encode');
+    nav('overview','Overview');nav('jobs','Jobs');nav('requests','Requests');nav('anime','Anime');nav('indexers','Indexers');nav('library','Library');nav('reencode','Re-encode');
     [['Connections',[['arrs','Arrs & categories'],['clients','Download clients'],['transcode','Transcode'],['metadata','Metadata']]],['Public site',[['playback','Playback'],['public','Public page']]],['Automation',[['rss','Feeds']]],['Server',[['system','Settings'],['log','Log']]]].forEach(function(g){
       side.appendChild(el('div','sgroup',g[0]));
       g[1].forEach(function(p){nav(p[0],p[1])})});
     side.appendChild(el('span','sp'));var pub=el('a','sidelink','public page');pub.href='/';side.appendChild(pub);
     var so=el('button','sidelink','sign out');so.onclick=function(){api('POST','/logout').then(start)};side.appendChild(so);
-    var main=el('main','main'+(tab==='anime'?' arr-main':'')),body=el('div');main.appendChild(body);shell.appendChild(side);shell.appendChild(main);root.appendChild(shell);
-    if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else if(tab==='requests')requestsView(body);else if(tab==='library')libraryView(body);else if(tab==='anime')animeView(body);else if(tab==='reencode')reencodeView(body);else if(tab==='log')logView(body);else settingsView(body);
+    var main=el('main','main'+(tab==='anime'||tab==='indexers'?' arr-main':'')),body=el('div');main.appendChild(body);shell.appendChild(side);shell.appendChild(main);root.appendChild(shell);
+    if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else if(tab==='requests')requestsView(body);else if(tab==='library')libraryView(body);else if(tab==='anime')animeView(body);else if(tab==='indexers')indexersView(body);else if(tab==='reencode')reencodeView(body);else if(tab==='log')logView(body);else settingsView(body);
   }
   function fail(e){if(e.status===401){start()}else{var d=el('div','err',e.message);root.appendChild(d)}}
   function ago(t){var s=Math.max(0,(Date.now()-new Date(t))/1000);if(s<90)return Math.round(s)+'s';if(s<5400)return Math.round(s/60)+'m';if(s<172800)return Math.round(s/3600)+'h';return Math.round(s/86400)+'d'}
@@ -358,6 +358,56 @@
         setMsg(m,(r.warning?r.warning+' ':'')+(r.started.length?'Started '+r.started.length+' download'+(r.started.length>1?'s':'')+'.':'Following; nothing to grab yet.'));setTimeout(function(){aView.page='show';aView.folder=r.show.folder;app()},1200)}).catch(function(e){ok.disabled=false;setMsg(m,e.message,true)})};
       ft.appendChild(cn);ft.appendChild(ok);box.appendChild(ft);after.after(box);nm.focus()}
   }
+  // ---- Indexers (roadmap D1): arr-style, backend first; design pass later ----
+  var iView={q:'',type:'search',cat:''};
+  function indexersView(body){var w=el('div','arr');body.appendChild(w);var msg=aMsg();
+    w.appendChild(aToolbar([aBtn('plus','Add indexer',function(){idxEdit({kind:'torznab',enabled:true,priority:25},function(){app()})}),aBtn('dl','Import from Prowlarr',function(){idxImport(function(){app()})}),'>']));
+    var c=el('div','a-content');w.appendChild(c);c.appendChild(msg);
+    var sb=el('div','a-row');var q=el('input','a-input');q.type='search';q.placeholder='Search every indexer';q.value=iView.q;q.setAttribute('aria-label','search every indexer');
+    var ty=el('select','a-input');ty.setAttribute('aria-label','kind of search');ty.style.maxWidth='160px';[['search','anything'],['tv','TV'],['movie','movies'],['music','music']].forEach(function(o){var op=new Option(o[1],o[0]);op.selected=iView.type===o[0];ty.appendChild(op)});
+    var go=el('button','a-btn primary','Search');go.type='button';sb.appendChild(q);sb.appendChild(ty);sb.appendChild(go);c.appendChild(sb);var res=el('div');c.appendChild(res);
+    var listBox=el('div','a-tw');c.appendChild(el('h3','a-dim','Indexers'));c.appendChild(listBox);
+    var cats=[];
+    api('GET','/indexers').then(function(d){cats=d.categories||[];if(!d.indexers.length){listBox.appendChild(el('div','a-empty','No indexers yet. Import them from Prowlarr, or add one by its Torznab or Newznab address.'));return}
+      var t=el('table','a-t'),hr=el('tr');['Name','Kind','Priority','Status','Today','',''].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tb=el('tbody');
+      d.indexers.forEach(function(i){var tr=el('tr');var n=el('td');n.appendChild(el('div','',i.name));n.appendChild(el('div','a-dim a-small',i.url.replace(/apikey=[^&]+/,'apikey=…')));tr.appendChild(n);
+        var k=el('td');k.appendChild(aLbl(i.kind==='newznab'?'usenet':'torrent'));if(i.via)k.appendChild(aLbl('via '+i.via,'orange'));tr.appendChild(k);tr.appendChild(el('td','',String(i.priority)));
+        var st=el('td');var resting=i.disabledUntil&&i.disabledUntil[0]!=='0'&&new Date(i.disabledUntil)>new Date();
+        st.appendChild(!i.enabled?aLbl('off'):resting?aLbl('resting','orange'):i.lastError?aLbl('error','red'):aLbl('ok','green'));if(i.lastError)st.appendChild(el('div','a-dim a-small',i.lastError));tr.appendChild(st);
+        tr.appendChild(el('td','a-dim',i.queriesToday+' searches'+(i.queryLimit?' / '+i.queryLimit:'')+' · '+i.grabsToday+' grabs'+(i.grabLimit?' / '+i.grabLimit:'')));
+        var a=el('td','a-acts');a.appendChild(aIcon('refresh','test '+i.name,function(b){b.disabled=true;api('POST','/indexers/test',i).then(function(cp){b.disabled=false;setMsg(msg,i.name+': ok'+(cp.server?' ('+cp.server+')':'')+(cp.tvSearch?' · TV search':'')+(cp.movieSearch?' · movie search':''))}).catch(function(e){b.disabled=false;setMsg(msg,i.name+': '+e.message,true)})}));
+        a.appendChild(aIcon('edit','edit '+i.name,function(){idxEdit(i,function(){app()})}));a.appendChild(aIcon('x','delete '+i.name,function(){if(confirm('Delete '+i.name+'?'))api('DELETE','/indexers/'+i.id).then(function(){app()})}));tr.appendChild(a);tb.appendChild(tr)});
+      t.appendChild(tb);listBox.appendChild(t)}).catch(function(e){if(e.status===401)fail(e);else setMsg(msg,e.message,true)});
+    function run(){iView.q=q.value;iView.type=ty.value;if(!q.value.trim())return;res.replaceChildren(el('div','a-dim','Searching every indexer…'));
+      api('GET','/indexers/search?q='+encodeURIComponent(q.value)+'&type='+ty.value).then(function(r){res.replaceChildren();
+        (r.errors||[]).concat(r.skipped||[]).forEach(function(x){res.appendChild(el('div','a-dim a-small',x.indexer+': '+x.reason))});
+        if(!r.results.length){res.appendChild(el('div','a-empty','Nothing found.'));return}
+        var t=el('table','a-t'),hr=el('tr');['Indexer','Age','Title','Size','Peers',''].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tb=el('tbody');
+        r.results.slice(0,300).forEach(function(x){var tr=el('tr');var ic=el('td');ic.appendChild(aLbl(x.indexer));tr.appendChild(ic);tr.appendChild(el('td','a-dim',x.published&&x.published[0]!=='0'?ago(x.published):''));tr.appendChild(el('td','a-mono',x.title));tr.appendChild(el('td','a-dim',aSize(x.size)));tr.appendChild(el('td','a-dim',x.protocol==='torrent'?String(x.seeders)+' / '+x.peers:'usenet'));
+          var g=el('td','a-acts');var sel=el('select','a-input');sel.style.maxWidth='150px';sel.setAttribute('aria-label','category');cats.forEach(function(cn){sel.appendChild(new Option(cn,cn))});if(iView.cat)sel.value=iView.cat;g.appendChild(sel);
+          var b=el('button','a-dl');b.type='button';b.setAttribute('aria-label','grab '+x.title);b.appendChild(svg('dl'));b.onclick=function(){iView.cat=sel.value;b.disabled=true;var body=Object.assign({},x,{category:sel.value});api('POST','/indexers/grab',body).then(function(){b.classList.add('done');setMsg(msg,'Started '+x.title+' in '+sel.value+'.')}).catch(function(e){b.disabled=false;setMsg(msg,e.message,true)})};g.appendChild(b);tr.appendChild(g);tb.appendChild(tr)});
+        t.appendChild(tb);var tw=el('div','a-tw');tw.appendChild(t);res.appendChild(tw)}).catch(function(e){res.replaceChildren();setMsg(msg,e.message,true)})}
+    go.onclick=run;q.onkeydown=function(e){if(e.key==='Enter')run()};
+  }
+  function idxEdit(i,after){var md=aModal(i.id?'Edit · '+i.name:'Add indexer','860px');var f=aForm();md.body.appendChild(f.el);
+    var nm=el('input','a-input');nm.id='in';nm.value=i.name||'';f.row('Name',nm,null,'in');
+    var kd=el('select','a-input');kd.id='ik';[['torznab','torrents (Torznab)'],['newznab','usenet (Newznab)']].forEach(function(o){var op=new Option(o[1],o[0]);op.selected=i.kind===o[0];kd.appendChild(op)});f.row('Kind',kd,null,'ik');
+    var ur=el('input','a-input');ur.id='iu';ur.value=i.url||'';ur.placeholder='https://indexer.example/api';f.row('Address',ur,'The Torznab or Newznab API address; /api is added when missing.','iu');
+    var ky=el('input','a-input');ky.id='iy';ky.type='password';ky.placeholder=i.hasKey?'set; leave blank to keep':'';f.row('API key',ky,null,'iy');
+    var pr=el('input','a-input');pr.id='ip';pr.type='number';pr.min='1';pr.max='50';pr.value=String(i.priority||25);f.row('Priority',pr,'1 is asked first. Like Prowlarr: 1 to 50.','ip');
+    var ct=el('input','a-input');ct.id='ic';ct.value=(i.categories||[]).join(', ');ct.placeholder='e.g. 5070 for anime';f.row('Categories',ct,'Newznab category numbers to search; empty uses what each search asks for.','ic');
+    var ql=el('input','a-input');ql.id='iq';ql.type='number';ql.min='0';ql.value=String(i.queryLimit||0);f.row('Searches a day',ql,'0 is no limit.','iq');
+    var gl=el('input','a-input');gl.id='ig';gl.type='number';gl.min='0';gl.value=String(i.grabLimit||0);f.row('Grabs a day',gl,'0 is no limit.','ig');
+    var enl=el('label','a-check');var en=el('input');en.type='checkbox';en.checked=i.enabled!==false;enl.appendChild(en);enl.appendChild(el('span','','Use this indexer'));f.row('On',enl);
+    var msg=aMsg();md.body.appendChild(msg);function val(){return {id:i.id||0,name:nm.value,kind:kd.value,url:ur.value,apiKey:ky.value,priority:+pr.value||25,categories:ct.value.split(/[,\s]+/).filter(Boolean).map(Number).filter(function(n){return n>0}),queryLimit:+ql.value||0,grabLimit:+gl.value||0,enabled:en.checked,via:i.via||''}}
+    var tb=el('button','a-btn','Test');tb.type='button';tb.onclick=function(){setMsg(msg,'testing…');api('POST','/indexers/test',val()).then(function(cp){setMsg(msg,'ok'+(cp.server?': '+cp.server:''))}).catch(function(e){setMsg(msg,e.message,true)})};
+    var cn=el('button','a-btn','Cancel');cn.type='button';cn.onclick=md.close;var sv=el('button','a-btn primary','Save');sv.type='button';sv.onclick=function(){sv.disabled=true;api('POST','/indexers',val()).then(function(){md.close();after()}).catch(function(e){sv.disabled=false;setMsg(msg,e.message,true)})};
+    md.foot.appendChild(tb);md.foot.appendChild(cn);md.foot.appendChild(sv)}
+  function idxImport(after){var md=aModal('Import from Prowlarr','760px');var f=aForm();md.body.appendChild(f.el);
+    var u=el('input','a-input');u.id='pu';u.placeholder='http://10.0.0.8:9696';f.row('Prowlarr address',u,null,'pu');var k=el('input','a-input');k.id='pk';k.type='password';f.row('API key',k,'Prowlarr → Settings → General.','pk');
+    md.body.appendChild(el('div','a-dim a-small','Usenet and Torznab indexers are added directly when Prowlarr shows their address and key. The others (Prowlarr\'s own tracker definitions) are reached through Prowlarr for now and marked "via prowlarr".'));
+    var msg=aMsg();md.body.appendChild(msg);var cn=el('button','a-btn','Close');cn.type='button';cn.onclick=function(){md.close();after()};var ok=el('button','a-btn primary','Import');ok.type='button';
+    ok.onclick=function(){ok.disabled=true;setMsg(msg,'importing…');api('POST','/indexers/import-prowlarr',{url:u.value,key:k.value}).then(function(r){setMsg(msg,r.added.length?'Added: '+r.added.join(', '):'Nothing new to add.')}).catch(function(e){ok.disabled=false;setMsg(msg,e.message,true)})};md.foot.appendChild(cn);md.foot.appendChild(ok)}
   function libraryView(body){
     body.appendChild(el('h2','ptitle','Library'));var host=el('div');host.style.marginTop='18px';body.appendChild(host);
     api('GET','/library').then(function(d){
