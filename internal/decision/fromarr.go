@@ -282,6 +282,16 @@ func (s *Store) Save(category string, im Imported) (profiles, formats int, err e
 			scores[n] = v
 		}
 		p.Scores = scores
+		if p.GuideScores != nil {
+			gs := map[string]int{}
+			for n, v := range p.GuideScores {
+				if r, ok := rename[n]; ok {
+					n = r
+				}
+				gs[n] = v
+			}
+			p.GuideScores = gs
+		}
 		for _, e := range ps {
 			if strings.EqualFold(e.Name, p.Name) {
 				if e.Source == category {

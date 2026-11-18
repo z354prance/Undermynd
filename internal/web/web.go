@@ -40,6 +40,7 @@ import (
 	"github.com/z354prance/undermynd/internal/shows"
 	"github.com/z354prance/undermynd/internal/storage"
 	"github.com/z354prance/undermynd/internal/store"
+	"github.com/z354prance/undermynd/internal/trash"
 	"github.com/z354prance/undermynd/internal/tv"
 )
 
@@ -78,6 +79,8 @@ type Server struct {
 	TV *tv.Service
 	// History records what happened to native movies and episodes; nil without the database.
 	History *history.Log
+	// Trash syncs profiles from the TRaSH Guides; nil without the database.
+	Trash *trash.Syncer
 	// Requests keeps requests in Undermynd (native mode); nil without the database.
 	Requests *requests.Service
 	RSS      interface {
@@ -179,6 +182,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/api/indexers", s.admin(s.indexersList))
 	mux.HandleFunc("GET /admin/api/parser", s.admin(s.parserTry))
 	mux.HandleFunc("GET /admin/api/profiles", s.admin(s.profilesList))
+	mux.HandleFunc("GET /admin/api/trash", s.admin(s.trashCatalog))
+	mux.HandleFunc("POST /admin/api/trash/preview", s.guard(s.admin(s.trashPreview)))
+	mux.HandleFunc("POST /admin/api/trash/apply", s.guard(s.admin(s.trashApply)))
 	mux.HandleFunc("GET /admin/api/movies", s.admin(s.moviesList))
 	mux.HandleFunc("GET /admin/api/tv", s.admin(s.tvList))
 	mux.HandleFunc("GET /admin/api/wanted", s.admin(s.wanted))
