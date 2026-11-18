@@ -1,4 +1,4 @@
-# Roadmap: folding the arr stack into Undermynd (v43, Nov 18, 2026)
+# Roadmap: folding the arr stack into Undermynd (v44, Nov 18, 2026)
 
 Goal: one app that does what Radarr, Sonarr, Lidarr, Prowlarr, Seerr, Houndarr and Recyclarr do today, so nothing else has to run or be configured. It will be renamed HyveMynd at the end.
 
@@ -12,7 +12,7 @@ The user decided to keep HyveMynd beside the arr stack instead of replacing it: 
 
 - **Kept:** everything up to and including the removal of the anime catalog (PR #22); the media-server interface (B5); the rename to HyveMynd (I2); the redesign: graphite look and icon-rail admin (design part 1), the public dashboard with its fixes (part 4), and the Seerr-style Request media dropdown, now backed by Seerr (part 3: Discover rows, poster search, title page with cast, trailer and a season picker; requests go to Seerr with the chosen seasons).
 - **Removed, kept on the branch `archive/arr-takeover`** (main at `0b4c385`, PRs #23 to #51): anime follow and gap filling (C3, C4), indexers and the Torznab proxy (D1, D2), requests kept by HyveMynd (E1), the release parser, profiles, shadow mode, native movies and TV, wanted and calendar (F1 to F6), TRaSH sync and the scheduler (G-1, G-2), MusicBrainz and native music (H1, H2), API tokens and notifications (I1), the poster library pages (design part 2) and the unfinished admin pages (part 5).
-- **Admin:** Overview; Library (Disk); Activity (On the way, Requests); Sources (Feeds); System (Connections, Public site, Re-encode, Settings, Log).
+- **Admin (design part 5, Nov 18):** a menu built for what remains: Overview (health pills, Needs you, Just finished, Pipeline now, Categories); Downloads (On the way with the segmented circle on each job, Feeds, Re-encode); Requests (Media: Seerr's waiting requests as poster cards; Accounts: the need-access queue); Library (each Sonarr series with its season bar, and what is missing); Settings (Arrs, Download clients, Tdarr, Public page, Media server, Server, Log). Sign-in and first-run setup are one centred card. Settings pages use the settings-card pattern; on a phone the menu is a bottom bar and job rows become cards.
 - **Database:** the schema keeps every migration up to 18, so a database that already ran the takeover build opens unchanged; the tables only the archived features used stay empty or unused. Settings fields those features added are ignored.
 - **To revisit:** check out `archive/arr-takeover`; the rest of this document describes that work as it was.
 
@@ -235,6 +235,7 @@ The earlier plan below listed screens each UI milestone needed; parts 1 to 5 cov
 
 ## 11. Change log
 
+- v44: design part 5 for the rolled-back admin: new menu, restyled pages, sign-in card, phone layout. No Anime tab in Request media.
 - v43: rolled back to beside-the-arrs; the takeover features are kept on `archive/arr-takeover`. The redesign stays, with requests through Seerr.
 - v42: design parts 1 to 4 merged.
 - v13: milestones with sizes, dependencies and exit tests; store tests before SQLite; which state moves to SQLite; backups in B1; anime search through nyaa RSS search URLs; per-category owner switch and shadow mode; corpus from the arrs' own history; dropped importers for other people's setups; design track and gates.

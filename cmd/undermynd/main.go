@@ -193,7 +193,6 @@ func main() {
 			logger.Printf("metadata: %d stored titles compared the new way", n)
 		}
 		site.Metadata = newMetadata(dbh, cfg, logger)
-		go site.Metadata.Run(ctx, func() bool { return cfg.Get().Metadata.TMDBKey != "" })
 	}
 	eng.AfterPlace = func(path string) {
 		pb := cfg.Get().Playback
