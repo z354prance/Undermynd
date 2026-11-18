@@ -221,7 +221,7 @@ body.ui .acts.rhoriz button{height:auto}
 
 /* settings: same prompt-link buttons and quiet cards */
 body.ui .main button:not(.fpill):not(.link):not(.badge):not([class^="a-"]),body.ui .savebar button{border:0;background:transparent;height:auto;padding:2px 14px 2px 0;color:#c9cdc6;border-radius:0}
-body.ui .main button:not(.fpill):not(.link)::before,body.ui .savebar button::before{content:"\276F ";color:#5a5c5a;font-family:"Segoe UI Symbol","DejaVu Sans Mono",monospace}
+body.ui .main button:not(.fpill):not(.link):not([class^="a-"])::before,body.ui .savebar button::before{content:"\276F ";color:#5a5c5a;font-family:"Segoe UI Symbol","DejaVu Sans Mono",monospace}
 body.ui .main button.go:not(.fpill),body.ui .savebar button.go{color:#45bba9}
 body.ui .main button:not(.fpill):not(.link):hover,body.ui .savebar button:hover{color:#fff;border:0}
 body.ui .main button.bad{color:#f27b89}
@@ -292,9 +292,11 @@ body.ui .arr .a-grow{flex:1}
 body.ui .arr .a-content{padding:20px 24px 40px;display:flex;flex-direction:column;gap:14px}
 body.ui .arr .a-tw{overflow-x:auto}
 body.ui .arr table.a-t{width:100%;border-collapse:collapse;font-size:14px;margin:0}
-body.ui .arr .a-t th{text-align:left;font-weight:500;color:var(--a-dim);font-size:13px;padding:10px 12px;border-bottom:1px solid var(--a-line2);white-space:nowrap;background:none;text-transform:none}
+body.ui .arr .a-t th{text-align:left;font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;font-weight:500;color:var(--a-dim);font-size:13px;padding:10px 12px;border-bottom:1px solid var(--a-line2);white-space:nowrap;background:none;text-transform:none}
 body.ui .arr .a-t td{padding:9px 12px;border-bottom:1px solid #2c2f33;vertical-align:middle;color:var(--a-text)}
 body.ui .arr .a-t tr:hover td{background:#23262a}
+body.ui .arr .a-t td:first-child{min-width:0;overflow-wrap:normal}
+body.ui .arr table.a-t{display:table}body.ui .arr .a-t thead{display:table-header-group}body.ui .arr .a-t tbody{display:table-row-group}body.ui .arr .a-t tr{display:table-row}body.ui .arr .a-t td,body.ui .arr .a-t th{display:table-cell}
 body.ui .arr button.a-title{background:none;border:0;padding:0;height:auto;color:var(--a-text);font:500 14px "IBM Plex Sans",system-ui,sans-serif;text-align:left;cursor:pointer}
 body.ui .arr button.a-title:hover{color:var(--a-teal)}
 body.ui .arr .a-dim{color:var(--a-dim)}body.ui .arr .a-small{font-size:12px}body.ui .arr .a-ok{color:#8fe3d4}body.ui .arr .a-warnt{color:#f0b27a}
