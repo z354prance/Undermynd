@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -102,6 +103,24 @@ func (s *Server) onway(w http.ResponseWriter, r *http.Request) {
 		kind := s.kindOf(j.Category)
 		it := onwayItem{Kind: kind, Stage: st[0], State: state, Progress: job.Overall(j), Since: j.Updated, Upgrade: upgrade[j.ID]}
 		rel, isEp := library.Parse(j.Name)
+		if !isEp && kind != "movie" && kind != "music" {
+			// A season pack ("Show S01 1080p ...", "Show Season 2") or a
+			// release the simple parser cannot read still belongs to a show.
+			title, season := seasonPack(j.Name)
+			if season > 0 {
+				it.Code = fmt.Sprintf("Season %d", season)
+			} else {
+				it.Code = "Release"
+			}
+			key := library.Normalize(title)
+			sh := shows[key]
+			if sh == nil {
+				sh = &onwayShow{Title: title, Kind: kind}
+				shows[key] = sh
+			}
+			sh.Items = append(sh.Items, it)
+			continue
+		}
 		if kind == "movie" || kind == "music" || !isEp {
 			it.Title, it.Sub = movieTitle(j.Name)
 			if kind == "music" {
@@ -173,6 +192,28 @@ func stageRank(it onwayItem) int { return stageOrder[it.Stage] }
 
 // jobTargetUpgrade says whether a native job replaces a file already held.
 var yearAt = regexp.MustCompile(`^(.+?)[ ._(\[]+((?:19|20)\d\d)(?:[ ._)\]]|$)`)
+
+var packAt = regexp.MustCompile(`(?i)^(.+?)[ ._\-]+(?:S(\d{1,2})|Season[ ._]?(\d{1,2}))(?:[ ._\-\[(]|$)`)
+
+// seasonPack reads a season pack name as the show's title and season number
+// (0 when it names no season; the title is then the cleaned name).
+func seasonPack(name string) (string, int) {
+	clean := func(t string) string {
+		return strings.Join(strings.Fields(strings.NewReplacer(".", " ", "_", " ").Replace(t)), " ")
+	}
+	if m := packAt.FindStringSubmatch(name); m != nil {
+		n := m[2]
+		if n == "" {
+			n = m[3]
+		}
+		season, _ := strconv.Atoi(n)
+		if t := clean(m[1]); t != "" {
+			return t, season
+		}
+	}
+	t, _ := movieTitle(name)
+	return clean(t), 0
+}
 
 // movieTitle reads a movie or album release name as its title and year.
 func movieTitle(name string) (string, string) {
