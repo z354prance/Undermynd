@@ -1,4 +1,5 @@
 /* HyveMynd public dashboard (pinned v2 dashboard, v3 requests). */
+[hidden]{display:none!important}
 @font-face{font-family:Barlow;font-weight:400;font-display:swap;src:url(/assets/fonts/barlow-latin-400-normal.woff2) format("woff2")}
 @font-face{font-family:Barlow;font-weight:600;font-display:swap;src:url(/assets/fonts/barlow-latin-600-normal.woff2) format("woff2")}
 @font-face{font-family:Barlow;font-weight:700;font-display:swap;src:url(/assets/fonts/barlow-latin-700-normal.woff2) format("woff2")}
@@ -206,3 +207,8 @@ button.more{border:0;background:none;padding:4px 0 0;color:var(--accent);font-si
   .td-body{grid-template-columns:1fr;padding:14px 16px}
   .req-panel{position:fixed;top:0;left:0;transform:none;width:100vw;max-height:100vh;height:100vh;border-radius:0}
 }
+.dlg *{box-sizing:border-box}
+.dlg .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.dlg .two input{width:100%}
+@media (max-width:560px){.dlg .two{grid-template-columns:1fr}}
+.dlg .msg:empty{display:none}
