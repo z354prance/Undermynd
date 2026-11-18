@@ -121,7 +121,10 @@ func (s *Server) Handler() http.Handler {
 	files := http.FileServer(http.FS(sub))
 
 	// ---- public: no sign-in, reads only the public view
-	mux.HandleFunc("GET /{$}", s.page("public.html"))
+	mux.HandleFunc("GET /{$}", s.page("home.html"))
+	// The earlier public page, for a release while the new one settles in.
+	mux.HandleFunc("GET /classic", s.page("public.html"))
+	mux.Handle("GET /home/", files)
 	mux.HandleFunc("GET /credits", s.page("credits.html"))
 	mux.HandleFunc("GET /api/public/jobs", s.publicJobs)
 	s.dashboardRoutes(mux, files)
@@ -301,7 +304,7 @@ func secure(next http.Handler) http.Handler {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/admin"), strings.HasPrefix(r.URL.Path, "/api/"):
 			h.Set("Cache-Control", "no-store")
-		case strings.HasPrefix(r.URL.Path, "/assets/"), strings.HasPrefix(r.URL.Path, "/dash/"), r.URL.Path == "/":
+		case strings.HasPrefix(r.URL.Path, "/assets/"), strings.HasPrefix(r.URL.Path, "/dash/"), strings.HasPrefix(r.URL.Path, "/home/"), r.URL.Path == "/", r.URL.Path == "/classic":
 			// The page scripts change with every release and carry no version in
 			// their name, so a cached copy would show an old page.
 			h.Set("Cache-Control", "no-store")

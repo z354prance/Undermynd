@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#151617">
+<title>HyveMynd</title>
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/home/home.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/"><img src="/assets/logo.svg" alt="" width="32" height="32"><span>HyveMynd</span></a>
+  <div class="req" id="req">
+    <label class="req-box"><span class="sr">Request media</span>
+      <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <input id="reqInput" type="search" placeholder="Request media" autocomplete="off" aria-controls="reqPanel" aria-expanded="false">
+      <span class="req-count" id="reqCount" hidden></span>
+    </label>
+    <div class="req-panel" id="reqPanel" role="dialog" aria-label="Request media" hidden></div>
+  </div>
+  <nav class="links" aria-label="More">
+    <button type="button" class="link" id="donateBtn" hidden>Donate</button>
+    <button type="button" class="link" id="accessBtn" hidden>Need access?</button>
+  </nav>
+  <div class="gear-wrap">
+    <button type="button" class="ring" id="ringBtn" aria-label="Storage" aria-expanded="false"><svg id="ring" viewBox="0 0 44 44" width="44" height="44" aria-hidden="true"></svg></button>
+    <a class="gear" href="/admin" aria-label="Admin"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2l2 3 3.5-.5.5 3.5 3 2-2 3 .5 3.5-3.5.5-2 3-3-2-3 2-2-3-3.5-.5.5-3.5-2-3 3-2 .5-3.5 3.5.5z"/></svg></a>
+    <div class="pop storage-pop" id="storagePop" hidden></div>
+  </div>
+  <div class="pop donate-pop" id="donatePop" hidden></div>
+</header>
+<div class="stripe" aria-hidden="true"><span class="tv"></span><span class="movie"></span><span class="anime"></span><span class="music"></span></div>
+<main class="grid">
+  <section class="panel playing" aria-labelledby="playingH"><h2 id="playingH">Now Playing</h2><div class="scroll" id="playing"><p class="empty">Loading…</p></div></section>
+  <section class="panel onway" aria-labelledby="onwayH"><h2 id="onwayH">On the way</h2><div class="lanes"><div class="lane scroll" id="laneShows"></div><div class="lane scroll" id="laneOther"></div></div></section>
+  <section class="panel recent" aria-label="Recently added"><div class="recent-row" id="recent"></div></section>
+</main>
+<dialog id="playDialog" class="dlg"></dialog>
+<dialog id="accessDialog" class="dlg">
+  <header><h2>Request server access</h2><button type="button" class="x" data-close>Close</button></header>
+  <div class="steps" aria-hidden="true"><span class="on"></span><span></span></div>
+  <form id="accessForm" novalidate>
+    <fieldset data-step="1">
+      <p id="accessHelp">First, <a href="https://emby.media/community/index.php?/register" target="_blank" rel="noopener noreferrer">create an Emby Connect account</a> (or use one you already have). We never ask for your Connect password.</p>
+      <label>Emby Connect email address<input name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" required maxlength="254"></label>
+      <p class="help" id="accessEmailHelp">Use the address your Emby Connect account is registered with. It's also the address we'll use to tell you about your request.</p>
+      <div class="row end"><button type="button" class="primary" data-next>Continue</button></div>
+    </fieldset>
+    <fieldset data-step="2" hidden>
+      <div class="two"><label>Your name<input name="name" autocomplete="name" required maxlength="100"></label>
+      <label>Preferred server username<input name="username" autocomplete="off" required minlength="3" maxlength="64" pattern="[a-zA-Z0-9][a-zA-Z0-9_.\-]{2,63}" title="3-64 letters, numbers, dots, underscores, or dashes"></label></div>
+      <p class="help" id="accessNote">Once your request is approved, Emby will email you to link your Connect account to this server. Watch for it and accept it, then we'll email a link to finish setting up your account.</p>
+      <div class="row"><button type="button" data-back>Back</button><button type="submit" class="primary">Submit for approval</button></div>
+    </fieldset>
+  </form>
+  <p class="msg" id="accessMsg" role="status"></p>
+</dialog>
+<dialog id="setupDialog" class="dlg">
+  <header><h2>Finish your server setup</h2><button type="button" class="x" data-close>Close</button></header>
+  <p id="setupHelp">For Emby, confirm any Connect linking email first. Choose a password for your server account below.</p>
+  <form id="setupForm">
+    <label>New server password<input name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="256"></label>
+    <label>Confirm password<input name="confirm" type="password" autocomplete="new-password" required minlength="12" maxlength="256"></label>
+    <div class="row end"><button type="submit" class="primary">Finish setup</button></div>
+  </form>
+  <p class="msg" id="setupMsg" role="status"></p>
+</dialog>
+<script src="/home/home.js"></script>
+</body>
+</html>

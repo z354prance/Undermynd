@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -171,6 +172,7 @@ type SeasonSummary struct {
 	Number       int    `json:"season_number"`
 	EpisodeCount int    `json:"episode_count"`
 	Name         string `json:"name"`
+	AirDate      string `json:"air_date"`
 }
 
 type EpisodeGroupSummary struct {
@@ -393,4 +395,84 @@ func (t TV) Anime() bool {
 		}
 	}
 	return false
+}
+
+// List reads one of TMDB's lists: "popular-movies", "popular-tv",
+// "upcoming" (movies) or "anime" (popular Japanese animation series).
+func (t *TMDB) List(ctx context.Context, name string) ([]MediaResult, error) {
+	path, kind := "", ""
+	q := url.Values{}
+	switch name {
+	case "popular-movies":
+		path, kind = "/movie/popular", "movie"
+	case "popular-tv":
+		path, kind = "/tv/popular", "tv"
+	case "upcoming":
+		path, kind = "/movie/upcoming", "movie"
+	case "anime":
+		path, kind = "/discover/tv", "tv"
+		q.Set("with_genres", "16")
+		q.Set("with_original_language", "ja")
+		q.Set("sort_by", "popularity.desc")
+	default:
+		return nil, fmt.Errorf("unknown list %q", name)
+	}
+	var r struct {
+		Results []MediaResult `json:"results"`
+	}
+	if err := t.get(ctx, path, q, 3*time.Hour, &r); err != nil {
+		return nil, err
+	}
+	for i := range r.Results {
+		r.Results[i].MediaType = kind
+	}
+	return r.Results, nil
+}
+
+// Details is what a title page shows.
+type Details struct {
+	ID           int64           `json:"id"`
+	Title        string          `json:"title"`
+	Name         string          `json:"name"`
+	Overview     string          `json:"overview"`
+	PosterPath   string          `json:"poster_path"`
+	BackdropPath string          `json:"backdrop_path"`
+	ReleaseDate  string          `json:"release_date"`
+	FirstAirDate string          `json:"first_air_date"`
+	Runtime      int             `json:"runtime"`
+	EpisodeRun   []int           `json:"episode_run_time"`
+	Status       string          `json:"status"`
+	Seasons      []SeasonSummary `json:"seasons"`
+	OriginalLang string          `json:"original_language"`
+	Genres       []struct {
+		ID   int    `json:"id"`
+		Name string `json:"name"`
+	} `json:"genres"`
+	Networks []struct {
+		Name string `json:"name"`
+	} `json:"networks"`
+	Credits struct {
+		Cast []struct {
+			Name        string `json:"name"`
+			Character   string `json:"character"`
+			ProfilePath string `json:"profile_path"`
+		} `json:"cast"`
+	} `json:"credits"`
+	Videos struct {
+		Results []struct {
+			Key  string `json:"key"`
+			Site string `json:"site"`
+			Type string `json:"type"`
+		} `json:"results"`
+	} `json:"videos"`
+}
+
+// Details looks up a movie ("movie") or a show ("tv") with its cast and videos.
+func (t *TMDB) Details(ctx context.Context, kind string, id int64) (Details, error) {
+	var d Details
+	if kind != "movie" && kind != "tv" {
+		return d, fmt.Errorf("movie or tv")
+	}
+	err := t.get(ctx, "/"+kind+"/"+strconv.FormatInt(id, 10), url.Values{"append_to_response": {"credits,videos"}}, 12*time.Hour, &d)
+	return d, err
 }

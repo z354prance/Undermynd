@@ -219,11 +219,13 @@ func (s *Service) Search(ctx context.Context, q string) ([]seerr.SearchResult, e
 
 // Discover lists trending movies and shows: kind is trending, movies or tv.
 func (s *Service) Discover(ctx context.Context, kind string) ([]seerr.SearchResult, error) {
-	tk := map[string]string{"trending": "all", "movies": "movie", "tv": "tv"}[kind]
-	if tk == "" {
-		return nil, errors.New("unknown list")
+	var list []metadata.MediaResult
+	var err error
+	if tk := map[string]string{"trending": "all", "movies": "movie", "tv": "tv"}[kind]; tk != "" {
+		list, err = s.TMDB.Trending(ctx, tk)
+	} else {
+		list, err = s.TMDB.List(ctx, kind)
 	}
-	list, err := s.TMDB.Trending(ctx, tk)
 	if err != nil {
 		return nil, err
 	}
@@ -252,6 +254,7 @@ type Request struct {
 	Reason    string    `json:"reason"`
 	Created   time.Time `json:"created"`
 	Decided   time.Time `json:"decided"`
+	Seasons   []int     `json:"seasons,omitempty"` // the seasons asked for; none means the show
 }
 
 func yearOf(d string) int {
@@ -268,12 +271,15 @@ var ErrAlready = errors.New("already requested or in the library")
 // Create records a request (a movie, or every season of a show). Anime is
 // recognised from TMDB (Japanese animation) and handed to the Anime page on
 // approval. With auto-approve on it is approved at once.
-func (s *Service) Create(ctx context.Context, mediaType string, tmdbID int64, requester string) (Request, error) {
+func (s *Service) Create(ctx context.Context, mediaType string, tmdbID int64, requester string, seasons ...int) (Request, error) {
 	if mediaType != "movie" && mediaType != "tv" {
 		return Request{}, errors.New("select a movie or a show")
 	}
 	if st := s.status(ctx, mediaType, tmdbID); st > 0 {
-		return Request{}, ErrAlready
+		// A show partly here can still be asked for seasons it lacks.
+		if mediaType != "tv" || len(seasons) == 0 || !s.seasonsWanted(ctx, tmdbID, seasons) {
+			return Request{}, ErrAlready
+		}
 	}
 	r := Request{Kind: mediaType, TMDBID: tmdbID, Requester: strings.TrimSpace(requester), Status: "pending", Created: s.Now()}
 	if len(r.Requester) > 80 {
@@ -295,8 +301,13 @@ func (s *Service) Create(ctx context.Context, mediaType string, tmdbID int64, re
 			r.Kind = "anime"
 		}
 	}
-	res, err := s.DB.Exec(`INSERT INTO requests (kind, tmdb_id, title, year, requester, status, created) VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
-		r.Kind, r.TMDBID, r.Title, r.Year, r.Requester, db.Stamp(r.Created))
+	r.Seasons = seasons
+	var ss []string
+	for _, n := range seasons {
+		ss = append(ss, strconv.Itoa(n))
+	}
+	res, err := s.DB.Exec(`INSERT INTO requests (kind, tmdb_id, title, year, requester, status, created, seasons) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)`,
+		r.Kind, r.TMDBID, r.Title, r.Year, r.Requester, db.Stamp(r.Created), strings.Join(ss, ","))
 	if err != nil {
 		return Request{}, err
 	}
@@ -316,10 +327,15 @@ func (s *Service) Create(ctx context.Context, mediaType string, tmdbID int64, re
 
 func scanReq(row interface{ Scan(...any) error }) (Request, error) {
 	var r Request
-	var created, decided string
-	err := row.Scan(&r.ID, &r.Kind, &r.TMDBID, &r.Title, &r.Year, &r.Requester, &r.Status, &r.Reason, &created, &decided)
+	var created, decided, seasons string
+	err := row.Scan(&r.ID, &r.Kind, &r.TMDBID, &r.Title, &r.Year, &r.Requester, &r.Status, &r.Reason, &created, &decided, &seasons)
 	if err != nil {
 		return r, err
+	}
+	for _, f := range strings.Split(seasons, ",") {
+		if n, err := strconv.Atoi(f); err == nil {
+			r.Seasons = append(r.Seasons, n)
+		}
 	}
 	r.Created, _ = time.Parse(db.TimeFormat, created)
 	if decided != "" {
@@ -328,7 +344,7 @@ func scanReq(row interface{ Scan(...any) error }) (Request, error) {
 	return r, nil
 }
 
-const reqCols = `id, kind, tmdb_id, title, year, requester, status, reason, created, decided`
+const reqCols = `id, kind, tmdb_id, title, year, requester, status, reason, created, decided, seasons`
 
 // Get returns one request.
 func (s *Service) Get(id int64) (Request, error) {
@@ -447,8 +463,12 @@ func (s *Service) handOn(ctx context.Context, r Request) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			// The latest season is wanted too, as a request means the show.
-			if _, eps, err := s.TV.Get(x.ID); err == nil && len(eps) > 0 {
+			// The seasons asked for; without any, the latest season, as a
+			// request means the show.
+			for _, n := range r.Seasons {
+				s.TV.Monitor(x.ID, n, 0, true)
+			}
+			if _, eps, err := s.TV.Get(x.ID); err == nil && len(eps) > 0 && len(r.Seasons) == 0 {
 				last := 0
 				for _, e := range eps {
 					if e.Season > last && e.AirDate != "" {
@@ -546,4 +566,170 @@ func (s *Service) Refresh(ctx context.Context) {
 			_ = s.setStatus(r.ID, "available", "in the library")
 		}
 	}
+}
+
+// seasonsWanted reports whether any of the seasons is not already held,
+// on the way or requested.
+func (s *Service) seasonsWanted(ctx context.Context, tmdbID int64, seasons []int) bool {
+	t, err := s.Title(ctx, "tv", tmdbID)
+	if err != nil {
+		return false
+	}
+	st := map[int]string{}
+	for _, x := range t.Seasons {
+		st[x.Number] = x.Status
+	}
+	for _, n := range seasons {
+		if v, ok := st[n]; ok && (v == "" || v == "partial") {
+			return true
+		}
+	}
+	return false
+}
+
+// Season is one season on a title page.
+type Season struct {
+	Number   int    `json:"number"`
+	Name     string `json:"name"`
+	Episodes int    `json:"episodes"`
+	AirDate  string `json:"airDate"`
+	Status   string `json:"status"` // available, partial, onTheWay, requested, unreleased, or "" (none)
+}
+
+// Cast is one actor.
+type Cast struct {
+	Name      string `json:"name"`
+	Character string `json:"character"`
+	Photo     string `json:"photo"` // TMDB image address
+}
+
+// TitleInfo is what a title page shows, Seerr-style.
+type TitleInfo struct {
+	Kind     string   `json:"kind"` // movie, tv or anime
+	ID       int64    `json:"id"`
+	Title    string   `json:"title"`
+	Year     int      `json:"year"`
+	Overview string   `json:"overview"`
+	Poster   string   `json:"poster"`
+	Backdrop string   `json:"backdrop"`
+	Genres   []string `json:"genres"`
+	Runtime  int      `json:"runtime"`
+	Network  string   `json:"network"`
+	State    string   `json:"state"`  // TMDB's: Released, Returning Series, Ended...
+	Status   int      `json:"status"` // as in search results: 0, 2 pending, 3 on the way, 4 partly, 5 available
+	Seasons  []Season `json:"seasons,omitempty"`
+	Cast     []Cast   `json:"cast"`
+	Trailer  string   `json:"trailer,omitempty"` // a YouTube key
+}
+
+// Title reads a title's page: details from TMDB, what is held and requested.
+func (s *Service) Title(ctx context.Context, kind string, id int64) (TitleInfo, error) {
+	d, err := s.TMDB.Details(ctx, kind, id)
+	if err != nil {
+		return TitleInfo{}, err
+	}
+	t := TitleInfo{Kind: kind, ID: id, Title: d.Title, Overview: d.Overview, Poster: metadata.Image(d.PosterPath, "w500"),
+		Backdrop: metadata.Image(d.BackdropPath, "w1280"), Runtime: d.Runtime, State: d.Status}
+	date := d.ReleaseDate
+	if kind == "tv" {
+		t.Title, date = d.Name, d.FirstAirDate
+		if len(d.EpisodeRun) > 0 {
+			t.Runtime = d.EpisodeRun[0]
+		}
+		if len(d.Networks) > 0 {
+			t.Network = d.Networks[0].Name
+		}
+	}
+	t.Year = yearOf(date)
+	anime := d.OriginalLang == "ja"
+	for _, g := range d.Genres {
+		t.Genres = append(t.Genres, g.Name)
+		if g.ID != 16 {
+			continue
+		}
+		if anime && kind == "tv" {
+			t.Kind = "anime"
+		}
+	}
+	for i, c := range d.Credits.Cast {
+		if i >= 12 {
+			break
+		}
+		t.Cast = append(t.Cast, Cast{Name: c.Name, Character: c.Character, Photo: metadata.Image(c.ProfilePath, "w185")})
+	}
+	for _, v := range d.Videos.Results {
+		if v.Site == "YouTube" && v.Type == "Trailer" {
+			t.Trailer = v.Key
+			break
+		}
+	}
+	t.Status = s.status(ctx, kind, id)
+	if kind != "tv" {
+		return t, nil
+	}
+	// Seasons: what is held (native TV knows each season; Sonarr only the
+	// whole show), on the way, and asked for.
+	held := map[int][2]int{} // season -> have, total
+	way := map[int]bool{}
+	if s.TV != nil {
+		if list, err := s.TV.List(""); err == nil {
+			for _, x := range list {
+				if x.TMDB != id {
+					continue
+				}
+				if _, eps, err := s.TV.Get(x.ID); err == nil {
+					for _, e := range eps {
+						h := held[e.Season]
+						h[1]++
+						if e.File != "" {
+							h[0]++
+						}
+						if e.JobID != "" || (e.Monitored && e.File == "") {
+							way[e.Season] = true
+						}
+						held[e.Season] = h
+					}
+				}
+			}
+		}
+	}
+	asked := map[int]bool{}
+	whole := false
+	if rows, err := s.DB.Query(`SELECT seasons FROM requests WHERE tmdb_id = ? AND status IN ('pending', 'approved')`, id); err == nil {
+		for rows.Next() {
+			var ss string
+			rows.Scan(&ss)
+			if ss == "" {
+				whole = true
+			}
+			for _, f := range strings.Split(ss, ",") {
+				if n, err := strconv.Atoi(f); err == nil {
+					asked[n] = true
+				}
+			}
+		}
+		rows.Close()
+	}
+	today := s.Now().Format("2006-01-02")
+	for _, sn := range d.Seasons {
+		if sn.Number == 0 {
+			continue
+		}
+		x := Season{Number: sn.Number, Name: sn.Name, Episodes: sn.EpisodeCount, AirDate: sn.AirDate}
+		h := held[sn.Number]
+		switch {
+		case h[1] > 0 && h[0] >= h[1] || len(held) == 0 && t.Status == statusAvailable:
+			x.Status = "available"
+		case h[0] > 0:
+			x.Status = "partial"
+		case way[sn.Number]:
+			x.Status = "onTheWay"
+		case asked[sn.Number] || whole && len(held) == 0:
+			x.Status = "requested"
+		case sn.AirDate == "" || sn.AirDate > today:
+			x.Status = "unreleased"
+		}
+		t.Seasons = append(t.Seasons, x)
+	}
+	return t, nil
 }
