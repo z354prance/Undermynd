@@ -22,6 +22,7 @@ import (
 	"github.com/z354prance/undermynd/internal/catalog"
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/db"
+	"github.com/z354prance/undermynd/internal/decision"
 	"github.com/z354prance/undermynd/internal/indexers"
 	"github.com/z354prance/undermynd/internal/logbuf"
 	"github.com/z354prance/undermynd/internal/mediaserver"
@@ -241,6 +242,7 @@ func main() {
 			}
 		}()
 		site.Indexers = &indexers.Service{DB: dbh, HTTP: &http.Client{Timeout: 60 * time.Second}, Engine: eng, Log: logger, Now: time.Now, Gap: 2 * time.Second}
+		site.Profiles = &decision.Store{DB: dbh}
 	}
 	go rp.Run(ctx)
 	go watch.New(cfg, eng, logger).Run(ctx)
