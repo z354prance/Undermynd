@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -89,8 +90,19 @@ type Nyaa struct {
 	HTTP    *http.Client
 }
 
+// leadHyphen is a hyphen at the start of a word, as in "Arknights - Reimei"
+// or "Re:Zero -Starting Life-". nyaa reads "-word" as "without word", so a
+// query keeps none.
+var leadHyphen = regexp.MustCompile(`(^|\s)-+`)
+
+// CleanQuery makes a title safe to search nyaa with.
+func CleanQuery(q string) string {
+	return strings.Join(strings.Fields(leadHyphen.ReplaceAllString(q, "$1")), " ")
+}
+
 // SearchURL is the RSS address for a query.
 func (n Nyaa) SearchURL(q string) string {
+	q = CleanQuery(q)
 	base := strings.TrimRight(n.BaseURL, "/")
 	if base == "" {
 		base = "https://nyaa.si"
