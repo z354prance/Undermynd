@@ -78,6 +78,7 @@ func (c *Client) SeriesInfo(ctx context.Context, id int64) (title string, runtim
 type Episode struct {
 	ID         int64  `json:"id"`
 	Season     int    `json:"seasonNumber"`
+	Number     int    `json:"episodeNumber"`
 	Monitored  bool   `json:"monitored"`
 	HasFile    bool   `json:"hasFile"`
 	AirDateUTC string `json:"airDateUtc"`

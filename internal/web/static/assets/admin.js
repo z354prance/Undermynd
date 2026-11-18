@@ -274,7 +274,7 @@
   // bar from the public dashboard (one pixel per episode, imported green).
   var libQ='';
   function seasonBar(list){var b=el('span','hv-sbar');b.setAttribute('role','img');var imp=0,tot=0;
-    list.forEach(function(x){imp+=x.imported;tot+=x.total;var g=el('span','s');g.title='Season '+x.season+': '+x.imported+' / '+x.total;for(var i=0;i<x.total;i++){var p=el('i');if(i<x.imported)p.className='h';g.appendChild(p)}b.appendChild(g)});
+    list.forEach(function(x){imp+=x.imported;tot+=x.total;var g=el('span','s');g.title='Season '+x.season+': '+x.imported+' / '+x.total;var px=x.pixels||'';for(var i=0;i<x.total;i++){var p=el('i'),c=px?px.charAt(i):(i<x.imported?'h':'.');if(c==='h')p.className='h';else if(c==='u')p.className='u';g.appendChild(p)}b.appendChild(g)});
     b.setAttribute('aria-label',imp+' of '+tot+' episodes in the library');return b}
   function libraryView(body){
     var top=el('div','hv-pagehead');body.appendChild(top);var host=el('div','hv-col');body.appendChild(host);
