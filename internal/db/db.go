@@ -252,6 +252,11 @@ var migrations = []string{
 		summary TEXT NOT NULL,
 		scanned TEXT NOT NULL
 	);`,
+
+	// 8: gap filling (roadmap C4): whether a followed show fills its gaps by
+	// itself, and when it last looked.
+	`ALTER TABLE shows ADD COLUMN fill_gaps INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE shows ADD COLUMN gaps_checked TEXT NOT NULL DEFAULT '';`,
 }
 
 // Version is the schema version this build expects.

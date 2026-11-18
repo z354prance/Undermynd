@@ -21,6 +21,9 @@ type Settings struct {
 	// episode the feeds offer.
 	FromEpisode int   `json:"fromEpisode"`
 	AniListID   int64 `json:"anilistId"` // 0: found by the folder name
+	// FillGaps: a followed show also looks for the episodes missing between
+	// the ones in its folder, once a day.
+	FillGaps bool `json:"fillGaps"`
 }
 
 // AniInfo is what AniList says about a show. It is shown, never used to place.
@@ -43,8 +46,9 @@ type Record struct {
 	Settings
 	AniList        *AniInfo  `json:"anilist,omitempty"`
 	AniListChecked time.Time `json:"anilistChecked"`
-	Checked        time.Time `json:"checked"`    // last nyaa check
-	CheckError     string    `json:"checkError"` // why the last check failed
+	Checked        time.Time `json:"checked"`     // last nyaa check
+	CheckError     string    `json:"checkError"`  // why the last check failed
+	GapsChecked    time.Time `json:"gapsChecked"` // last automatic gap search
 	Added          time.Time `json:"added"`
 }
 
@@ -54,17 +58,18 @@ type Store struct {
 	Now func() time.Time
 }
 
-const recordCols = `folder, followed, groups, quality, titles, from_episode, anilist_id, anilist, anilist_checked, checked, check_error, added`
+const recordCols = `folder, followed, groups, quality, titles, from_episode, anilist_id, anilist, anilist_checked, checked, check_error, added, fill_gaps, gaps_checked`
 
 func scanRecord(row interface{ Scan(...any) error }) (Record, error) {
 	var r Record
-	var followed int
-	var groups, titles, ani, aniChecked, checked, added string
-	err := row.Scan(&r.Folder, &followed, &groups, &r.Quality, &titles, &r.FromEpisode, &r.AniListID, &ani, &aniChecked, &checked, &r.CheckError, &added)
+	var followed, fill int
+	var groups, titles, ani, aniChecked, checked, added, gapsChecked string
+	err := row.Scan(&r.Folder, &followed, &groups, &r.Quality, &titles, &r.FromEpisode, &r.AniListID, &ani, &aniChecked, &checked, &r.CheckError, &added, &fill, &gapsChecked)
 	if err != nil {
 		return r, err
 	}
-	r.Followed = followed != 0
+	r.Followed, r.FillGaps = followed != 0, fill != 0
+	r.GapsChecked = parseTime(gapsChecked)
 	_ = json.Unmarshal([]byte(groups), &r.Groups)
 	_ = json.Unmarshal([]byte(titles), &r.Titles)
 	if ani != "" {
@@ -154,18 +159,27 @@ func (s *Store) Put(folder string, st Settings) error {
 	}
 	groups, _ := json.Marshal(st.Groups)
 	titles, _ := json.Marshal(st.Titles)
-	followed := 0
+	followed, fill := 0, 0
 	if st.Followed {
 		followed = 1
 	}
-	_, err := s.DB.Exec(`INSERT INTO shows (folder, followed, groups, quality, titles, from_episode, anilist_id, added)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	if st.FillGaps {
+		fill = 1
+	}
+	_, err := s.DB.Exec(`INSERT INTO shows (folder, followed, groups, quality, titles, from_episode, anilist_id, added, fill_gaps)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(folder) DO UPDATE SET followed = excluded.followed, groups = excluded.groups, quality = excluded.quality,
-			titles = excluded.titles, from_episode = excluded.from_episode,
+			titles = excluded.titles, from_episode = excluded.from_episode, fill_gaps = excluded.fill_gaps,
 			anilist = CASE WHEN anilist_id = excluded.anilist_id THEN anilist ELSE '' END,
 			anilist_checked = CASE WHEN anilist_id = excluded.anilist_id THEN anilist_checked ELSE '' END,
 			anilist_id = excluded.anilist_id`,
-		folder, followed, string(groups), st.Quality, string(titles), st.FromEpisode, st.AniListID, stamp(s.Now()))
+		folder, followed, string(groups), st.Quality, string(titles), st.FromEpisode, st.AniListID, stamp(s.Now()), fill)
+	return err
+}
+
+// SetGapsChecked records an automatic gap search.
+func (s *Store) SetGapsChecked(folder string) error {
+	_, err := s.DB.Exec(`UPDATE shows SET gaps_checked = ? WHERE folder = ?`, stamp(s.Now()), folder)
 	return err
 }
 

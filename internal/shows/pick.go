@@ -135,3 +135,53 @@ func Pick(st Settings, files []DiskFile, seen []Seen, now time.Time, grace time.
 	})
 	return picks
 }
+
+// GapKeys are the episodes missing between the ones in a folder.
+func GapKeys(sum Summary) map[key]bool {
+	out := map[key]bool{}
+	for _, ss := range sum.Seasons {
+		for _, g := range ss.Gaps {
+			out[keyOf(ss.Season, ss.Season > 1, g)] = true
+		}
+	}
+	return out
+}
+
+// PickGaps picks, for each missing episode, the best release there is: the
+// first group of the order that has it, at the chosen quality. Old gaps do not
+// wait for a better group. Episodes already in the folder, grabbed, or whose
+// release failed are left alone.
+func PickGaps(st Settings, files []DiskFile, seen []Seen, gaps map[key]bool) []Seen {
+	grabbed := map[key]bool{}
+	for _, r := range seen {
+		if !r.Grabbed.IsZero() {
+			grabbed[keyOf(r.Season, r.Marked, r.Episode)] = true
+		}
+	}
+	best := map[key]Seen{}
+	bestRank := map[key]int{}
+	for _, r := range seen {
+		k := keyOf(r.Season, r.Marked, r.Episode)
+		if !gaps[k] || grabbed[k] || r.Failed || r.Episode == 0 {
+			continue
+		}
+		rank := groupRank(st.Groups, r.Group)
+		if rank < 0 || !qualityOK(st.Quality, r.Res) || Has(files, r.Season, r.Marked && r.Season > 1, r.Episode) {
+			continue
+		}
+		if b, ok := bestRank[k]; !ok || rank < b || (rank == b && r.Seeders > best[k].Seeders) {
+			best[k], bestRank[k] = r, rank
+		}
+	}
+	var out []Seen
+	for _, r := range best {
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Season != out[j].Season {
+			return out[i].Season < out[j].Season
+		}
+		return out[i].Episode < out[j].Episode
+	})
+	return out
+}
