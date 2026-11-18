@@ -88,7 +88,8 @@ func TestFollowAndGrab(t *testing.T) {
 		HTTP: srv.Client(), Cfg: cfg, Engine: eng, Log: log.New(io.Discard, "", 0), Now: func() time.Time { return now }, Grace: 24 * time.Hour, Every: 20 * time.Minute}
 	ctx := context.Background()
 
-	list, err := svc.List(true)
+	svc.ScanNow()
+	list, err := svc.List()
 	if err != nil || len(list) != 2 {
 		t.Fatalf("list: %+v %v", list, err)
 	}

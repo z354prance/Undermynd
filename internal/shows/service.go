@@ -43,6 +43,8 @@ type Show struct {
 	// HandMade names an enabled RSS rule whose pattern matches the folder:
 	// a feed the person set up by hand.
 	HandMade string `json:"handMade,omitempty"`
+	// Unscanned: the folder has not been read yet.
+	Unscanned bool `json:"unscanned,omitempty"`
 }
 
 // Service follows shows.
@@ -60,10 +62,9 @@ type Service struct {
 	// Every is how often each followed show is checked.
 	Every time.Duration
 
-	mu      sync.Mutex
-	cache   []Show
-	cacheAt time.Time
-	busy    sync.Mutex // one check or grab decision at a time
+	mu   sync.Mutex
+	scan ScanState
+	busy sync.Mutex // one check or grab decision at a time
 }
 
 // Roots are the library folders of the categories no arr handles.
@@ -117,17 +118,30 @@ func handMade(rules []config.Rule, name string) (string, []string) {
 	return "", nil
 }
 
-// List returns every show folder, by name. Folders are read at most once a
-// minute unless fresh is set.
-func (s *Service) List(fresh bool) ([]Show, error) {
+// ScanState says how the background folder scan is going.
+type ScanState struct {
+	Running  bool      `json:"running"`
+	Done     int       `json:"done"`
+	Total    int       `json:"total"`
+	Finished time.Time `json:"finished"`
+}
+
+// Scanning returns the folder scan's state.
+func (s *Service) Scanning() ScanState {
 	s.mu.Lock()
-	if !fresh && s.cache != nil && s.Now().Sub(s.cacheAt) < time.Minute {
-		out := s.cache
-		s.mu.Unlock()
-		return out, nil
-	}
-	s.mu.Unlock()
+	defer s.mu.Unlock()
+	return s.scan
+}
+
+// List returns every show folder, by name, with what each held at the last
+// scan. Folders are not read here: the scan runs in the background (at start,
+// every half hour, and on Rescan), and opening a show reads that folder.
+func (s *Service) List() ([]Show, error) {
 	recs, err := s.Store.All()
+	if err != nil {
+		return nil, err
+	}
+	sums, err := s.Store.Summaries()
 	if err != nil {
 		return nil, err
 	}
@@ -139,35 +153,106 @@ func (s *Service) List(fresh bool) ([]Show, error) {
 			return nil, fmt.Errorf("library folder %s: %w", root.Dir, err)
 		}
 		for _, n := range names {
-			sh := s.show(root, filepath.Join(root.Dir, n), recs, rules)
+			folder := filepath.Join(root.Dir, n)
+			sh := s.blank(root, folder, recs)
+			sum, ok := sums[folder]
+			if !ok {
+				sum = Summary{Seasons: []SeasonSummary{}}
+				sh.Unscanned = true
+			}
+			sh.Summary = sum
+			sh.HandMade, _ = handMade(rules, sh.Name)
 			out = append(out, sh)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })
-	s.mu.Lock()
-	s.cache, s.cacheAt = out, s.Now()
-	s.mu.Unlock()
 	return out, nil
 }
 
-func (s *Service) show(root Root, folder string, recs map[string]Record, rules []config.Rule) Show {
+func (s *Service) blank(root Root, folder string, recs map[string]Record) Show {
 	sh := Show{Folder: folder, Name: filepath.Base(folder), Root: root.Dir, Category: root.Category}
 	if r, ok := recs[folder]; ok {
 		sh.Record = r
 	} else {
 		sh.Record = Record{Folder: folder, Settings: Settings{Groups: []string{}, Titles: []string{}, Quality: "1080p"}}
 	}
+	return sh
+}
+
+func (s *Service) show(root Root, folder string, recs map[string]Record, rules []config.Rule) Show {
+	sh := s.blank(root, folder, recs)
 	files, _ := ScanFolder(folder)
 	sh.Summary = Summarize(files)
+	_ = s.Store.PutSummary(folder, sh.Summary)
 	sh.HandMade, _ = handMade(rules, sh.Name)
 	return sh
 }
 
-func (s *Service) forget() {
+// StartScan reads every show folder again in the background; false when a
+// scan is already running.
+func (s *Service) StartScan() bool {
 	s.mu.Lock()
-	s.cache = nil
+	if s.scan.Running {
+		s.mu.Unlock()
+		return false
+	}
+	s.scan.Running, s.scan.Done, s.scan.Total = true, 0, 0
 	s.mu.Unlock()
+	go s.scanAll()
+	return true
 }
+
+// ScanNow reads every show folder and waits for it.
+func (s *Service) ScanNow() {
+	s.mu.Lock()
+	s.scan.Running = true
+	s.mu.Unlock()
+	s.scanAll()
+}
+
+func (s *Service) scanAll() {
+	defer func() {
+		s.mu.Lock()
+		s.scan.Running, s.scan.Finished = false, s.Now()
+		s.mu.Unlock()
+	}()
+	var folders []string
+	for _, root := range s.Roots() {
+		names, err := library.Folders(root.Dir)
+		if err != nil {
+			s.Log.Printf("shows: library folder %s: %v", root.Dir, err)
+			continue
+		}
+		for _, n := range names {
+			folders = append(folders, filepath.Join(root.Dir, n))
+		}
+	}
+	s.mu.Lock()
+	s.scan.Total = len(folders)
+	s.mu.Unlock()
+	present := map[string]bool{}
+	for i, f := range folders {
+		present[f] = true
+		files, err := ScanFolder(f)
+		if err == nil {
+			_ = s.Store.PutSummary(f, Summarize(files))
+		}
+		s.mu.Lock()
+		s.scan.Done = i + 1
+		s.mu.Unlock()
+	}
+	if len(folders) > 0 {
+		if sums, err := s.Store.Summaries(); err == nil {
+			for f := range sums {
+				if !present[f] {
+					_ = s.Store.DropSummary(f)
+				}
+			}
+		}
+	}
+}
+
+func (s *Service) forget() {}
 
 // Get returns one show folder, read now.
 func (s *Service) Get(folder string) (Show, []DiskFile, error) {
@@ -495,7 +580,7 @@ func (s *Service) Discover(ctx context.Context, q string) ([]Discovered, error) 
 	if err != nil {
 		return nil, err
 	}
-	all, _ := s.List(false)
+	all, _ := s.List()
 	byName := map[string]string{}
 	for _, sh := range all {
 		for _, n := range names(sh) {
@@ -613,12 +698,13 @@ func (s *Service) Claims(title string) string {
 	if !ok {
 		return ""
 	}
-	all, err := s.List(false)
+	recs, err := s.Store.All()
 	if err != nil {
 		return ""
 	}
-	for _, sh := range all {
-		if sh.Followed && matchesShow(sh, r) && groupRank(sh.Groups, r.Group) >= 0 {
+	for folder, rec := range recs {
+		sh := Show{Folder: folder, Name: filepath.Base(folder), Record: rec}
+		if rec.Followed && matchesShow(sh, r) && groupRank(rec.Groups, r.Group) >= 0 {
 			return sh.Name
 		}
 	}
@@ -646,11 +732,15 @@ func (s *Service) FolderTitles(root string) map[string][]string {
 func (s *Service) Run(ctx context.Context) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
+	s.StartScan()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		}
+		if st := s.Scanning(); !st.Running && s.Now().Sub(st.Finished) >= 30*time.Minute {
+			s.StartScan()
 		}
 		recs, err := s.Store.All()
 		if err != nil {
