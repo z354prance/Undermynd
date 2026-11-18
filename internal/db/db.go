@@ -307,6 +307,26 @@ var migrations = []string{
 		min     REAL NOT NULL DEFAULT 0,
 		max     REAL NOT NULL DEFAULT 0
 	);`,
+	// 11: shadow mode (roadmap F3): each grab an arr made, and what
+	// Undermynd would have picked for the same thing.
+	`CREATE TABLE shadow (
+		id           INTEGER PRIMARY KEY,
+		category     TEXT NOT NULL,
+		grab_key     TEXT NOT NULL UNIQUE,
+		at           TEXT NOT NULL,
+		item         TEXT NOT NULL,
+		profile      TEXT NOT NULL DEFAULT '',
+		arr_title    TEXT NOT NULL,
+		arr_quality  TEXT NOT NULL DEFAULT '',
+		arr_indexer  TEXT NOT NULL DEFAULT '',
+		our_title    TEXT NOT NULL DEFAULT '',
+		our_quality  TEXT NOT NULL DEFAULT '',
+		our_score    INTEGER NOT NULL DEFAULT 0,
+		arr_score    INTEGER NOT NULL DEFAULT 0,
+		verdict      TEXT NOT NULL,
+		note         TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX shadow_at ON shadow(at);`,
 }
 
 // Version is the schema version this build expects.

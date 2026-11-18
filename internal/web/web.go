@@ -34,6 +34,7 @@ import (
 	"github.com/z354prance/undermynd/internal/requests"
 	"github.com/z354prance/undermynd/internal/rss"
 	"github.com/z354prance/undermynd/internal/secret"
+	"github.com/z354prance/undermynd/internal/shadow"
 	"github.com/z354prance/undermynd/internal/shows"
 	"github.com/z354prance/undermynd/internal/storage"
 	"github.com/z354prance/undermynd/internal/store"
@@ -66,6 +67,8 @@ type Server struct {
 	Indexers *indexers.Service
 	// Profiles keeps quality profiles and custom formats; nil without the database.
 	Profiles *decision.Store
+	// Shadow compares the arrs' grabs with Undermynd's picks; nil without the database.
+	Shadow *shadow.Service
 	// Requests keeps requests in Undermynd (native mode); nil without the database.
 	Requests *requests.Service
 	RSS      interface {
@@ -167,6 +170,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/api/indexers", s.admin(s.indexersList))
 	mux.HandleFunc("GET /admin/api/parser", s.admin(s.parserTry))
 	mux.HandleFunc("GET /admin/api/profiles", s.admin(s.profilesList))
+	mux.HandleFunc("GET /admin/api/shadow", s.admin(s.shadowReport))
+	mux.HandleFunc("PUT /admin/api/shadow/settings", s.guard(s.admin(s.shadowSettings)))
+	mux.HandleFunc("POST /admin/api/shadow/check", s.guard(s.admin(s.shadowCheck)))
 	mux.HandleFunc("POST /admin/api/profiles", s.guard(s.admin(s.profileSave)))
 	mux.HandleFunc("DELETE /admin/api/profiles/{id}", s.guard(s.admin(s.profileDelete)))
 	mux.HandleFunc("POST /admin/api/profiles/import", s.guard(s.admin(s.profilesImport)))
