@@ -461,8 +461,6 @@ var migrations = []string{
 	ALTER TABLE artists ADD COLUMN poster TEXT NOT NULL DEFAULT '';
 	ALTER TABLE artists ADD COLUMN fanart TEXT NOT NULL DEFAULT '';
 	ALTER TABLE artists ADD COLUMN overview TEXT NOT NULL DEFAULT '';`,
-	// 19: a request can name the seasons it wants (design v3 season picker).
-	`ALTER TABLE requests ADD COLUMN seasons TEXT NOT NULL DEFAULT '';`,
 }
 
 // Version is the schema version this build expects.
