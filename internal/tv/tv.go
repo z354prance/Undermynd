@@ -31,6 +31,7 @@ import (
 	"github.com/z354prance/undermynd/internal/library"
 	"github.com/z354prance/undermynd/internal/metadata"
 	"github.com/z354prance/undermynd/internal/parser"
+	"github.com/z354prance/undermynd/internal/scheduler"
 )
 
 // Indexers is the part of the indexer service TV uses.
@@ -57,6 +58,7 @@ type Service struct {
 	Move     func(src, dst string) error
 	IsVideo  func(path string) bool
 	History  *history.Log
+	Budget   *scheduler.Budget // the shared search budget and grace window; nil: none
 	Log      *log.Logger
 	Now      func() time.Time
 }
@@ -739,7 +741,7 @@ func (s *Service) Wanted() ([]Series, map[int64][]Episode, error) {
 			return nil, nil, err
 		}
 		for _, e := range eps {
-			if e.Season > 0 && e.Monitored && (e.Status == "missing" || e.Status == "cutoff unmet") {
+			if e.Season > 0 && e.Monitored && (e.Status == "missing" && s.Budget.Aired(e.AirDate) || e.Status == "cutoff unmet") {
 				out[x.ID] = append(out[x.ID], e)
 			}
 		}
@@ -802,7 +804,7 @@ func (s *Service) SearchWanted(ctx context.Context) (int, error) {
 	sort.SliceStable(targets, func(i, j int) bool { return targets[i].Episodes[0].Searched.Before(targets[j].Episodes[0].Searched) })
 	n := 0
 	for _, t := range targets {
-		if n >= left {
+		if n >= left || !s.Budget.Take("tv", t.label()) {
 			break
 		}
 		n++
@@ -1041,6 +1043,9 @@ func (s *Service) RecentSync(ctx context.Context) (int, error) {
 	series, wanted, err := s.Wanted()
 	if err != nil || len(series) == 0 {
 		return 0, err
+	}
+	if !s.Budget.Take("tv-recent", "") {
+		return 0, nil
 	}
 	sctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()

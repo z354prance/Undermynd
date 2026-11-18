@@ -36,6 +36,7 @@ import (
 	"github.com/z354prance/undermynd/internal/requests"
 	"github.com/z354prance/undermynd/internal/rss"
 	"github.com/z354prance/undermynd/internal/sabapi"
+	"github.com/z354prance/undermynd/internal/scheduler"
 	"github.com/z354prance/undermynd/internal/shadow"
 	"github.com/z354prance/undermynd/internal/shows"
 	"github.com/z354prance/undermynd/internal/state"
@@ -255,11 +256,12 @@ func main() {
 				return arr.New(c.Kind, c.ArrURL, string(c.ArrAPIKey))
 			}}
 		go site.Shadow.Run(ctx)
+		site.Budget = &scheduler.Budget{DB: dbh, Cfg: cfg, Now: time.Now}
 		site.History = &history.Log{DB: dbh, Now: time.Now}
 		site.History.Prune()
-		site.Movies = &movies.Service{History: site.History, DB: dbh, Catalog: catalog.New(dbh), Cfg: cfg, Profiles: site.Profiles, Indexers: site.Indexers, Jobs: st,
+		site.Movies = &movies.Service{Budget: site.Budget, History: site.History, DB: dbh, Catalog: catalog.New(dbh), Cfg: cfg, Profiles: site.Profiles, Indexers: site.Indexers, Jobs: st,
 			Move: pipeline.MoveFile, IsVideo: pipeline.IsVideo, Log: logger, Now: time.Now, Arr: site.Shadow.Arr}
-		site.TV = &tv.Service{History: site.History, DB: dbh, Catalog: catalog.New(dbh), TMDB: site.Metadata.TMDB, Cfg: cfg, Profiles: site.Profiles, Indexers: site.Indexers, Jobs: st,
+		site.TV = &tv.Service{Budget: site.Budget, History: site.History, DB: dbh, Catalog: catalog.New(dbh), TMDB: site.Metadata.TMDB, Cfg: cfg, Profiles: site.Profiles, Indexers: site.Indexers, Jobs: st,
 			Move: pipeline.MoveFile, IsVideo: pipeline.IsVideo, Log: logger, Now: time.Now, Arr: site.Shadow.Arr}
 		eng.Native = func(ctx context.Context, j job.Job) (bool, []string, []string, error) {
 			if own, placed, left, err := site.Movies.ImportJob(ctx, j); own {
@@ -271,6 +273,11 @@ func main() {
 		site.Trash = &trash.Syncer{Store: site.Profiles, Cfg: cfg, Log: logger,
 			Client: &trash.Client{HTTP: &http.Client{Timeout: 2 * time.Minute}, URL: func() string { return cfg.Get().Trash.URL }}}
 		go site.Trash.Run(ctx)
+		site.Backlog = &scheduler.Backlog{DB: dbh, Cfg: cfg, Budget: site.Budget, Arr: site.Shadow.Arr, Log: logger, Now: time.Now}
+		go site.Backlog.Run(ctx)
+		if site.Shows != nil {
+			site.Shows.Budget = site.Budget
+		}
 		if site.Requests != nil {
 			site.Requests.Movies = site.Movies
 			site.Requests.TV = site.TV

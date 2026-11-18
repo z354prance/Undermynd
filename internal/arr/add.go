@@ -189,3 +189,8 @@ func (c *Client) AddSeries(ctx context.Context, tvdbID int64, ch Choice) (string
 	}
 	return title, nil
 }
+
+// Command asks the arr to run a command, such as a search.
+func (c *Client) Command(ctx context.Context, body map[string]any) error {
+	return c.send(ctx, http.MethodPost, "/command", body, nil)
+}

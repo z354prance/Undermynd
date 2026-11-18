@@ -386,6 +386,23 @@ var migrations = []string{
 	);
 	CREATE INDEX history_at ON history(at);
 	CREATE INDEX history_item ON history(kind, item_id);`,
+	// 15: the scheduler (roadmap G-2): every automatic search, for the global
+	// budget, and when each arr backlog item was last asked for.
+	`CREATE TABLE search_log (
+		id   INTEGER PRIMARY KEY,
+		at   TEXT NOT NULL,
+		kind TEXT NOT NULL,
+		item TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX search_log_at ON search_log(at);
+	CREATE TABLE backlog (
+		category TEXT NOT NULL,
+		kind     TEXT NOT NULL,
+		item_id  INTEGER NOT NULL,
+		label    TEXT NOT NULL DEFAULT '',
+		at       TEXT NOT NULL,
+		PRIMARY KEY (category, kind, item_id)
+	);`,
 }
 
 // Version is the schema version this build expects.

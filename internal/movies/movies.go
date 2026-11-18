@@ -27,6 +27,7 @@ import (
 	"github.com/z354prance/undermynd/internal/job"
 	"github.com/z354prance/undermynd/internal/library"
 	"github.com/z354prance/undermynd/internal/parser"
+	"github.com/z354prance/undermynd/internal/scheduler"
 )
 
 // Indexers is the part of the indexer service movies use.
@@ -52,6 +53,7 @@ type Service struct {
 	Move     func(src, dst string) error
 	IsVideo  func(path string) bool
 	History  *history.Log
+	Budget   *scheduler.Budget // the shared search budget; nil: none
 	Log      *log.Logger
 	Now      func() time.Time
 }
@@ -446,7 +448,7 @@ func (s *Service) SearchWanted(ctx context.Context) (int, error) {
 	sort.SliceStable(want, func(i, j int) bool { return want[i].Searched.Before(want[j].Searched) })
 	n := 0
 	for _, m := range want {
-		if n >= left {
+		if n >= left || !s.Budget.Take("movies", m.Title) {
 			break
 		}
 		n++

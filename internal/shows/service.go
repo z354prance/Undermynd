@@ -63,6 +63,8 @@ type Service struct {
 	Grace time.Duration
 	// Every is how often each followed show is checked.
 	Every time.Duration
+	// Budget, when set, is the shared search budget gap filling draws on.
+	Budget interface{ Take(kind, item string) bool }
 
 	mu   sync.Mutex
 	scan ScanState
@@ -691,6 +693,9 @@ func (s *Service) fillGaps(ctx context.Context, sh Show, files []DiskFile, have 
 	})
 	for i, k := range keys {
 		if i >= maxGapQueries || ctx.Err() != nil {
+			break
+		}
+		if s.Budget != nil && !s.Budget.Take("anime", sh.Name) {
 			break
 		}
 		q := fmt.Sprintf("%s %02d", sh.Name, k.episode)
