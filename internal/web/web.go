@@ -162,6 +162,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/api/shows/search", s.admin(s.showsSearch))
 	mux.HandleFunc("GET /admin/api/shows/discover", s.admin(s.showsDiscover))
 	mux.HandleFunc("GET /admin/api/indexers", s.admin(s.indexersList))
+	mux.HandleFunc("GET /admin/api/parser", s.admin(s.parserTry))
+	mux.HandleFunc("GET /admin/api/parser/check", s.admin(s.parserCheck))
 	mux.HandleFunc("POST /admin/api/indexers", s.guard(s.admin(s.indexersSave)))
 	mux.HandleFunc("DELETE /admin/api/indexers/{id}", s.guard(s.admin(s.indexersDelete)))
 	mux.HandleFunc("POST /admin/api/indexers/test", s.guard(s.admin(s.indexersTest)))
