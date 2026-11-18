@@ -30,6 +30,7 @@ import (
 	"github.com/z354prance/undermynd/internal/metadata"
 	"github.com/z354prance/undermynd/internal/pipeline"
 	"github.com/z354prance/undermynd/internal/progress"
+	"github.com/z354prance/undermynd/internal/requests"
 	"github.com/z354prance/undermynd/internal/rss"
 	"github.com/z354prance/undermynd/internal/secret"
 	"github.com/z354prance/undermynd/internal/shows"
@@ -62,6 +63,8 @@ type Server struct {
 	Shows *shows.Service
 	// Indexers searches Torznab and Newznab indexers; nil without the database.
 	Indexers *indexers.Service
+	// Requests keeps requests in Undermynd (native mode); nil without the database.
+	Requests *requests.Service
 	RSS      interface {
 		Status() []rss.FeedStatus
 		Download(ctx context.Context, feed string, index int, title, category string) (string, error)
@@ -601,11 +604,15 @@ type settingsView struct {
 	} `json:"tdarr"`
 	Donations config.Donations `json:"donations"`
 	Requests  struct {
-		Enabled   bool   `json:"enabled"`
-		URL       string `json:"url"`
-		APIKey    string `json:"apiKey,omitempty"` // write-only
-		HasAPIKey bool   `json:"hasApiKey"`
-		UserID    int64  `json:"userId"`
+		Enabled       bool   `json:"enabled"`
+		URL           string `json:"url"`
+		APIKey        string `json:"apiKey,omitempty"` // write-only
+		HasAPIKey     bool   `json:"hasApiKey"`
+		UserID        int64  `json:"userId"`
+		Mode          string `json:"mode"`
+		AutoApprove   bool   `json:"autoApprove"`
+		MovieCategory string `json:"movieCategory"`
+		TVCategory    string `json:"tvCategory"`
 	} `json:"requests"`
 	Playback struct {
 		TracearrURL       string `json:"tracearrUrl"`
@@ -672,6 +679,10 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	v.Tdarr.MaxInFlight, v.Tdarr.StallMinutes = c.Tdarr.MaxInFlight, c.Tdarr.StallMinutes
 	v.Donations = c.Donations
 	v.Requests.Enabled, v.Requests.URL, v.Requests.HasAPIKey, v.Requests.UserID = c.Requests.Enabled, c.Requests.URL, c.Requests.APIKey != "", c.Requests.UserID
+	v.Requests.Mode, v.Requests.AutoApprove, v.Requests.MovieCategory, v.Requests.TVCategory = c.Requests.Mode, c.Requests.AutoApprove, c.Requests.MovieCategory, c.Requests.TVCategory
+	if v.Requests.Mode == "" {
+		v.Requests.Mode = "seerr"
+	}
 	v.Playback.TracearrURL, v.Playback.HasTracearrKey = c.Playback.TracearrURL, c.Playback.TracearrKey != ""
 	v.Playback.EmbyURL, v.Playback.HasEmbyKey, v.Playback.HiddenLibraries = c.Playback.EmbyURL, c.Playback.EmbyKey != "", c.Playback.HiddenLibraries
 	v.Playback.RefreshAfterPlace, v.Playback.PathFrom, v.Playback.PathTo = c.Playback.RefreshAfterPlace, c.Playback.PathFrom, c.Playback.PathTo
@@ -792,7 +803,16 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	if in.Requests.APIKey != "" {
 		next.Requests.APIKey = secret.String(strings.TrimSpace(in.Requests.APIKey))
 	}
-	if next.Requests.Enabled && (next.Requests.URL == "" || next.Requests.APIKey == "" || next.Requests.UserID <= 0) {
+	next.Requests.Mode, next.Requests.AutoApprove = in.Requests.Mode, in.Requests.AutoApprove
+	if next.Requests.Mode != "native" {
+		next.Requests.Mode = ""
+	}
+	next.Requests.MovieCategory, next.Requests.TVCategory = strings.TrimSpace(in.Requests.MovieCategory), strings.TrimSpace(in.Requests.TVCategory)
+	switch {
+	case next.Requests.Enabled && next.Requests.Native() && next.Metadata.TMDBKey == "":
+		jsonErr(w, http.StatusBadRequest, "requests kept by Undermynd search TMDB: add a TMDB key under Metadata first")
+		return
+	case next.Requests.Enabled && !next.Requests.Native() && (next.Requests.URL == "" || next.Requests.APIKey == "" || next.Requests.UserID <= 0):
 		jsonErr(w, http.StatusBadRequest, "media requests need the Seerr address, its API key and the user ID requests are made as")
 		return
 	}

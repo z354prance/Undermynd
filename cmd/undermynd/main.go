@@ -17,6 +17,7 @@ import (
 	"time"
 	_ "time/tzdata" // so TZ works in a minimal image
 
+	"github.com/z354prance/undermynd/internal/arr"
 	"github.com/z354prance/undermynd/internal/auth"
 	"github.com/z354prance/undermynd/internal/catalog"
 	"github.com/z354prance/undermynd/internal/config"
@@ -28,6 +29,7 @@ import (
 	"github.com/z354prance/undermynd/internal/pipeline"
 	"github.com/z354prance/undermynd/internal/progress"
 	"github.com/z354prance/undermynd/internal/qbitapi"
+	"github.com/z354prance/undermynd/internal/requests"
 	"github.com/z354prance/undermynd/internal/rss"
 	"github.com/z354prance/undermynd/internal/sabapi"
 	"github.com/z354prance/undermynd/internal/shows"
@@ -216,6 +218,28 @@ func main() {
 		eng.FolderTitles = site.Shows.FolderTitles
 		rp.Claim = site.Shows.Claims
 		go site.Shows.Run(ctx)
+		site.Requests = &requests.Service{DB: dbh, TMDB: site.Metadata.TMDB, Meta: site.Metadata, Cfg: cfg, Shows: site.Shows, Log: logger, Now: time.Now,
+			Arr: func(category string) *arr.Client {
+				c, ok := cfg.Get().Category(category)
+				if !ok || c.ArrURL == "" || c.ArrAPIKey == "" {
+					return nil
+				}
+				return arr.New(c.Kind, c.ArrURL, string(c.ArrAPIKey))
+			}}
+		go func() {
+			t := time.NewTicker(30 * time.Minute)
+			defer t.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					if cfg.Get().Requests.Native() {
+						site.Requests.Refresh(ctx)
+					}
+				}
+			}
+		}()
 		site.Indexers = &indexers.Service{DB: dbh, HTTP: &http.Client{Timeout: 60 * time.Second}, Engine: eng, Log: logger, Now: time.Now, Gap: 2 * time.Second}
 	}
 	go rp.Run(ctx)

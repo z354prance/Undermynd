@@ -1,7 +1,10 @@
 package web
 
 import (
+	"errors"
+
 	"context"
+	"github.com/z354prance/undermynd/internal/requests"
 	"net"
 	"net/http"
 	"strconv"
@@ -72,7 +75,19 @@ func (s *Server) seerrAdmin() *seerr.Client {
 	return seerr.New(c.URL, string(c.APIKey), 0)
 }
 
+// native says requests are kept by Undermynd and can be taken now.
+func (s *Server) native() bool {
+	c := s.Cfg.Get()
+	return c.Requests.Native() && c.Requests.Enabled && s.Requests != nil && c.Metadata.TMDBKey != ""
+}
+
+func (s *Server) nativeMode() bool { return s.Cfg.Get().Requests.Native() && s.Requests != nil }
+
 func (s *Server) requestStatus(w http.ResponseWriter, r *http.Request) {
+	if s.nativeMode() {
+		writeJSON(w, map[string]bool{"enabled": s.native()})
+		return
+	}
 	writeJSON(w, map[string]bool{"enabled": s.seerrPublic() != nil})
 }
 
@@ -82,13 +97,26 @@ func (s *Server) requestSearch(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadRequest, "enter between 2 and 200 characters")
 		return
 	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	if s.nativeMode() {
+		if !s.native() {
+			jsonErr(w, http.StatusServiceUnavailable, "media requests are not enabled")
+			return
+		}
+		res, err := s.Requests.Search(ctx, q)
+		if err != nil {
+			jsonErr(w, http.StatusBadGateway, "the search did not work; try again shortly")
+			return
+		}
+		writeJSON(w, map[string]any{"results": res})
+		return
+	}
 	c := s.seerrPublic()
 	if c == nil {
 		jsonErr(w, http.StatusServiceUnavailable, "media requests are not enabled")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
-	defer cancel()
 	res, err := c.Search(ctx, q)
 	if err != nil {
 		jsonErr(w, http.StatusBadGateway, err.Error())
@@ -102,12 +130,38 @@ func (s *Server) requestCreate(w http.ResponseWriter, r *http.Request) {
 		MediaID    int64  `json:"media_id"`
 		MediaType  string `json:"media_type"`
 		AllSeasons bool   `json:"all_seasons"`
+		Name       string `json:"name"` // optional: who is asking (native requests)
 	}
 	if !readJSON(w, r, &in) {
 		return
 	}
 	if in.MediaID <= 0 || (in.MediaType != "movie" && in.MediaType != "tv") || (in.MediaType == "tv" && !in.AllSeasons) {
 		jsonErr(w, http.StatusBadRequest, "select a movie or confirm all seasons of a TV show")
+		return
+	}
+	if s.nativeMode() {
+		if !s.native() {
+			jsonErr(w, http.StatusServiceUnavailable, "media requests are not enabled")
+			return
+		}
+		if !reqLimit.allow(r) {
+			w.Header().Set("Retry-After", "60")
+			jsonErr(w, http.StatusTooManyRequests, "too many requests; try again in a minute")
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+		defer cancel()
+		req, err := s.Requests.Create(ctx, in.MediaType, in.MediaID, in.Name)
+		if errors.Is(err, requests.ErrAlready) {
+			jsonErr(w, http.StatusConflict, "already requested or in the library")
+			return
+		}
+		if err != nil {
+			jsonErr(w, http.StatusBadGateway, "the request could not be made; try again shortly")
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		writeJSON(w, map[string]int64{"id": req.ID})
 		return
 	}
 	c := s.seerrPublic()
@@ -133,6 +187,15 @@ func (s *Server) requestCreate(w http.ResponseWriter, r *http.Request) {
 
 // requestsPending feeds the public "awaiting approval" count; decisions are made in Admin.
 func (s *Server) requestsPending(w http.ResponseWriter, r *http.Request) {
+	if s.nativeMode() {
+		list, err := s.Requests.Pending()
+		if err != nil || !s.Cfg.Get().Requests.Enabled {
+			writeJSON(w, map[string]any{"requests": []any{}, "errors": []string{}})
+			return
+		}
+		writeJSON(w, map[string]any{"requests": list, "errors": []string{}})
+		return
+	}
 	c := s.seerrAdmin()
 	if c == nil || !s.Cfg.Get().Requests.Enabled {
 		writeJSON(w, map[string]any{"requests": []any{}, "errors": []string{}})
@@ -149,6 +212,15 @@ func (s *Server) requestsPending(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) requestsAdminList(w http.ResponseWriter, r *http.Request) {
+	if s.nativeMode() {
+		list, err := s.Requests.Pending()
+		if err != nil {
+			jsonErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, map[string]any{"requests": list})
+		return
+	}
 	c := s.seerrAdmin()
 	if c == nil {
 		writeJSON(w, map[string]any{"requests": []any{}})
@@ -170,6 +242,20 @@ func (s *Server) requestsDecide(w http.ResponseWriter, r *http.Request) {
 		idText = r.PathValue("requestID")
 	}
 	id, err := strconv.ParseInt(idText, 10, 64)
+	if s.nativeMode() {
+		if err != nil {
+			jsonErr(w, http.StatusBadRequest, "invalid request decision")
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+		defer cancel()
+		if err := s.Requests.Decide(ctx, id, r.PathValue("action"), r.URL.Query().Get("reason")); err != nil {
+			jsonErr(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": true})
+		return
+	}
 	c := s.seerrAdmin()
 	if err != nil || c == nil {
 		jsonErr(w, http.StatusBadRequest, "invalid request decision")
@@ -223,6 +309,21 @@ func (s *Server) requestDiscover(w http.ResponseWriter, r *http.Request) {
 	kind := r.URL.Query().Get("kind")
 	if kind == "" {
 		kind = "trending"
+	}
+	if s.nativeMode() {
+		if !s.native() {
+			jsonErr(w, http.StatusServiceUnavailable, "media requests are not enabled")
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		res, err := s.Requests.Discover(ctx, kind)
+		if err != nil {
+			jsonErr(w, http.StatusBadGateway, "suggestions are not available right now")
+			return
+		}
+		writeJSON(w, map[string]any{"results": res})
+		return
 	}
 	c := s.seerrPublic()
 	if c == nil {
