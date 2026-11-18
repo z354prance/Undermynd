@@ -119,6 +119,14 @@ type Playback struct {
 	EmbyURL         string        `json:"embyUrl"`
 	EmbyKey         secret.String `json:"embyKey"`
 	HiddenLibraries string        `json:"hiddenLibraries"` // comma-separated Emby library IDs
+	// RefreshAfterPlace tells the media server about each file the simple
+	// importer places, so it shows up without waiting for a library scan. Off
+	// by default: Emby finds new files by itself.
+	RefreshAfterPlace bool `json:"refreshAfterPlace,omitempty"`
+	// PathFrom and PathTo map Undermynd's paths to the media server's when
+	// they differ ("/media" here is "/mnt/user/media" there).
+	PathFrom string `json:"pathFrom,omitempty"`
+	PathTo   string `json:"pathTo,omitempty"`
 }
 
 // Donations are the links behind the public Donate button; blank links hide it.

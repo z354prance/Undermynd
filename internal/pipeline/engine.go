@@ -59,6 +59,10 @@ type Engine struct {
 	nmu      sync.Mutex
 	notes    map[string]string
 
+	// AfterPlace, when set, is told about each file the simple importer
+	// places (to have the media server pick it up).
+	AfterPlace func(path string)
+
 	// LibraryRoots are the media folders re-encode jobs may read and replace files in.
 	LibraryRoots []string
 
