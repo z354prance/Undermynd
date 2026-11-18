@@ -279,15 +279,22 @@
   function aSize(b){if(!b)return '';var u=['B','KB','MB','GB','TB'],i=0;while(b>=1024&&i<4){b/=1024;i++}return b.toFixed(i>2?1:0)+' '+u[i]}
   // The season bar from the public dashboard: one pixel per episode number from
   // the first to the newest of each season, green on disk, dim for a gap.
-  function aBar(sh){var s=sh.summary,w=el('div','a-pxw');var b=el('span','hv-sbar');var have=0,tot=0;
-    (s.seasons||[]).forEach(function(ss){if(!ss.season&&ss.season!==0)return;var from=(ss.season===1&&ss.first>1&&ss.first<=30)?1:ss.first,gap={};(ss.gaps||[]).forEach(function(g){gap[g]=1});
-      var g=el('span','s');g.title=(ss.season?'Season '+ss.season+': ':'')+ss.count+' on disk'+(ss.gaps&&ss.gaps.length?', missing '+ss.gaps.join(', '):'');
-      // Long runs (One Piece) fold into blocks so the bar stays readable: a
-      // block is green when every number in it is on disk.
-      var span=ss.last-from+1,k=Math.max(1,Math.ceil(span/150));
-      for(var n=from;n<=ss.last;n+=k){var p=el('i'),full=true;for(var m=n;m<n+k&&m<=ss.last;m++)if(gap[m])full=false;if(full)p.className='h';g.appendChild(p)}
-      if(k>1)g.title+=' (each pixel is '+k+' episodes)';b.appendChild(g)});
-    b.setAttribute('role','img');b.setAttribute('aria-label',s.files+' episodes on disk, '+s.gaps+' missing');w.appendChild(b);w.appendChild(el('span','hv-cnt',s.files+(s.gaps?' / '+(s.files+s.gaps):'')));return w}
+  // Anime season view: one segment per season (or per numbered run), its
+  // width following the run's length; each fills to what is on disk, green
+  // when complete, amber when numbers are missing. Absolute runs show their
+  // range instead of a season.
+  function aBar(sh){var s=sh.summary,w=el('div','a-ssw'),b=el('div','a-ss');var segs=(s.seasons||[]).filter(function(x){return x.count>0||x.last>0});
+    var abs=segs.length===1&&segs[0].last>60;
+    segs.forEach(function(ss){var from=(ss.first>1&&ss.first<=30)?1:ss.first,span=Math.max(1,ss.last-from+1),miss=(ss.gaps||[]).length,have=Math.max(0,span-miss);
+      var g=el('span','a-seg'+(miss?' gap':''));g.style.flexGrow=String(Math.max(1,Math.sqrt(span)));
+      // Each missing number is a dark notch where it falls in the run.
+      (ss.gaps||[]).forEach(function(n){var k=el('u');k.style.left=(100*(n-from)/span).toFixed(2)+'%';k.style.width='max(2px,'+(100/span).toFixed(2)+'%)';g.appendChild(k)});
+      var lbl=abs||!ss.season?from+'–'+ss.last:'S'+ss.season;g.appendChild(el('b','',lbl));
+      g.title=(ss.season&&!abs?'Season '+ss.season+': ':'Episodes '+from+'–'+ss.last+': ')+ss.count+' on disk'+(miss?', missing '+(miss>12?ss.gaps.slice(0,12).join(', ')+' and '+(miss-12)+' more':ss.gaps.join(', ')):'');
+      b.appendChild(g)});
+    if(!segs.length)b.appendChild(el('span','a-seg none'));
+    b.setAttribute('role','img');b.setAttribute('aria-label',s.files+' episodes on disk'+(s.gaps?', '+s.gaps+' missing':''));w.appendChild(b);
+    w.appendChild(el('span','a-sscnt',String(s.files)));return w}
   function aStatus(sh){var a=sh.anilist;if(!a)return '';var m={RELEASING:'Airing',FINISHED:'Ended',NOT_YET_RELEASED:'Not aired yet',CANCELLED:'Cancelled',HIATUS:'On hiatus'}[a.status]||a.status;
     if(a.status==='RELEASING'&&a.nextAt){var d=Math.round((a.nextAt*1000-Date.now())/86400000);m+=' · ep '+a.nextEpisode+(d<=0?' today':d===1?' tomorrow':' in '+d+'d')}if(a.episodes)m+=' · '+a.episodes+' eps';return m}
   function aGroups(gs){var w=el('span','a-grp');(gs||[]).forEach(function(g,i){if(i)w.appendChild(el('span','a-arrow','›'));w.appendChild(aLbl(g))});return w}
@@ -321,7 +328,7 @@
           tb.appendChild(tr)});
         t.appendChild(tb);box.appendChild(t);
         var fol=d.shows.filter(function(s){return s.followed}).length,gaps=d.shows.reduce(function(n,s){return n+s.summary.gaps},0);
-        note.textContent=d.shows.length+' folders · '+fol+' followed · '+gaps+' gaps · showing '+Math.min(list.length,400)+'. The bar has a pixel per episode number from 1 to the newest: green on disk, dim missing. Status comes from AniList once a show has been opened or followed.'}
+        note.textContent=d.shows.length+' folders · '+fol+' followed · '+gaps+' gaps · showing '+Math.min(list.length,400)+'. The bar has a segment per season, sized by its length: green when every episode is on disk, amber with a dark notch at each missing number. Status comes from AniList once a show has been opened or followed.'}
       q.oninput=function(){aView.q=q.value;draw()};draw();
       if(d.scan&&d.scan.running){setMsg(msg,'Reading folders… '+d.scan.done+' of '+(d.scan.total||'?')+'. The list fills in as it goes.');clearInterval(timer);timer=setInterval(function(){if(tab!=='anime'||aView.page!=='list'){clearInterval(timer);return}api('GET','/shows').then(function(x){d.shows=x.shows;d.active=x.active;draw();if(x.scan.running)setMsg(msg,'Reading folders… '+x.scan.done+' of '+(x.scan.total||'?')+'.');else{clearInterval(timer);msg.textContent=''}}).catch(function(){})},3000)}
     }).catch(function(e){if(e.status===401)fail(e);else setMsg(msg,e.message,true)})}
