@@ -139,6 +139,15 @@ func main() {
 	machine.Handle("/sabnzbd/", sab.Handler())
 	machine.Handle("/", qb.Handler())
 	site := web.New(st, eng, cfg, au, logger)
+	// The indexers, served to the arrs as Torznab/Newznab (roadmap D2), on the
+	// same address and key as the download client.
+	machine.Handle("/indexers/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if site.Indexers == nil {
+			http.NotFound(w, r)
+			return
+		}
+		site.Indexers.Handler(func() string { return string(cfg.Get().ClientPassword) }).ServeHTTP(w, r)
+	}))
 	site.Logs = logs
 
 	if am, err := web.NewAccessWith(blobs, cfg); err != nil {

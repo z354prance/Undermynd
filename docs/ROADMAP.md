@@ -110,7 +110,7 @@ Notes: C3 and C4 search nyaa through RSS search URLs, so they do not wait for D1
 | ID | Milestone | Size | Depends on | Exit test |
 |---|---|---|---|---|
 | D1 | Indexer module: Torznab, Newznab and a nyaa adapter; test, health, backoff, rate and grab limits, priority; unified search; interactive search screen. Anime search moves onto it | L | B1, design | Every indexer the user has in Prowlarr works; anime searches go through it. **Built (backend, minimal page)**: Torznab and Newznab indexers with test, health and backoff, daily limits, priority, one search across all, grab into the pipeline, import from Prowlarr (direct where Prowlarr shows the key, through Prowlarr otherwise). Prowlarr's own tracker definitions are still reached through Prowlarr: reaching them directly is the remaining step before Prowlarr can be turned off. Anime keeps nyaa through the Anime page |
-| D2 | Torznab/Newznab proxy for the arrs | M | D1 | Arrs point at Undermynd instead of Prowlarr for two weeks; Prowlarr off |
+| D2 | Torznab/Newznab proxy for the arrs | M | D1 | Arrs point at Undermynd instead of Prowlarr for two weeks; Prowlarr off. **Built**: on the download-client address and key, `/indexers/<n>` passes a search to one indexer (its key stays in Undermynd), `/indexers/all-torrent` and `/indexers/all-usenet` search them all at once |
 
 ### Stage E: Requests (Seerr parity, no sign-in)
 | ID | Milestone | Size | Depends on | Exit test |
