@@ -22,7 +22,7 @@ v13 restructured the plan into milestones. v14 to v17 answered every gate that b
 | Library refresh | Optional, off by default. Emby finds new files on its own today. |
 | Anime | First-class and native (no Sonarr), and **stays on the simple folder-name importer** (user decision, Nov 17): anime numbering does not line up with TMDB well enough to manage it by a catalog, which is why the user never let Sonarr handle it. Anime features work from the folders themselves: folder name, the episode numbers on disk, group preference. Mostly SubsPlease; per-show exceptions such as Trix and Judas. nyaa through per-release RSS feeds. 1080p global default. |
 | Library numbering (G1) | The anime library is mixed (absolute and seasons) and stays as it is. New episodes follow the folder they land in, as today. No conversion tool. |
-| Transcoding of AV1 sources | AV1 sources go through the same Tdarr flow and Undermynd already handles the result. Skipping Tdarr for them is only an optional speed-up (C5). |
+| Transcoding of AV1 sources | AV1 sources go through the same Tdarr flow and Undermynd already handles the result. Tdarr is never skipped: it does more than transcoding (user, Nov 17). |
 | Arr import confirmation | Confirmed working against the real Sonarr and Radarr (user, Nov 16). |
 | Rollout model | Strangler. Each category says who owns it: an arr (today's behaviour) or native. A category switches only after a shadow or trial period. The fake qBittorrent and SABnzbd APIs stay as a compatibility mode. |
 | Merging | Each milestone is a pull request; CI (gofmt, vet, race tests, container build) must pass before merge. Merging to `main` publishes the container image. Milestones that change stored data (B1 onwards) are run on the server before the next one builds on them. |
@@ -102,7 +102,7 @@ The anime path stays the simple importer: a release goes to the folder its title
 | C2 | Catalog-based placement | | | **Withdrawn Nov 17** with C1 (it needs the catalog). Never switched on: it ran only as a dry run beside the simple importer |
 | C3 | Followed shows, arr-style (Anime page): every show folder listed with episodes on disk, gaps and AniList status (display only); follow a show with an ordered group preference and a quality; Undermynd checks nyaa for followed shows itself and grabs new episodes (a later group only when the first choice skipped one, or after a day); hand-made RSS rules leave a followed show's releases to it; other titles per folder, which the simple importer also accepts; interactive search with grab and warnings; search gaps by hand; Add New makes the folder and follows it | M | none | **Built** (`internal/shows`, migration 6). Real-run check: follow two shows that have hand-made feeds and watch a week of episodes arrive |
 | C4 | Gap filling from the folder, by itself: once a day each followed show (with "fill gaps" on, the default) looks for the numbers missing between the episodes in its folder, from what its own search found and then by searching up to four missing episodes one by one; the first group of the order that has one at the chosen quality gets it (old gaps do not wait for a better group); never an episode on disk, already grabbed, or whose release failed | M | C3 | **Built** (migration 8). Real-run check: Student Council's holes filled by themselves |
-| C5 | Optional speed-up: skip the Tdarr round trip when the source already matches the target codec | S | none | A Trix AV1 release is placed without a Tdarr run |
+| C5 | Skip the Tdarr round trip for AV1 sources | | | **Dropped Nov 17** (user): Tdarr does more than transcoding, so every file keeps going through it |
 
 Notes: C3 and C4 search nyaa through RSS search URLs, so they do not wait for D1; D1 later absorbs it. The catalog and metadata layer (B2, B4) stay for movies, TV and requests, where TMDB lines up well. The season conversion tool (old C6) is dropped.
 
@@ -151,7 +151,6 @@ Notes: C3 and C4 search nyaa through RSS search URLs, so they do not wait for D1
 A1 A2 A3 A4 (done; A1 waits on the user's Sweep check)
 A2 -> B1 -> B2 -> B4           (C1, C2 withdrawn)
 C3 -> C4                         anime, from the folders
-C5 (optional, any time)
 B2 + B4 -> E1 -> [Seerr off]
 B1 -> D1 -> D2 -> [Prowlarr off]
 A1 -> F1 -> F2 -> F3 -> F4 -> F5 -> [Radarr, Sonarr off]
@@ -222,7 +221,7 @@ The redesign doc says Settings, Library and Requests/Access are not designed yet
 - v16: requests need no sign-in; every request waits for admin approval. Stage E is one milestone. A4 done.
 - v17: G3 answered: TMDB plus anime-offline-database plus ID mapping.
 - v18: A1 merged (PR #2), A2 done (PR #3, Clone bug fixed), A3 done (README status, this file added to `docs/`). Merge rule recorded.
-- v29: C4 built: followed shows fill their gaps once a day. Since v28 also: folder scans kept between restarts (migration 7), episodes being processed shown in purple, failed downloads reopen the episode, nyaa queries without leading hyphens.
+- v29: C5 dropped (Tdarr is never skipped). C4 built: followed shows fill their gaps once a day. Since v28 also: folder scans kept between restarts (migration 7), episodes being processed shown in purple, failed downloads reopen the episode, nyaa queries without leading hyphens.
 - v28: C3 built: the Anime page (arr-style), followed shows checked on nyaa, group order with fallback, other titles for the importer, AniList status shown.
 - v27: anime stays on the simple folder-name importer (user decision). C1 and C2 withdrawn and removed (PR #22, migration 5 clears their records); C3 and C4 now work from the folders; C6 dropped.
 - v26: C1 real scan of 948 folders: fixes for unchecked folders counted as waiting, older file names (`S01E01-Title`), readings ranked by files with their own episode, exact-title matches for shows the lists lack, thousands separators, list ties settled by title, extra episodes past a season's end. C2 built, starting in a dry run.
