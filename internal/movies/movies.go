@@ -124,12 +124,12 @@ func (s *Service) List(category string) ([]Movie, error) {
 		q += ` AND category = ?`
 		args = append(args, category)
 	}
+	ps := s.profileMap() // before the query: the database has one connection
 	rows, err := s.DB.Query(q+` ORDER BY title COLLATE NOCASE, year`, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	ps := s.profileMap()
 	var out []Movie
 	for rows.Next() {
 		m, err := scan(rows)
