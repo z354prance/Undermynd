@@ -5,8 +5,6 @@
     return fetch('/admin/api'+path,{method:method,headers:{'Content-Type':'application/json','X-HyveMynd-Request':'1'},body:body?JSON.stringify(body):undefined,credentials:'same-origin'})
       .then(function(r){return r.json().catch(function(){return {}}).then(function(d){if(!r.ok){var e=new Error(d.error||('HTTP '+r.status));e.status=r.status;throw e}return d})});
   }
-  function field(form,label,type,name,ph){form.appendChild(el('label','',label));var i=el('input');i.type=type||'text';i.name=name;if(ph)i.placeholder=ph;i.autocomplete=type==='password'?'current-password':'off';form.appendChild(i);return i}
-  function prompt(cmd){var d=el('div');d.appendChild(el('span','prompt','~/undermynd '));var b=el('b','','❯');b.style.color='var(--teal)';b.style.fontWeight='400';d.appendChild(b);d.appendChild(el('span','cmd',' '+cmd));return d}
   function start(){
     stopLive();logoutBtn.hidden=true;document.body.classList.remove('wide');
     api('GET','/session').then(function(s){
@@ -16,69 +14,79 @@
       login();
     }).catch(function(e){root.replaceChildren(el('div','err',e.message))});
   }
+  // Sign-in and first-run setup: one centred card with the icon and name above
+  // it; setup steps use the two-bar step marker from the public Need access dialog.
+  function signCard(title,step,steps){
+    var w=el('div','hv-sign'),b=el('div','hv-sign-brand'),im=el('img');im.src='/assets/logo.svg';im.alt='';b.appendChild(im);b.appendChild(el('span','','HyveMynd'));w.appendChild(b);
+    var c=el('section','hv-sign-card');c.appendChild(el('h2','',title));
+    if(steps){var m=el('div','hv-steps');m.setAttribute('aria-label','step '+step+' of '+steps);for(var i=1;i<=steps;i++)m.appendChild(el('span',i<=step?'on':''));c.appendChild(m)}
+    w.appendChild(c);root.replaceChildren(w);return c}
+  function sfield(form,label,type,name,ph){var l=el('label','hv-f');l.appendChild(el('span','',label));var i=el('input');i.type=type||'text';i.name=name;if(ph)i.placeholder=ph;i.autocomplete=type==='password'?'current-password':'off';l.appendChild(i);form.appendChild(l);return i}
+  function sbuttons(form,label){var r=el('div','hv-sign-row');var err=el('div','hv-err');err.setAttribute('role','alert');var b=el('button','hv-btn primary',label);b.type='submit';r.appendChild(err);r.appendChild(b);form.appendChild(r);return err}
   function login(){
-    root.replaceChildren(prompt('sign-in'));
-    var f=el('form','form');var p=field(f,'password','password','password');var c=field(f,'authenticator code (or a recovery code)','text','code');c.autocomplete='one-time-code';
-    var b=el('button','go','sign in');b.type='submit';f.appendChild(el('div'));f.appendChild(b);var err=el('div','err');f.appendChild(err);
-    f.onsubmit=function(e){e.preventDefault();err.textContent='';api('POST','/login',{password:p.value,code:c.value}).then(start).catch(function(x){err.textContent=x.message})};
-    root.appendChild(f);p.focus();
+    var c=signCard('Sign in');var f=el('form','hv-sign-form');var p=sfield(f,'Password','password','password');var k=sfield(f,'Authenticator code, or a recovery code','text','code');k.autocomplete='one-time-code';k.inputMode='numeric';
+    var err=sbuttons(f,'Sign in');
+    f.onsubmit=function(e){e.preventDefault();err.textContent='';api('POST','/login',{password:p.value,code:k.value}).then(start).catch(function(x){err.textContent=x.message})};
+    c.appendChild(f);p.focus();
   }
   var pendingPw='';
   function setup(){
-    root.replaceChildren(prompt('setup'));
-    root.appendChild(el('p','hint','First run. The setup key is printed in the container log (also in the config folder as setup-key).'));
-    var f=el('form','form');var k=field(f,'setup key','text','key');var p=field(f,'choose a password (12+ characters)','password','password');p.autocomplete='new-password';
-    var b=el('button','go','create account');b.type='submit';f.appendChild(el('div'));f.appendChild(b);var err=el('div','err');f.appendChild(err);
+    var c=signCard('Set up HyveMynd',1,3);
+    c.appendChild(el('p','hv-sign-help','First run. The setup key is printed in the container log, and saved in the config folder as setup-key.'));
+    var f=el('form','hv-sign-form');var k=sfield(f,'Setup key','text','key');var p=sfield(f,'Choose a password (12 or more characters)','password','password');p.autocomplete='new-password';
+    var err=sbuttons(f,'Continue');
     f.onsubmit=function(e){e.preventDefault();err.textContent='';api('POST','/setup',{key:k.value,password:p.value}).then(function(r){pendingPw=p.value;confirmStep(r)}).catch(function(x){err.textContent=x.message})};
-    root.appendChild(f);k.focus();
+    c.appendChild(f);k.focus();
   }
   function confirmStep(r){
-    root.replaceChildren(prompt('setup --authenticator'));
+    var c=signCard('Add an authenticator',2,3);
     if(r){
-      root.appendChild(el('p','hint','Add this secret to an authenticator app (any TOTP app), then enter the 6-digit code it shows.'));
-      root.appendChild(el('pre','',r.totpSecret));
-      root.appendChild(el('div','hint','or open this link on your phone: '));
-      var a=el('a','',r.otpauthUri);a.href=r.otpauthUri;root.appendChild(a);
-    }else{root.appendChild(el('p','hint','Setup was started but not finished. Enter your password and the code from your authenticator.'))}
-    var f=el('form','form');var p=null;if(!pendingPw)p=field(f,'password','password','password');var c=field(f,'code from the app','text','code');c.autocomplete='one-time-code';
-    var b=el('button','go','confirm');b.type='submit';f.appendChild(el('div'));f.appendChild(b);var err=el('div','err');f.appendChild(err);
-    f.onsubmit=function(e){e.preventDefault();err.textContent='';api('POST','/setup/confirm',{password:pendingPw||p.value,code:c.value}).then(function(d){pendingPw='';
-      root.replaceChildren(prompt('recovery-codes'));root.appendChild(el('p','hint','Save these now. Each works once if you lose your authenticator. They are not shown again.'));
-      root.appendChild(el('pre','',d.recovery.join('\n')));var go=el('button','go','continue to sign in');go.onclick=start;root.appendChild(go)}).catch(function(x){err.textContent=x.message})};
-    root.appendChild(f);c.focus();
+      c.appendChild(el('p','hv-sign-help','Add this secret to any authenticator app (TOTP), then enter the 6-digit code it shows.'));
+      c.appendChild(el('pre','hv-secret',r.totpSecret));
+      var a=el('a','hv-sign-link','Or open this link on your phone');a.href=r.otpauthUri;c.appendChild(a);
+    }else c.appendChild(el('p','hv-sign-help','Setup was started but not finished. Enter your password and the code from your authenticator.'));
+    var f=el('form','hv-sign-form');var p=null;if(!pendingPw)p=sfield(f,'Password','password','password');var k=sfield(f,'Code from the app','text','code');k.autocomplete='one-time-code';k.inputMode='numeric';
+    var err=sbuttons(f,'Confirm');
+    f.onsubmit=function(e){e.preventDefault();err.textContent='';api('POST','/setup/confirm',{password:pendingPw||p.value,code:k.value}).then(function(d){pendingPw='';
+      var c3=signCard('Save your recovery codes',3,3);c3.appendChild(el('p','hv-sign-help','Each code works once if you lose your authenticator. They are not shown again.'));
+      c3.appendChild(el('pre','hv-secret',d.recovery.join('\n')));var row=el('div','hv-sign-row');row.appendChild(el('span',''));var go=el('button','hv-btn primary','Continue to sign in');go.type='button';go.onclick=start;row.appendChild(go);c3.appendChild(row)}).catch(function(x){err.textContent=x.message})};
+    c.appendChild(f);(p||k).focus();
   }
   // ---------------------------------------------------------------- app
-  var tab='overview',detailId=null;
+  var tab='overview',detailId=null,actCount=null;
   function app(){
     logoutBtn.hidden=false;logoutBtn.onclick=function(){api('POST','/logout').then(start)};
     root.replaceChildren();
     document.body.classList.add('wide');
+    // The menu follows what HyveMynd does beside the arrs: downloads in,
+    // requests from visitors, the library it watches, and its settings.
     var NAV=[
       {id:'overview',label:'Overview',icon:'s_over',pages:[['overview','Overview']]},
-      {id:'library',label:'Library',icon:'s_lib',pages:[['library','Disk']]},
-      {id:'activity',label:'Activity',icon:'s_act',pages:[['jobs','On the way'],['requests','Requests']]},
-      {id:'sources',label:'Sources',icon:'s_src',pages:[['rss','Feeds']]},
-      {id:'system',label:'System',icon:'s_sys',pages:[['conn','Connections',[['arrs','Categories'],['clients','Download clients'],['transcode','Transcode'],['metadata','Metadata']]],['site','Public site',[['public','Public page'],['playback','Playback']]],['reencode','Re-encode'],['system','Settings'],['log','Log']]}];
+      {id:'downloads',label:'Downloads',icon:'s_dl',pages:[['jobs','On the way'],['rss','Feeds'],['reencode','Re-encode']]},
+      {id:'requests',label:'Requests',icon:'s_req',pages:[['requests','Media'],['access','Accounts']]},
+      {id:'library',label:'Library',icon:'s_lib',pages:[['library','Library']]},
+      {id:'settings',label:'Settings',icon:'s_sys',pages:[['arrs','Arrs'],['clients','Download clients'],['transcode','Tdarr'],['public','Public page'],['playback','Media server'],['system','Server'],['log','Log']]}];
     function first(p){return p[2]?p[2][0][0]:p[0]}
     var cur=null,curPage=null;NAV.forEach(function(sec){sec.pages.forEach(function(p){if(p[0]===tab||(p[2]&&p[2].some(function(q){return q[0]===tab}))){cur=sec;curPage=p}})});
     if(!cur){cur=NAV[0];curPage=cur.pages[0];tab='overview'}
     function go(t){stopLive();tab=t;detailId=null;app()}
     var shell=el('div','hv'),side=el('nav','hv-rail');side.setAttribute('aria-label','Sections');
     var brand=el('a','hv-brand');brand.href='/admin';brand.title='HyveMynd';var bi=el('img');bi.src='/assets/logo.svg';bi.alt='HyveMynd';brand.appendChild(bi);side.appendChild(brand);
-    var actCount=null;
+    actCount=null;
     NAV.forEach(function(sec){var b=el('button','hv-sec'+(sec===cur?' on':''));b.type='button';b.appendChild(svg(sec.icon));b.appendChild(el('span','',sec.label));if(sec===cur)b.setAttribute('aria-current','page');
-      if(sec.id==='activity'){actCount=el('span','hv-count');actCount.hidden=true;b.appendChild(actCount)}
-      b.onclick=function(){go(first(sec.pages[0]))};tabBtns[sec.id]=b;side.appendChild(b)});
+      if(sec.id==='requests'){actCount=el('span','hv-count');actCount.hidden=true;b.appendChild(actCount)}
+      b.onclick=function(){go(first(sec.pages[0]))};tabBtns['sec:'+sec.id]=b;side.appendChild(b)});
     side.appendChild(el('span','hv-sp'));var pub=el('a','hv-sec hv-extra');pub.href='/';pub.appendChild(svg('s_pub'));pub.appendChild(el('span','','Public'));side.appendChild(pub);
     var so=el('button','hv-sec hv-extra');so.type='button';so.appendChild(svg('s_out'));so.appendChild(el('span','','Sign out'));so.onclick=function(){api('POST','/logout').then(start)};side.appendChild(so);
     api('GET','/requests').then(function(d){var n=(d.requests||[]).filter(function(r){return r.status==='pending'||r.Status==='pending'}).length;if(n&&actCount){actCount.textContent=n;actCount.hidden=false;actCount.setAttribute('aria-label',n+' requests waiting')}}).catch(function(){});
     var mainCol=el('div','hv-main'),head=el('header','hv-head');head.appendChild(el('h1','',cur.label));
     if(cur.pages.length>1){var pl=el('div','hv-pills');pl.setAttribute('role','tablist');cur.pages.forEach(function(p){var b=el('button',p===curPage?'on':'',p[1]);b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-selected',p===curPage?'true':'false');b.onclick=function(){go(first(p))};tabBtns[p[0]]=b;pl.appendChild(b)});head.appendChild(pl)}
+    var out=el('button','hv-out','Sign out');out.type='button';out.onclick=function(){api('POST','/logout').then(start)};head.appendChild(out);
     mainCol.appendChild(head);
     if(curPage[2]){var tb=el('div','hv-tabs');tb.setAttribute('role','tablist');curPage[2].forEach(function(q){var b=el('button',q[0]===tab?'on':'',q[1]);b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-selected',q[0]===tab?'true':'false');b.onclick=function(){go(q[0])};tabBtns[q[0]]=b;tb.appendChild(b)});mainCol.appendChild(tb)}
     var bodyWrap=el('div','hv-body');mainCol.appendChild(bodyWrap);
     var main=el('main','main'),body=el('div');main.appendChild(body);bodyWrap.appendChild(main);shell.appendChild(side);shell.appendChild(mainCol);root.appendChild(shell);
-    if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else if(tab==='requests')requestsView(body);else if(tab==='library')libraryView(body);else if(tab==='reencode')reencodeView(body);else if(tab==='log')logView(body);else settingsView(body);
+    if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else if(tab==='requests')requestsView(body);else if(tab==='library')libraryView(body);else if(tab==='reencode')reencodeView(body);else if(tab==='log')logView(body);else if(tab==='access')accessView(body);else settingsView(body);
   }
   function fail(e){if(e.status===401){start()}else{var d=el('div','err',e.message);root.appendChild(d)}}
   function ago(t){var s=Math.max(0,(Date.now()-new Date(t))/1000);if(s<90)return Math.round(s)+'s';if(s<5400)return Math.round(s/60)+'m';if(s<172800)return Math.round(s/3600)+'h';return Math.round(s/86400)+'d'}
@@ -86,22 +94,6 @@
   function stopLive(){clearInterval(timer);if(es){es.close();es=null}}
   function attentionCount(rows){return rows.filter(function(r){return r.attention&&r.state!=='cleaned'}).length}
   var WTORBOX=['Requested','Found','Download','Transfer','Convert','Ready'],WLOCAL=['Requested','Found','Download','Convert','Ready'];
-  function jobWire(j){
-    // A local downloader writes straight to the server: no Transfer step.
-    var tb=j.backend==='torbox',WSTAGES=tb?WTORBOX:WLOCAL,ix=function(n){return WSTAGES.indexOf(n)};
-    var fa={download:'Download',transfer:tb?'Transfer':'Download',convert:'Convert',ready:'Ready'}[j.failedAt]||'Download';
-    var m={received:[0,'wait'],submitted:[1,'wait'],downloading:[ix('Download'),'run'],pulling:[ix(tb?'Transfer':'Download'),'run'],downloaded:[ix('Convert'),'wait'],queued_transcode:[ix('Convert'),'wait'],transcoding:[ix('Convert'),'run'],verifying:[ix('Convert'),'run'],ready:[ix('Ready'),'wait'],imported:[WSTAGES.length,'done'],cleaned:[WSTAGES.length,'done'],failed:[ix(fa),'fail']}[j.state]||[1,'wait'];
-    var cur=m[0],mode=m[1],pct=Math.max(0,Math.min(100,Math.round((j.progress||0)*100)));
-    if(mode==='run'&&pct===0)mode='wait';
-    var w=el('div','wire w-'+mode);
-    WSTAGES.forEach(function(name,i){
-      var st=el('div','st '+(cur>i?'done':cur===i?'cur':'todo'));var wr=el('div','wr');wr.appendChild(el('i','nd'));
-      if(i<WSTAGES.length-1){
-        var ln=el('b','ln'+(cur>i?'':cur===i?' act':' todo'));
-        if(cur===i){var p=(mode==='run'||mode==='fail')?pct:0;ln.style.setProperty('--p',p+'%');var f=el('s','fill');f.style.width=p+'%';f.style.backgroundSize=(p>0?Math.round(10000/p):100)+'% 100%';ln.appendChild(f);if(mode==='run'&&p>0){var d=el('u','dot');d.style.left=p+'%';ln.appendChild(d)}ln.appendChild(el('em','rest'))}
-        wr.appendChild(ln)}
-      st.appendChild(wr);st.appendChild(el('span','lb',name));w.appendChild(st)});
-    return w}
   function jobActions(j){
     var act=el('div','acts');
     function b(cls,label,fn,title){var x=el('button',cls,label);if(title)x.title=title;x.onclick=fn;act.appendChild(x)}
@@ -111,16 +103,53 @@
     if(j.state!=='cleaned'&&j.state!=='failed'&&j.state!=='imported')b('','fail it',function(){if(confirm('Fail this job? The arr will treat the download as failed and may search again.'))doAction(j.id,'fail')},'report a failed download so the arr blocklists this release and grabs another');
     if(j.state!=='cleaned')b('bad','cancel',function(){if(confirm('Cancel and clean up this job?'))doAction(j.id,'cancel')});
     return act}
+  // Small pieces of the HyveMynd look (pinned v2 admin).
+  var IC={s_over:'<path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 8h6V4h-6z"/>',s_lib:'<path d="M4 4h4v16H4zM10 4h4v16h-4zM16 5l3.5-1 2.5 15.5-3.5 1z"/>',s_act:'<path d="M3 12h4l3-8 4 16 3-8h4"/>',s_src:'<circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l3 3M16 16l3 3M5 19l3-3M16 8l3-3"/>',s_sys:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',s_dl:'<path d="M12 3v12M7 10l5 5 5-5M4 20h16"/>',s_req:'<path d="M4 5h16v11H8l-4 4z"/><path d="M12 8v5M9.5 10.5h5"/>',s_pub:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',s_out:'<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/>',refresh:'<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',search:'<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',user:'<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',plus:'<path d="M12 5v14M5 12h14"/>',edit:'<path d="M4 20h4L19 9l-4-4L4 16v4z"/>',filter:'<path d="M3 5h18l-7 8v6l-4 2v-8L3 5z"/>',book:'<path d="M6 3h12v18l-6-4-6 4V3z" fill="currentColor"/>',bookoff:'<path d="M6 3h12v18l-6-4-6 4V3z"/>',dl:'<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',x:'<path d="M6 6l12 12M18 6L6 18"/>',warn:'<path d="M12 3l10 18H2L12 3z"/><path d="M12 10v5M12 18h.01"/>',folder:'<path d="M3 6h7l2 2h9v11H3z"/>',drive:'<rect x="3" y="12" width="18" height="7" rx="1"/><path d="M5 12l3-7h8l3 7"/>',rss:'<path d="M5 19h.01M5 12a7 7 0 0 1 7 7M5 5a14 14 0 0 1 14 14"/>',up:'<path d="M12 19V5M6 11l6-6 6 6"/>',down:'<path d="M12 5v14M6 13l6 6 6-6"/>',back:'<path d="M15 6l-6 6 6 6"/>',cal:'<rect x="3" y="5" width="18" height="16" rx="1.5"/><path d="M3 10h18M8 3v4M16 3v4"/>'};
+  function svg(n,label){var s='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" '+(label?'role="img" aria-label="'+label+'"':'aria-hidden="true"')+'>'+IC[n]+'</svg>';var w=el('span','a-ic');w.innerHTML=s;return w}
+  function hvPill(text,color,fill){var p=el('span','hv-pill'+(fill?' fill':''),text);if(color){p.style.borderColor=color;p.style.color=fill?'#151617':color;if(fill)p.style.background=color}return p}
+  function hvBtn(label,icon,fn,primary){var b=el('button','hv-btn'+(primary?' primary':''));b.type='button';if(icon)b.appendChild(svg(icon));b.appendChild(el('span','',label));b.onclick=function(){fn(b)};return b}
+  function hvBox(title){var s=el('section','hv-box');if(title)s.appendChild(el('h3','',title));return s}
+  function hvPoster(url,title){var p=el('div','hv-poster');if(url){var i=el('img');i.src=url;i.alt='';i.loading='lazy';i.onerror=function(){i.remove();p.appendChild(el('span','hv-ph',title))};p.appendChild(i)}else p.appendChild(el('span','hv-ph',title));return p}
+  function cap(t){return t?t.charAt(0).toUpperCase()+t.slice(1):t}
+  // The segmented circle from the public dashboard, for job rows: six arcs
+  // (Requested, Found, Download, Transfer, Convert, Ready), finished ones green.
+  var STAGES6=['requested','found','download','transfer','convert','ready'];
+  var SVGNS='http://www.w3.org/2000/svg';
+  function svgN(t,a){var e=document.createElementNS(SVGNS,t);for(var k in a)e.setAttribute(k,a[k]);return e}
+  function arcD(i,f0,f1){var r=22,d=Math.PI/180,a0=(i*60+5+50*(f0||0))*d,a1=(i*60+5+50*(f1==null?1:f1))*d;function p(a){return (30+r*Math.sin(a)).toFixed(2)+' '+(30-r*Math.cos(a)).toFixed(2)}return 'M'+p(a0)+' A'+r+' '+r+' 0 0 1 '+p(a1)}
+  function phase(n,ms){n.style.animationDelay=-(Date.now()%ms)+'ms';return n}
+  function segCircle(stage,state,progress,size,w){
+    size=size||34;w=w||8;var at=STAGES6.indexOf(stage),pct=Math.round((progress||0)*100);
+    var s=svgN('svg',{viewBox:'0 0 60 60',width:size,height:size,'class':'seg',role:'img','aria-label':state+' at '+stage+(pct&&state==='working'?', '+pct+'%':'')});
+    function arc(i,cls,f0,f1){var p=svgN('path',{d:arcD(i,f0,f1),fill:'none','stroke-width':w});p.setAttribute('class',cls);s.appendChild(p);return p}
+    var txt='',tc='rt';
+    STAGES6.forEach(function(st,i){
+      if(i<at||state==='done'){arc(i,'dn');return}
+      if(i>at){arc(i,'trk');return}
+      if(state==='working'){phase(arc(i,'trk march'),900);if(pct>0){arc(i,'k-'+st,0,Math.min(1,pct/100));txt=String(pct)}}
+      else if(state==='stalled'){phase(arc(i,'stall'),1100);txt='!';tc='rt y'}
+      else if(state==='failed'){phase(arc(i,'fail'),1600);txt='×';tc='rt r'}
+      else phase(arc(i,'wait k-'+st),2800)});
+    var t=svgN('text',{x:30,y:36,'text-anchor':'middle','class':tc});t.textContent=txt;s.appendChild(t);return s}
+  var JOBSTAGE={received:['found','waiting'],submitted:['found','working'],downloading:['download','working'],pulling:['transfer','working'],downloaded:['convert','waiting'],queued_transcode:['convert','waiting'],transcoding:['convert','working'],verifying:['convert','working'],ready:['ready','waiting'],imported:['ready','done'],cleaned:['ready','done']};
+  var FAILAT={download:'download',transfer:'transfer',convert:'convert',ready:'ready'};
+  function jobStage(j){var m=JOBSTAGE[j.state];if(j.state==='failed')return [FAILAT[j.failedAt]||'download','failed'];if(!m)return ['found','waiting'];if(j.flag&&m[1]!=='done')return [m[0],'stalled'];return m}
+  var VERB={requested:'Requested',found:'Found',download:'Downloading',transfer:'Transferring',convert:'Converting',ready:'Waiting on the arr'};
+  var NOUN={requested:'Request',found:'Search',download:'Download',transfer:'Transfer',convert:'Convert',ready:'Import'};
+  function jobStageText(j){var m=jobStage(j);if(m[1]==='done')return 'Imported';if(m[1]==='failed')return NOUN[m[0]]+' failed';if(m[1]==='stalled')return NOUN[m[0]]+' stalled';if(m[1]==='waiting')return m[0]==='ready'?'Waiting on the arr':VERB[m[0]]+', in line';var t=VERB[m[0]];if(m[0]==='download'&&j.progress)t+=' '+Math.round(j.progress*100)+'%';return t}
+  var KIND={sonarr:['TV','var(--tv)'],radarr:['Movie','var(--movie)'],lidarr:['Music','var(--music)'],rss:['Feed','var(--anime)'],watch:['Folder','var(--anime)'],reencode:['Re-encode','var(--dim)']};
   function jobRow(j,onOpen){
-    var r=el('div','jrow'+(j.state==='failed'?' failed':''));
-    var n=el('div','jname');var a=el('button','link',j.name);a.onclick=function(){onOpen(j)};n.appendChild(a);
+    var m=jobStage(j);var r=el('div','hv-job'+(m[1]==='failed'?' failed':m[1]==='stalled'?' stalled':''));var k=KIND[j.source]||[j.source||'Job','var(--dim)'];r.style.setProperty('--lc',k[1]);
+    r.appendChild(segCircle(m[0],m[1],j.progress,36,8));
+    var n=el('div','hv-job-t');var a=el('button','hv-link',j.name);a.type='button';a.onclick=function(){onOpen(j)};n.appendChild(a);
     var why=(j.flag?j.flag+' ':'')+(j.reason&&j.state!=='cleaned'?j.reason:'');
-    n.appendChild(el('div','reason',why||(j.source+' / '+j.category+' · '+ago(j.created)+' ago')));
-    if(why)n.appendChild(el('div','reason faintline',j.source+' / '+j.category+' · '+(j.backend||'-')+' · '+ago(j.created)+' ago'+(j.transcodeNode?' · '+j.transcodeNode+(j.transcodeWorker?' / '+j.transcodeWorker:''):'')));
-    r.appendChild(n);var w=el('div','jwire');w.appendChild(jobWire(j));r.appendChild(w);r.appendChild(jobActions(j));return r}
+    n.appendChild(el('div','hv-job-s'+(m[1]==='failed'?' bad':m[1]==='stalled'?' warn':''),why||(j.category+' · '+(j.backend||'-')+(j.transcodeNode?' · '+j.transcodeNode:''))));r.appendChild(n);
+    r.appendChild(hvPill(k[0],k[1]));
+    r.appendChild(el('span','hv-job-st'+(m[1]==='failed'?' bad':m[1]==='stalled'?' warn':''),jobStageText(j)));
+    r.appendChild(el('span','hv-age',ago(j.changed||j.created)));
+    var acts=(m[1]==='failed'||m[1]==='stalled'||j.state==='ready')?jobActions(j):el('div');acts.className='hv-acts';[].forEach.call(acts.querySelectorAll('button'),function(b){b.className='hv-btn sm'+(/\bgo\b/.test(b.className)?' primary':/\bbad\b/.test(b.className)?' bad':'');b.textContent=cap(b.textContent)});r.appendChild(acts);return r}
   var WORKING={queued:1,downloading:1,processing:1,finishing:1};
   function jobsView(body){
-    body.appendChild(el('h2','ptitle','Jobs'));
     var bar=el('div','toolbar');var pills=el('div','pills');bar.appendChild(pills);
     var q=el('input');q.placeholder='search title';q.value=jobFilter.q;q.oninput=function(){jobFilter.q=q.value;drawRows()};bar.appendChild(q);
     var ss=el('select');[['all','all sources'],['sonarr','sonarr'],['radarr','radarr'],['lidarr','lidarr'],['rss','rss']].forEach(function(x){var o=el('option','',x[1]);o.value=x[0];if(jobFilter.source===x[0])o.selected=true;ss.appendChild(o)});ss.onchange=function(){jobFilter.source=ss.value;drawRows()};bar.appendChild(ss);
@@ -161,14 +190,13 @@
   }
 
   function loadReqs(){return api('GET','/requests').then(function(d){return d.requests||[]}).catch(function(){return null})}
-  function decideReq(r,action,done){api('POST','/requests/'+encodeURIComponent(r.source_id)+'/'+action).then(done).catch(function(e){if(e.status===401)fail(e);else{alert(e.message);done()}})}
   function reqRow(r,done,compact){
     var row=el('div',compact?'orow rrow':'jrow rrow');
     var n=el('div','jname');n.appendChild(el('div','',(r.title||'Untitled request')));
     var who=[r.media_type==='tv'?'TV show':'Movie',r.requested_by,r.seasons&&r.seasons.length?'seasons '+r.seasons.join(', '):''].filter(Boolean).join(' · ');
     n.appendChild(el('div','reason',who));row.appendChild(n);
     var a=el('div','acts rhoriz');var ap=el('button','go','Approve');ap.onclick=function(){ap.disabled=true;decideReq(r,'approve',done)};var dc=el('button','','Decline');dc.onclick=function(){dc.disabled=true;decideReq(r,'decline',done)};a.appendChild(ap);a.appendChild(dc);row.appendChild(a);return row}
-  function setReqBadge(n){if(!tabBtns.requests)return;tabBtns.requests.textContent='Requests';if(n){var bd=el('span','badge',String(n));tabBtns.requests.appendChild(bd)}}
+  function setReqBadge(n){if(actCount){actCount.textContent=n||'';actCount.hidden=!n}if(!tabBtns.requests)return;tabBtns.requests.textContent='Media';if(n){var bd=el('span','badge',String(n));tabBtns.requests.appendChild(bd)}}
   function logView(body){
     body.appendChild(el('h2','ptitle','Log'));
     body.appendChild(el('p','hint','The container log since HyveMynd last started, newest at the bottom. Type a job id (the short code after "job"), or words like tdarr or failed, to narrow it. The last 2000 lines are kept.'));
@@ -220,67 +248,103 @@
       api('GET','/reencode?since='+encodeURIComponent(new Date(since.value).toISOString())).then(function(r){files=r.files||[];scan.disabled=false;draw(files.length?'':'Everything added since then is AV1.')}).catch(function(e){scan.disabled=false;if(e.status===401){start()}else{host.replaceChildren(el('div','err',e.message))}})};
     draw();
   }
+  // Requests (pinned v2 admin): waiting requests as cards with Approve and
+  // Decline (with a reason), the auto-approve switch, then recent decisions.
+  function decideReq(r,action,done,reason){api('POST','/requests/'+encodeURIComponent(r.source_id)+'/'+action+(reason?'?reason='+encodeURIComponent(reason):'')).then(done).catch(function(e){if(e.status===401)fail(e);else{alert(e.message);done()}})}
+  var posterCache={};
+  function reqPoster(kind,id,host,title){var k=kind+':'+id;function put(u){host.replaceChildren(hvPoster(u,title))}
+    put('');if(!id)return;if(posterCache[k]!==undefined){put(posterCache[k]);return}
+    fetch('/api/v1/media-request/title?type='+(kind==='movie'?'movie':'tv')+'&id='+id).then(function(r){return r.ok?r.json():{}}).then(function(d){posterCache[k]=d.poster||'';if(d.poster)put(d.poster)}).catch(function(){posterCache[k]=''})}
   function requestsView(body){
-    body.appendChild(el('h2','ptitle','Requests'));var host=el('div');host.style.marginTop='18px';body.appendChild(host);
-    function draw(){loadReqs().then(function(list){host.replaceChildren();
-      if(list===null){host.appendChild(el('div','empty','Requests are not set up, or Seerr could not be reached. Set it under Public page.'));return}
-      setReqBadge(list.length);
-      if(!list.length){host.appendChild(el('div','empty','Nothing is waiting for approval.'));return}
-      var box=el('div','jlist');list.forEach(function(r){box.appendChild(reqRow(r,draw,false))});host.appendChild(box)})}
+    var top=el('div','hv-pagehead');body.appendChild(top);var cards=el('div','hv-reqs');body.appendChild(cards);
+    function drawTop(n){top.replaceChildren();top.appendChild(el('h2','',n===null?'Requests':n+' waiting'));top.appendChild(el('span','hv-sp'));top.appendChild(el('span','hv-note','Approving sends the request on in Seerr. Seerr keeps the history.'))}
+    function card(r){var c=el('article','hv-req');var ph=el('div','hv-req-poster');reqPoster(r.media_type,r.tmdb_id,ph,r.title||'');c.appendChild(ph);
+      var b=el('div','hv-req-body');var tl=el('div','hv-pills-row');tl.appendChild(hvPill(r.media_type==='tv'?'Series':'Movie',r.media_type==='tv'?'var(--tv)':'var(--movie)',true));b.appendChild(tl);
+      b.appendChild(el('h3','',r.title||'Untitled request'));
+      var meta=[r.requested_by?'asked by '+r.requested_by:'',r.created_at&&r.created_at[0]!=='0'?ago(r.created_at)+' ago':''].filter(Boolean).join(' · ');if(meta)b.appendChild(el('div','hv-meta',meta));
+      if(r.media_type==='tv')b.appendChild(el('div','hv-meta',r.seasons&&r.seasons.length?'Seasons '+r.seasons.join(', '):'Every season'));
+      var a=el('div','hv-acts');a.appendChild(hvBtn('Approve','',function(x){x.disabled=true;decideReq(r,'approve',draw)},true));a.appendChild(hvBtn('Decline','',function(x){x.disabled=true;decideReq(r,'decline',draw)}));b.appendChild(a);c.appendChild(b);return c}
+    function draw(){loadReqs().then(function(list){cards.replaceChildren();
+      if(list===null){drawTop(null);cards.appendChild(el('div','hv-empty','Requests are not set up, or Seerr could not be reached. Set it under Settings › Public page.'));return}
+      setReqBadge(list.length);drawTop(list.length);
+      if(!list.length)cards.appendChild(el('div','hv-empty','Nothing is waiting for approval.'));
+      list.forEach(function(r){cards.appendChild(card(r))})})}
     draw();timer=setInterval(draw,15000)}
-  var IC={s_over:'<path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 8h6V4h-6z"/>',s_lib:'<path d="M4 4h4v16H4zM10 4h4v16h-4zM16 5l3.5-1 2.5 15.5-3.5 1z"/>',s_act:'<path d="M3 12h4l3-8 4 16 3-8h4"/>',s_src:'<circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l3 3M16 16l3 3M5 19l3-3M16 8l3-3"/>',s_sys:'<circle cx="12" cy="12" r="3"/><path d="M12 2l2 3 3.5-.5.5 3.5 3 2-2 3 .5 3.5-3.5.5-2 3-3-2-3 2-2-3-3.5-.5.5-3.5-2-3 3-2 .5-3.5 3.5.5z"/>',s_pub:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',s_out:'<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/>',refresh:'<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',search:'<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',user:'<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',plus:'<path d="M12 5v14M5 12h14"/>',edit:'<path d="M4 20h4L19 9l-4-4L4 16v4z"/>',filter:'<path d="M3 5h18l-7 8v6l-4 2v-8L3 5z"/>',book:'<path d="M6 3h12v18l-6-4-6 4V3z" fill="currentColor"/>',bookoff:'<path d="M6 3h12v18l-6-4-6 4V3z"/>',dl:'<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',x:'<path d="M6 6l12 12M18 6L6 18"/>',warn:'<path d="M12 3l10 18H2L12 3z"/><path d="M12 10v5M12 18h.01"/>',folder:'<path d="M3 6h7l2 2h9v11H3z"/>',drive:'<rect x="3" y="12" width="18" height="7" rx="1"/><path d="M5 12l3-7h8l3 7"/>',rss:'<path d="M5 19h.01M5 12a7 7 0 0 1 7 7M5 5a14 14 0 0 1 14 14"/>',up:'<path d="M12 19V5M6 11l6-6 6 6"/>',down:'<path d="M12 5v14M6 13l6 6 6-6"/>',back:'<path d="M15 6l-6 6 6 6"/>',cal:'<rect x="3" y="5" width="18" height="16" rx="1.5"/><path d="M3 10h18M8 3v4M16 3v4"/>'};
-  function svg(n,label){var s='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" '+(label?'role="img" aria-label="'+label+'"':'aria-hidden="true"')+'>'+IC[n]+'</svg>';var w=el('span','a-ic');w.innerHTML=s;return w}
+  // Library: what the arrs hold, read from them. Each series has the season
+  // bar from the public dashboard (one pixel per episode, imported green).
+  var libQ='';
+  function seasonBar(list){var b=el('span','hv-sbar');b.setAttribute('role','img');var imp=0,tot=0;
+    list.forEach(function(x){imp+=x.imported;tot+=x.total;var g=el('span','s');g.title='Season '+x.season+': '+x.imported+' / '+x.total;for(var i=0;i<x.total;i++){var p=el('i');if(i<x.imported)p.className='h';g.appendChild(p)}b.appendChild(g)});
+    b.setAttribute('aria-label',imp+' of '+tot+' episodes in the library');return b}
   function libraryView(body){
-    body.appendChild(el('h2','ptitle','Library'));var host=el('div');host.style.marginTop='18px';body.appendChild(host);
+    var top=el('div','hv-pagehead');body.appendChild(top);var host=el('div','hv-col');body.appendChild(host);
     api('GET','/library').then(function(d){
-      var errs=d.errors||[];if(errs.length){host.appendChild(el('h3','osec','Problems · '+errs.length));var c=el('div','ncard');errs.slice(0,10).forEach(function(e){c.appendChild(el('div','reason',e))});host.appendChild(c)}
+      var errs=d.errors||[];
       var seasons=d.seasons||[],shows={};seasons.forEach(function(x){(shows[x.showId]=shows[x.showId]||{name:x.Show||x.show,list:[]}).list.push(x)});
       var ids=Object.keys(shows).sort(function(a,b){return shows[a].name.localeCompare(shows[b].name)});
-      host.appendChild(el('h3','osec','Series · '+ids.length));
-      if(!ids.length)host.appendChild(el('div','empty','No series are being tracked.'));
-      var box=el('div','jlist');
-      ids.forEach(function(id){var sh=shows[id],imp=0,tot=0;sh.list.sort(function(a,b){return a.season-b.season});sh.list.forEach(function(x){imp+=x.imported;tot+=x.total});
-        var row=el('div','jrow lrow');var n=el('div','jname');n.appendChild(el('div','',sh.name));n.appendChild(el('div','reason',imp+' / '+tot+' episodes imported'));row.appendChild(n);
-        var cells=el('div','lcells');sh.list.forEach(function(x){var pct=x.total?100*x.imported/x.total:0;var c=el('span','lc '+(x.total&&x.imported>=x.total?'done':x.imported?'part':'none'));c.title='Season '+x.season+': '+x.imported+' / '+x.total;var f=el('i');f.style.height=pct+'%';c.appendChild(f);c.appendChild(el('b','',String(x.season)));cells.appendChild(c)});row.appendChild(cells);box.appendChild(row)});
-      host.appendChild(box);
-      var miss=d.missing||[];host.appendChild(el('h3','osec','Missing · '+miss.length));
-      if(!miss.length)host.appendChild(el('div','empty','Nothing is missing.'));else{var mb=el('div','jlist');miss.slice(0,60).forEach(function(m){var r=el('div','jrow lrow');var n=el('div','jname');n.appendChild(el('div','',m.title));n.appendChild(el('div','reason',[m.kind,m.detail,m.category].filter(Boolean).join(' · ')));r.appendChild(n);mb.appendChild(r)});host.appendChild(mb)}
+      top.appendChild(el('h2','',ids.length+(ids.length===1?' series':' series')));top.appendChild(el('span','hv-sp'));
+      var q=el('input');q.type='search';q.placeholder='Filter series';q.setAttribute('aria-label','filter series');q.value=libQ;top.appendChild(q);
+      top.appendChild(el('span','hv-note','From Sonarr, refreshed in the background.'));
+      if(errs.length){var eb=hvBox('Problems reading the arrs');var el2=el('div','hv-list');errs.slice(0,10).forEach(function(e){var r=el('div','hv-item slim');r.appendChild(hvPill('Error','var(--bad)'));var t=el('div','hv-it');t.appendChild(el('span','',e));r.appendChild(t);el2.appendChild(r)});eb.appendChild(el2);host.appendChild(eb)}
+      var sb=hvBox('Series');var list=el('div','hv-list');sb.appendChild(list);host.appendChild(sb);
+      function draw(){list.replaceChildren();var shown=ids.filter(function(id){return !libQ||shows[id].name.toLowerCase().indexOf(libQ.toLowerCase())>=0});
+        if(!ids.length){list.appendChild(el('div','hv-empty','No series are being tracked. Add a Sonarr category under Settings › Arrs.'));return}
+        if(!shown.length){list.appendChild(el('div','hv-empty','Nothing matches.'));return}
+        shown.forEach(function(id){var sh=shows[id],imp=0,tot=0;sh.list.sort(function(a,b){return a.season-b.season});sh.list.forEach(function(x){imp+=x.imported;tot+=x.total});
+          var row=el('div','hv-item slim hv-lib');var t=el('div','hv-it');t.appendChild(el('b','',sh.name));t.appendChild(el('span','',sh.list.length+(sh.list.length===1?' season':' seasons')));row.appendChild(t);
+          row.appendChild(seasonBar(sh.list));row.appendChild(el('span','hv-cnt',imp+' / '+tot));
+          row.appendChild(tot&&imp>=tot?hvPill('Complete','var(--ok)'):hvPill((tot-imp)+' missing','var(--warn)'));list.appendChild(row)})}
+      q.oninput=function(){libQ=q.value;draw()};draw();
+      var miss=d.missing||[];var mbx=hvBox('Missing');var ml=el('div','hv-list');mbx.appendChild(ml);host.appendChild(mbx);
+      if(!miss.length)ml.appendChild(el('div','hv-empty','Nothing is missing.'));
+      miss.slice(0,100).forEach(function(m){var r=el('div','hv-item slim');var t=el('div','hv-it');t.appendChild(el('b','',m.title));t.appendChild(el('span','',[m.detail].filter(Boolean).join(' · ')));r.appendChild(t);
+        if(m.kind)r.appendChild(hvPill(cap(m.kind),m.kind==='episode'||m.kind==='series'?'var(--tv)':m.kind==='movie'?'var(--movie)':m.kind==='album'?'var(--music)':'var(--dim)'));if(m.category)r.appendChild(el('span','hv-age',m.category));ml.appendChild(r)});
+      if(miss.length>100)ml.appendChild(el('div','hv-empty','and '+(miss.length-100)+' more'));
     }).catch(fail)}
+  // Overview (pinned v2 admin): health pills, Needs you, Pipeline now, Just finished, Who runs what.
+  var STAGE6=[['found','Found','var(--st-found)'],['download','Download','var(--st-down)'],['transfer','Transfer','var(--st-transfer)'],['convert','Convert','var(--st-convert)'],['ready','Ready','var(--st-ready)']];
+  function hvHealth(label,value,tone){var p=el('div','hv-health '+(tone||'ok'));p.appendChild(el('i'));p.appendChild(el('span','',label));if(value)p.appendChild(el('b','',value));return p}
   function overviewView(body){
-    var head=el('div','ohead');head.appendChild(el('h2','ptitle','Overview'));var upd=el('span','reason','');head.appendChild(upd);body.appendChild(head);
-    var chips=el('div','chips');body.appendChild(chips);
-    var cols=el('div','ocols');var left=el('div'),right=el('div');cols.appendChild(left);cols.appendChild(right);body.appendChild(cols);
-    var reqHost=el('div');var sysInfo=null,reqList=null;
-    function drawChips(){chips.replaceChildren();if(!sysInfo)return;
-      function chip2(t,st){chips.appendChild(el('span','chip2 '+(st||'ok'),t))}
-      chip2(sysInfo.paused?'Intake paused':'Intake running',sysInfo.paused?'warn':'ok');
-      if(sysInfo.torbox.configured)chip2(sysInfo.torbox.backoffUntil?'TorBox backing off':'TorBox '+sysInfo.torbox.used+' of '+sysInfo.torbox.limit+' this hour',sysInfo.torbox.backoffUntil?'warn':'ok');
-      chip2(sysInfo.tdarr.api?'Tdarr '+sysInfo.tdarr.inFlight+' of '+sysInfo.tdarr.max+' busy':'Tdarr: folders only',sysInfo.tdarr.api?'ok':'dim');
-      if(sysInfo.complete&&sysInfo.complete.totalBytes){var fr=sysInfo.complete.freeBytes/sysInfo.complete.totalBytes;chip2('Complete folder '+Math.round(fr*100)+'% free',fr<.1?'bad':'ok')}}
-    function drawReqs(){reqHost.replaceChildren();if(reqList===null)return;setReqBadge(reqList.length);var h=el('h3','osec','Requests · '+reqList.length+' waiting');h.style.marginTop='22px';reqHost.appendChild(h);
-      if(!reqList.length){reqHost.appendChild(el('div','empty','Nothing is waiting.'));return}
-      var box=el('div','okv');reqList.slice(0,5).forEach(function(r){box.appendChild(reqRow(r,pollReqs,true))});reqHost.appendChild(box)}
-    function pollReqs(){loadReqs().then(function(l){reqList=l;drawReqs()})}
-    function draw(){
-      drawChips();drawReqs();
-      upd.textContent='Updated '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-      var need=lastRows.filter(function(r){return r.attention&&r.state!=='cleaned'});
-      left.replaceChildren();left.appendChild(el('h3','osec','Needs you · '+need.length));
-      if(!need.length)left.appendChild(el('div','empty','Nothing needs you right now.'));
-      need.forEach(function(j){
-        var c=el('div','ncard');var h=el('div','nh');var a=el('button','link',j.name);a.onclick=function(){tab='jobs';detailId=j.id;app()};h.appendChild(a);h.appendChild(el('span','fpill failed',j.state==='failed'?'Failed':'Attention'));c.appendChild(h);
-        c.appendChild(el('div','reason',(j.flag?j.flag+' ':'')+(j.reason||'')));c.appendChild(jobActions(j));left.appendChild(c)});
-      right.replaceChildren();right.appendChild(el('h3','osec','Pipeline now'));
-      var cnt=function(f){return lastRows.filter(f).length};
-      var box=el('div','okv');
-      [['Downloading',cnt(function(r){return r.state==='downloading'||r.state==='pulling'})],['Waiting for a converter',cnt(function(r){return r.state==='queued_transcode'})],['Converting',cnt(function(r){return r.state==='transcoding'||r.state==='verifying'})],['Waiting on the arr',cnt(function(r){return r.state==='ready'})],['Finished',cnt(function(r){return r.group==='done'})]].forEach(function(x){var r=el('div','orow');r.appendChild(el('span','',x[0]));r.appendChild(el('b','',String(x[1])));box.appendChild(r)});
-      right.appendChild(box);
-      right.appendChild(reqHost);
-      var ac=attentionCount(lastRows);if(tabBtns.jobs){tabBtns.jobs.textContent='On the way';if(ac){var bd=el('span','badge',String(ac));tabBtns.jobs.appendChild(bd)}}
-    }
+    var pills=el('div','hv-healthrow');body.appendChild(pills);
+    var g=el('div','hv-ov');var left=el('div','hv-col'),right=el('div','hv-col');g.appendChild(left);g.appendChild(right);body.appendChild(g);
+    var need=hvBox('Needs you'),pipe=hvBox('Pipeline now'),fin=hvBox('Just finished'),who=hvBox('Categories');
+    left.appendChild(need);left.appendChild(fin);right.appendChild(pipe);right.appendChild(who);
+    var sysInfo=null,reqList=[],cats=[];
+    function count(t,n){var h=t.querySelector('h3');h.replaceChildren(document.createTextNode(h.dataset.t||(h.dataset.t=h.textContent)));if(n){h.appendChild(el('span','hv-n',String(n)))}}
+    function drawPills(){pills.replaceChildren();if(!sysInfo)return;var s=sysInfo;
+      pills.appendChild(hvHealth('Intake',s.paused?'paused':'running',s.paused?'warn':'ok'));
+      if(s.torbox.configured)pills.appendChild(hvHealth('TorBox',s.torbox.backoffUntil?'backing off':s.torbox.used+' / '+s.torbox.limit+' an hour',s.torbox.backoffUntil?'warn':'ok'));
+      else pills.appendChild(hvHealth('TorBox','not set','dim'));
+      pills.appendChild(hvHealth('Tdarr',s.tdarr.api?s.tdarr.inFlight+' / '+s.tdarr.max+' busy':'folders only',s.tdarr.api?'ok':'dim'));
+      if(s.complete&&s.complete.totalBytes){var fr=s.complete.freeBytes/s.complete.totalBytes;pills.appendChild(hvHealth('Complete folder',Math.round(fr*100)+'% free',fr<.1?'bad':fr<.2?'warn':'ok'))}
+      if(s.work&&s.work.totalBytes){var wf=s.work.freeBytes/s.work.totalBytes;pills.appendChild(hvHealth('Work folder',Math.round(wf*100)+'% free',wf<.1?'bad':wf<.2?'warn':'ok'))}}
+    function drawNeed(){var list=need.querySelector('.hv-list')||need.appendChild(el('div','hv-list'));list.replaceChildren();
+      var jobs=lastRows.filter(function(r){return r.attention&&r.state!=='cleaned'});
+      count(need,jobs.length+reqList.length);
+      if(!jobs.length&&!reqList.length){list.appendChild(el('div','hv-empty','Nothing needs you right now.'));return}
+      reqList.forEach(function(r){var row=el('div','hv-item');row.appendChild(hvPill('Request','var(--warn)'));var t=el('div','hv-it');t.appendChild(el('b','',r.title||'Untitled request'));t.appendChild(el('span','',[r.media_type==='tv'?'TV':'Movie',r.requested_by,r.seasons&&r.seasons.length?'seasons '+r.seasons.join(', '):''].filter(Boolean).join(' · ')));row.appendChild(t);
+        var a=el('div','hv-acts');a.appendChild(hvBtn('Approve','',function(b){b.disabled=true;decideReq(r,'approve',refresh)},true));a.appendChild(hvBtn('Decline','',function(b){b.disabled=true;decideReq(r,'decline',refresh)}));row.appendChild(a);list.appendChild(row)});
+      jobs.forEach(function(j){var row=el('div','hv-item');row.appendChild(hvPill(j.state==='failed'?'Failed':'Stalled',j.state==='failed'?'var(--bad)':'var(--warn)'));var t=el('div','hv-it');var n=el('button','hv-link',j.name);n.type='button';n.onclick=function(){tab='jobs';detailId=j.id;app()};t.appendChild(n);t.appendChild(el('span','',((j.flag?j.flag+' ':'')+(j.reason||'')).trim()||j.state));row.appendChild(t);
+        var a=el('div','hv-acts');if(j.state==='failed')a.appendChild(hvBtn('Retry','',function(b){b.disabled=true;doAction(j.id,'retry')},true));a.appendChild(hvBtn('Details','',function(){tab='jobs';detailId=j.id;app()}));row.appendChild(a);list.appendChild(row)})}
+    function drawPipe(){var gr=pipe.querySelector('.hv-tiles')||pipe.appendChild(el('div','hv-tiles'));gr.replaceChildren();
+      STAGE6.forEach(function(s){var n=lastRows.filter(function(r){var m=jobStage(r);return m[0]===s[0]&&m[1]!=='done'&&m[1]!=='failed'}).length;var t=el('div','hv-tile');t.style.setProperty('--c',s[2]);t.appendChild(el('b','',String(n)));t.appendChild(el('span','',s[1]));gr.appendChild(t)})}
+    function drawFin(){var list=fin.querySelector('.hv-list')||fin.appendChild(el('div','hv-list'));list.replaceChildren();
+      var done=lastRows.filter(function(r){return r.state==='imported'||r.state==='cleaned'}).sort(function(a,b){return new Date(b.changed)-new Date(a.changed)}).slice(0,6);
+      if(!done.length){list.appendChild(el('div','hv-empty','Nothing finished lately.'));return}
+      done.forEach(function(j){var row=el('div','hv-item slim');var dot=el('i','hv-dot');row.appendChild(dot);var t=el('div','hv-it');t.appendChild(el('b','',j.name));t.appendChild(el('span','',j.category));row.appendChild(t);row.appendChild(el('span','hv-age',ago(j.changed)));list.appendChild(row)})}
+    function drawWho(){var list=who.querySelector('.hv-list')||who.appendChild(el('div','hv-list'));list.replaceChildren();
+      if(!cats.length){list.appendChild(el('div','hv-empty','No categories yet. Add them under Settings › Arrs.'));return}
+      var ARR={sonarr:'Sonarr',radarr:'Radarr',lidarr:'Lidarr'};
+      cats.forEach(function(c){var row=el('div','hv-item slim');var t=el('div','hv-it');t.appendChild(el('b','',c.name));t.appendChild(el('span','',[c.transcode?'through Tdarr':'no transcode',c.libraryDir||''].filter(Boolean).join(' · ')));row.appendChild(t);
+        row.appendChild(ARR[c.kind]?hvPill(ARR[c.kind],c.kind==='sonarr'?'var(--tv)':c.kind==='radarr'?'var(--movie)':'var(--music)'):hvPill('Feeds and folders','var(--anime)'));
+        if(ARR[c.kind])row.appendChild(hvPill(c.arrUrl?'connected':'no address',c.arrUrl?'var(--ok)':'var(--warn)'));
+        list.appendChild(row)})}
+    function draw(){drawNeed();drawPipe();drawFin();var ac=attentionCount(lastRows);if(tabBtns.jobs){tabBtns.jobs.textContent='On the way';if(ac)tabBtns.jobs.appendChild(el('span','badge',String(ac)))}}
+    function refresh(){loadReqs().then(function(l){reqList=l||[];setReqBadge(reqList.length);drawNeed()})}
     function poll(){api('GET','/jobs').then(function(d){lastRows=Array.isArray(d)?d:(d.jobs||[]);draw()}).catch(fail)}
-    function pollSys(){api('GET','/system').then(function(d){sysInfo=d;drawChips()}).catch(function(){})}
-    poll();pollSys();pollReqs();timer=setInterval(function(){poll();pollSys();pollReqs()},5000);
+    function pollSys(){api('GET','/system').then(function(d){sysInfo=d;drawPills()}).catch(function(){})}
+    api('GET','/settings').then(function(s){cats=s.categories||[];drawWho()}).catch(function(){});
+    drawWho();poll();pollSys();refresh();timer=setInterval(function(){poll();pollSys();refresh()},5000);
   }
   function doAction(id,a){api('POST','/jobs/'+encodeURIComponent(id)+'/'+a).then(function(){app()}).catch(function(e){if(e.status===401)fail(e);else{alert(e.message);app()}})}
   function detail(body,id){
@@ -334,7 +398,7 @@
     var conn=el('div','card');conn.appendChild(el('h4','','Connect an arr to HyveMynd'));
     var host=location.hostname;
     conn.appendChild(help('In Sonarr, Radarr or Lidarr: Settings → Download Clients → add. Use SABnzbd for usenet and qBittorrent for torrents.'));
-    [['host',host],['port','8081 (the LAN-only machine port)'],['SABnzbd API key','the client password (see the System tab)'],['qBittorrent login','username '+S.clientUser+' and the client password'],['category','one of the names below, exactly']].forEach(function(p){var d=el('div','kv');d.appendChild(el('span','k',p[0]));d.appendChild(el('span','v',p[1]));conn.appendChild(d)});
+    [['host',host],['port','8081 (the LAN-only machine port)'],['SABnzbd API key','the client password (see Settings › Server)'],['qBittorrent login','username '+S.clientUser+' and the client password'],['category','one of the names below, exactly']].forEach(function(p){var d=el('div','kv');d.appendChild(el('span','k',p[0]));d.appendChild(el('span','v',p[1]));conn.appendChild(d)});
     body.appendChild(conn);
     var cats=el('div');body.appendChild(cats);
     function add(c){
@@ -387,7 +451,7 @@
   }
 
   function transcodePane(body){
-    body.appendChild(head('Transcode (Tdarr)','Videos for categories with transcode on are handed to a dedicated Tdarr library. HyveMynd watches Tdarr over its API, so it can show progress and notice failures.'));
+    body.appendChild(head('Tdarr','Videos for categories with transcode on are handed to a dedicated Tdarr library. HyveMynd watches Tdarr over its API, so it can show progress and notice failures.'));
     var c0=el('div','card');var h0=el('h4','','Connection ');h0.appendChild(chip(!!S.tdarr.url,S.tdarr.url?'configured':'not set — folder hand-off only'));c0.appendChild(h0);
     var g0=el('div','grid3');
     var url=row(g0,'Tdarr address',{value:S.tdarr.url,ph:'http://10.0.0.8:8265',help:'the Tdarr server, port 8265 by default'});
@@ -440,7 +504,7 @@
 
   function playbackPane(body){
     var P=S.playback||{};
-    body.appendChild(head('Playback (Tracearr and Emby)','Feeds the public page: Now Playing and Recently Added come from Tracearr (music is added from Lidarr). Emby is only used to hide whole libraries from Now Playing.'));
+    body.appendChild(head('Media server','Feeds the public page: Now Playing and Recently Added come from Tracearr (music is added from Lidarr). Emby is only used to hide whole libraries from Now Playing.'));
     var c=el('div','card');var h=el('h4','','Tracearr ');h.appendChild(chip(!!P.tracearrUrl&&P.hasTracearrKey,P.tracearrUrl&&P.hasTracearrKey?'configured':'not set'));c.appendChild(h);
     var g=el('div','grid3');
     var tu=row(g,'Tracearr address',{value:P.tracearrUrl,ph:'http://10.0.0.8:3000'});
@@ -482,18 +546,14 @@
     c2.appendChild(g2);var rb=el('button','','test');var rm=el('span','msg');rm.style.marginLeft='12px';
     rb.onclick=function(){rm.className='msg';rm.textContent='testing…';api('POST','/requests/test',{url:ru.value,apiKey:rk.value,userId:+ri.value}).then(function(){rm.className='msg ok';rm.textContent='connected, and the key can act as that user'}).catch(function(e){rm.className='msg err';rm.textContent=e.message})};
     c2.appendChild(rb);c2.appendChild(rm);body.appendChild(c2);
-    var c3=el('div','card');c3.appendChild(el('h4','','Awaiting approval'));var lst=el('div');c3.appendChild(lst);body.appendChild(c3);
-    function loadPending(){lst.replaceChildren();api('GET','/requests').then(function(r){if(!r.requests.length){lst.appendChild(help('Nothing is waiting.'));return}
-      r.requests.forEach(function(q){var d=el('div','kv');d.appendChild(el('span','k',(q.title||'Untitled')+' ('+(q.media_type==='tv'?'TV show':'Movie')+')'));d.appendChild(el('span','v',q.requested_by||''));
-        [['approve','approve'],['decline','deny']].forEach(function(a){var b=el('button','',a[1]);b.onclick=function(){b.disabled=true;api('POST','/requests/'+q.source_id+'/'+a[0]).then(loadPending).catch(function(e){b.disabled=false;alert(e.message)})};d.appendChild(b)});lst.appendChild(d)})}).catch(function(){lst.appendChild(help('Seerr is not reachable or not set up yet.'))})}
-    loadPending();
-    accessCard(body);
+    accessCard(body,'settings');
     saveBar(body,function(m){save(function(b){b.requests={enabled:re.checked,url:ru.value,apiKey:rk.value,userId:+ri.value};b.donations={title:ti.value,paypal_url:pp.value,cashapp_url:ca.value,custom_label:cl.value,custom_url:cu.value}},m).then(function(){pane(body)})})
   }
 
-  function accessCard(body){
+  function accessView(body){accessCard(body,'queue')}
+  function accessCard(body,mode){
     var c=el('div','card');var h=el('h4','','Account requests ("need access?") ');var hc=el('span');h.appendChild(hc);c.appendChild(h);
-    c.appendChild(help('Visitors ask for a media server account. Approving creates a disabled copy of your template user, and the visitor finishes setup from an emailed single-use link. The media server address and key come from the Playback tab. Emails are sent over TLS/STARTTLS only.'));
+    c.appendChild(help('Visitors ask for a media server account. Approving creates a disabled copy of your template user, and the visitor finishes setup from an emailed single-use link. The media server address and key come from the Media server settings. Emails are sent over TLS/STARTTLS only.'));
     var g=el('div','grid3'),A={};
     var en=row(g,'let visitors request accounts',{type:'checkbox'});
     var pv=row(g,'server type',{help:'emby or jellyfin'});
@@ -535,6 +595,7 @@
         lst.appendChild(d)})}).catch(function(e){lst.replaceChildren(help(e.message))})}
     function prompt_(l,v){return window.prompt(l,v)}
     api('GET','/access').then(fill).catch(function(e){msg.className='msg err';msg.textContent=e.message});loadQ();
+    if(mode==='queue')c.remove();else q.remove();
   }
 
   function rssPane(body){
@@ -591,7 +652,7 @@
   }
 
   function systemPane(body){
-    body.appendChild(head('System','What the pipeline is doing right now, the login the arrs use, and timing.'));
+    body.appendChild(head('Server','What the pipeline is doing right now, the login the arrs use, and timing.'));
     var libErr=el('div');body.appendChild(libErr);
     api('GET','/library').then(function(d){if(d.errors&&d.errors.length){var c=el('div','card');c.appendChild(el('h4','','Library status problems'));d.errors.slice(0,10).forEach(function(e){c.appendChild(el('div','msg err',e))});libErr.appendChild(c)}}).catch(function(){});
     var live=el('div');body.appendChild(live);

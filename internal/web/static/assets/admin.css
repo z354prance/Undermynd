@@ -145,11 +145,6 @@ body.ui .card:not(.setting)>button{margin:6px 8px 0 0}
 body.ui .titlebar .mark{color:#45bba9;font-size:12px;letter-spacing:0}
 body.ui .titlebar .mark-sub{color:#5a5c5a;font-size:12px;letter-spacing:0}
 body.ui .titlebar img{width:22px;height:22px}
-body.ui .acts button,body.ui .toolbar button:not(.fpill){border:0;background:transparent;padding:0 10px 0 0;height:auto;color:#c9cdc6;border-radius:0}
-body.ui .acts button::before,body.ui .toolbar button:not(.fpill)::before{content:"\276F ";color:#5a5c5a}
-body.ui .acts button:hover,body.ui .toolbar button:not(.fpill):hover{color:#fff}
-body.ui .acts button.go,body.ui .toolbar button.go{color:#45bba9}
-body.ui .acts button.bad{color:#f27b89}
 body.ui td .wire{min-width:260px}
 body.ui .wire .lb{font-size:10px}
 
@@ -184,10 +179,7 @@ body.ui span.fpill{cursor:default}
 .jrow.failed .jname .reason{color:#f27b89}
 .jwire{min-width:0}
 .jrow .acts{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:130px}
-body.ui .acts button,body.ui .toolbar button.go{font-size:12px}
 body.ui .acts button{margin:0;padding:0 0 0 0;height:22px}
-body.ui .acts button.bad{color:#c9cdc6}
-body.ui .acts button.bad:hover{color:#f27b89}
 .wire .st:last-child .lb{margin-left:-6px}
 .ohead{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:22px}
 .ocols{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr);gap:28px}
@@ -220,11 +212,6 @@ body.ui .acts.rhoriz button{height:auto}
 .main .osec{margin-top:22px}
 
 /* settings: same prompt-link buttons and quiet cards */
-body.ui .main button:not(.fpill):not(.link):not(.badge),body.ui .savebar button{border:0;background:transparent;height:auto;padding:2px 14px 2px 0;color:#c9cdc6;border-radius:0}
-body.ui .main button:not(.fpill):not(.link)::before,body.ui .savebar button::before{content:"\276F ";color:#5a5c5a;font-family:"Segoe UI Symbol","DejaVu Sans Mono",monospace}
-body.ui .main button.go:not(.fpill),body.ui .savebar button.go{color:#45bba9}
-body.ui .main button:not(.fpill):not(.link):hover,body.ui .savebar button:hover{color:#fff;border:0}
-body.ui .main button.bad{color:#f27b89}
 body.ui .main button:disabled{opacity:.5}
 body.ui .sl h4,body.ui .card h4{color:#e5e8e2}
 body.ui .card:not(.setting){border-radius:4px;background:#0f100f}

@@ -292,11 +292,11 @@
     var pr = pendRow(); if (pr) panel.appendChild(pr);
     if (q.length >= 2) return results(q);
     var tabs = el("div", "rp-tabs"); tabs.setAttribute("role", "tablist");
-    [["discover", "Discover"], ["movies", "Movies"], ["series", "Series"], ["anime", "Anime"]].forEach(function (t) {
+    [["discover", "Discover"], ["movies", "Movies"], ["series", "Series"]].forEach(function (t) {
       var b = el("button", view.tab === t[0] ? "on" : "", t[1]); b.type = "button"; b.setAttribute("role", "tab"); b.setAttribute("aria-selected", view.tab === t[0] ? "true" : "false"); b.onclick = function () { view.tab = t[0]; render(); }; tabs.appendChild(b);
     });
     panel.appendChild(tabs);
-    var rows = { discover: [["trending", "Trending"], ["popular-movies", "Popular movies"], ["upcoming", "Upcoming"]], movies: [["popular-movies", "Popular movies"], ["upcoming", "Upcoming"], ["trending-movies", "Trending movies"]], series: [["popular-tv", "Popular series"], ["trending-tv", "Trending series"]], anime: [["anime", "Popular anime"]] }[view.tab];
+    var rows = { discover: [["trending", "Trending"], ["popular-movies", "Popular movies"], ["upcoming", "Upcoming"]], movies: [["popular-movies", "Popular movies"], ["upcoming", "Upcoming"], ["trending-movies", "Trending movies"]], series: [["popular-tv", "Popular series"], ["trending-tv", "Trending series"]] }[view.tab] || [];
     rows.forEach(function (rw) {
       var sec = el("section", "rp-row"); sec.appendChild(el("h3", "", rw[1])); var strip = el("div", view.tab === "anime" ? "rp-grid" : "rp-strip"); strip.appendChild(el("span", "empty", "Loading…")); sec.appendChild(strip); panel.appendChild(sec);
       list(rw[0]).then(function (items) { strip.replaceChildren(); items.forEach(function (x) { strip.appendChild(card(x, rw[0] === "anime" ? "anime" : null)); }); if (!items.length) sec.remove(); }).catch(function () { sec.remove(); });
