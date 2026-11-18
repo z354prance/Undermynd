@@ -270,6 +270,20 @@ type Scheduler struct {
 	CutoffDays  int `json:"cutoffDays,omitempty"`
 }
 
+// Music are the settings of native music categories (roadmap H2).
+type Music struct {
+	DryRun bool `json:"dryRun"`
+	// Qualities are the wanted qualities, best first; empty means
+	// "FLAC 24bit", "FLAC", "ALAC". Cutoff stops upgrades; empty is the last.
+	Qualities []string `json:"qualities,omitempty"`
+	Cutoff    string   `json:"cutoff,omitempty"`
+	// Folder names an album's folder under the artist's; empty uses
+	// "{Album} ({Year})".
+	Folder string `json:"folder,omitempty"`
+	// SearchPerHour caps automatic searches; 0 means 10.
+	SearchPerHour int `json:"searchPerHour,omitempty"`
+}
+
 type Settings struct {
 	Watches      []Watch    `json:"watches"`
 	IntakePaused bool       `json:"intakePaused"` // new grabs are accepted but held until resumed
@@ -290,6 +304,7 @@ type Settings struct {
 	TV           TV         `json:"tv"`
 	Trash        Trash      `json:"trash"`
 	Scheduler    Scheduler  `json:"scheduler"`
+	Music        Music      `json:"music"`
 
 	// Login the arrs use against the fake client API.
 	ClientUser     string        `json:"clientUser"`

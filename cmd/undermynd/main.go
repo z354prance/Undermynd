@@ -30,6 +30,7 @@ import (
 	"github.com/z354prance/undermynd/internal/mediaserver"
 	"github.com/z354prance/undermynd/internal/metadata"
 	"github.com/z354prance/undermynd/internal/movies"
+	"github.com/z354prance/undermynd/internal/music"
 	"github.com/z354prance/undermynd/internal/musicbrainz"
 	"github.com/z354prance/undermynd/internal/pipeline"
 	"github.com/z354prance/undermynd/internal/progress"
@@ -268,7 +269,13 @@ func main() {
 			if own, placed, left, err := site.Movies.ImportJob(ctx, j); own {
 				return own, placed, left, err
 			}
-			return site.TV.ImportJob(ctx, j)
+			if own, placed, left, err := site.TV.ImportJob(ctx, j); own {
+				return own, placed, left, err
+			}
+			if site.Music != nil {
+				return site.Music.ImportJob(ctx, j)
+			}
+			return false, nil, nil, nil
 		}
 		go site.TV.Run(ctx)
 		site.Trash = &trash.Syncer{Store: site.Profiles, Cfg: cfg, Log: logger,
@@ -277,6 +284,9 @@ func main() {
 		site.Backlog = &scheduler.Backlog{DB: dbh, Cfg: cfg, Budget: site.Budget, Arr: site.Shadow.Arr, Log: logger, Now: time.Now}
 		go site.Backlog.Run(ctx)
 		site.MusicBrainz = &musicbrainz.Client{DB: dbh, HTTP: &http.Client{Timeout: 30 * time.Second}}
+		site.Music = &music.Service{DB: dbh, MB: site.MusicBrainz, Cfg: cfg, Indexers: site.Indexers, Jobs: st, Arr: site.Shadow.Arr,
+			Move: pipeline.MoveFile, History: site.History, Budget: site.Budget, Log: logger, Now: time.Now}
+		go site.Music.Run(ctx)
 		if site.Shows != nil {
 			site.Shows.Budget = site.Budget
 		}

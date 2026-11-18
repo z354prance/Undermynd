@@ -403,6 +403,41 @@ var migrations = []string{
 		at       TEXT NOT NULL,
 		PRIMARY KEY (category, kind, item_id)
 	);`,
+	// 16: native music (roadmap H2): artists and their albums (MusicBrainz
+	// release groups), the files of each album and the download under way.
+	`CREATE TABLE artists (
+		id        INTEGER PRIMARY KEY,
+		mbid      TEXT NOT NULL UNIQUE,
+		name      TEXT NOT NULL,
+		sort_name TEXT NOT NULL DEFAULT '',
+		folder    TEXT NOT NULL DEFAULT '',
+		monitored INTEGER NOT NULL DEFAULT 1,
+		category  TEXT NOT NULL DEFAULT '',
+		added     TEXT NOT NULL,
+		refreshed TEXT NOT NULL DEFAULT ''
+	);
+	CREATE TABLE albums (
+		id           INTEGER PRIMARY KEY,
+		artist_id    INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+		mbid         TEXT NOT NULL UNIQUE,
+		title        TEXT NOT NULL,
+		year         INTEGER NOT NULL DEFAULT 0,
+		release_date TEXT NOT NULL DEFAULT '',
+		type         TEXT NOT NULL DEFAULT '',
+		secondary    TEXT NOT NULL DEFAULT '',
+		monitored    INTEGER NOT NULL DEFAULT 0,
+		tracks       INTEGER NOT NULL DEFAULT 0,
+		folder       TEXT NOT NULL DEFAULT '',
+		file_quality TEXT NOT NULL DEFAULT '',
+		file_count   INTEGER NOT NULL DEFAULT 0,
+		file_size    INTEGER NOT NULL DEFAULT 0,
+		job_id       TEXT NOT NULL DEFAULT '',
+		searched     TEXT NOT NULL DEFAULT '',
+		note         TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX albums_artist ON albums(artist_id);
+	ALTER TABLE blocklist ADD COLUMN album_id INTEGER REFERENCES albums(id) ON DELETE CASCADE;
+	CREATE INDEX albums_job ON albums(job_id) WHERE job_id != '';`,
 }
 
 // Version is the schema version this build expects.
