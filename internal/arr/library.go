@@ -96,6 +96,31 @@ type Missing struct {
 	Title  string     `json:"title"`
 	Detail string     `json:"detail,omitempty"` // S02E05, year, album name
 	Date   *time.Time `json:"date,omitempty"`
+	// Group is what the item belongs to on the Missing page: the series, the
+	// movie, or the album (artist and album).
+	Group string `json:"group,omitempty"`
+	// Poster is the artwork address the arr knows (series or movie poster,
+	// album cover); Path opens the item in the arr, relative to its address.
+	Poster string `json:"poster,omitempty"`
+	Path   string `json:"path,omitempty"`
+}
+
+// arrImage is an entry of an arr's images list.
+type arrImage struct {
+	CoverType string `json:"coverType"`
+	RemoteURL string `json:"remoteUrl"`
+}
+
+// pickImage chooses the remote address of the first image of the wanted types.
+func pickImage(imgs []arrImage, types ...string) string {
+	for _, t := range types {
+		for _, i := range imgs {
+			if strings.EqualFold(i.CoverType, t) && strings.HasPrefix(i.RemoteURL, "https://") {
+				return i.RemoteURL
+			}
+		}
+	}
+	return ""
 }
 
 func parseTime(s string) *time.Time {
@@ -120,7 +145,9 @@ func (c *Client) MissingItems(ctx context.Context) ([]Missing, error) {
 				AirDateUTC string `json:"airDateUtc"`
 				Monitored  bool   `json:"monitored"`
 				Series     struct {
-					Title string `json:"title"`
+					Title     string     `json:"title"`
+					TitleSlug string     `json:"titleSlug"`
+					Images    []arrImage `json:"images"`
 				} `json:"series"`
 			} `json:"records"`
 		}
@@ -136,17 +163,24 @@ func (c *Client) MissingItems(ctx context.Context) ([]Missing, error) {
 			if t == "" {
 				t = x.Title
 			}
-			out = append(out, Missing{Kind: "episode", Title: t, Detail: fmt.Sprintf("S%02dE%02d", x.Season, x.Episode), Date: parseTime(x.AirDateUTC)})
+			m := Missing{Kind: "episode", Title: t, Detail: fmt.Sprintf("S%02dE%02d", x.Season, x.Episode), Date: parseTime(x.AirDateUTC), Group: t, Poster: pickImage(x.Series.Images, "poster")}
+			if x.Series.TitleSlug != "" {
+				m.Path = "/series/" + url.PathEscape(x.Series.TitleSlug)
+			}
+			out = append(out, m)
 		}
 		return out, nil
 	case "radarr":
 		var r struct {
 			Records []struct {
-				Title          string `json:"title"`
-				Year           int    `json:"year"`
-				Monitored      bool   `json:"monitored"`
-				DigitalRelease string `json:"digitalRelease"`
-				InCinemas      string `json:"inCinemas"`
+				Title          string     `json:"title"`
+				Year           int        `json:"year"`
+				Monitored      bool       `json:"monitored"`
+				DigitalRelease string     `json:"digitalRelease"`
+				InCinemas      string     `json:"inCinemas"`
+				TmdbID         int64      `json:"tmdbId"`
+				TitleSlug      string     `json:"titleSlug"`
+				Images         []arrImage `json:"images"`
 			} `json:"records"`
 		}
 		if err := c.get(ctx, "/wanted/missing?page=1&pageSize=1000&sortDirection=descending", &r); err != nil {
@@ -161,17 +195,27 @@ func (c *Client) MissingItems(ctx context.Context) ([]Missing, error) {
 			if d == nil {
 				d = parseTime(x.InCinemas)
 			}
-			out = append(out, Missing{Kind: "movie", Title: x.Title, Detail: fmt.Sprint(x.Year), Date: d})
+			m := Missing{Kind: "movie", Title: x.Title, Detail: fmt.Sprint(x.Year), Date: d, Group: x.Title, Poster: pickImage(x.Images, "poster")}
+			switch {
+			case x.TmdbID > 0:
+				m.Path = "/movie/" + fmt.Sprint(x.TmdbID)
+			case x.TitleSlug != "":
+				m.Path = "/movie/" + url.PathEscape(x.TitleSlug)
+			}
+			out = append(out, m)
 		}
 		return out, nil
 	case "lidarr":
 		var r struct {
 			Records []struct {
-				Title       string `json:"title"`
-				Monitored   bool   `json:"monitored"`
-				ReleaseDate string `json:"releaseDate"`
+				Title       string     `json:"title"`
+				Monitored   bool       `json:"monitored"`
+				ReleaseDate string     `json:"releaseDate"`
+				ForeignID   string     `json:"foreignAlbumId"`
+				Images      []arrImage `json:"images"`
 				Artist      struct {
-					Name string `json:"artistName"`
+					Name   string     `json:"artistName"`
+					Images []arrImage `json:"images"`
 				} `json:"artist"`
 			} `json:"records"`
 		}
@@ -183,7 +227,15 @@ func (c *Client) MissingItems(ctx context.Context) ([]Missing, error) {
 			if !x.Monitored {
 				continue
 			}
-			out = append(out, Missing{Kind: "album", Title: x.Artist.Name, Detail: x.Title, Date: parseTime(x.ReleaseDate)})
+			m := Missing{Kind: "album", Title: x.Artist.Name, Detail: x.Title, Date: parseTime(x.ReleaseDate), Group: x.Artist.Name + " \u2014 " + x.Title,
+				Poster: pickImage(x.Images, "cover", "disc")}
+			if m.Poster == "" {
+				m.Poster = pickImage(x.Artist.Images, "poster", "fanart")
+			}
+			if x.ForeignID != "" {
+				m.Path = "/album/" + url.PathEscape(x.ForeignID)
+			}
+			out = append(out, m)
 		}
 		return out, nil
 	}
