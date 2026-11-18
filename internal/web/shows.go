@@ -21,7 +21,7 @@ func (s *Server) showsList(w http.ResponseWriter, r *http.Request) {
 	if !s.showsReady(w) {
 		return
 	}
-	list, err := s.Shows.List(r.URL.Query().Get("fresh") == "1")
+	list, err := s.Shows.List()
 	if err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -29,7 +29,7 @@ func (s *Server) showsList(w http.ResponseWriter, r *http.Request) {
 	if list == nil {
 		list = []shows.Show{}
 	}
-	writeJSON(w, map[string]any{"shows": list, "roots": s.Shows.Roots()})
+	writeJSON(w, map[string]any{"shows": list, "roots": s.Shows.Roots(), "scan": s.Shows.Scanning()})
 }
 
 type showEpisode struct {
@@ -188,11 +188,8 @@ func (s *Server) showsAction(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, map[string]any{"show": sh, "started": nonNil(started), "warning": msg})
 	case "rescan":
-		if _, err := s.Shows.List(true); err != nil {
-			jsonErr(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		writeJSON(w, map[string]bool{"ok": true})
+		s.Shows.StartScan()
+		writeJSON(w, s.Shows.Scanning())
 	default:
 		jsonErr(w, http.StatusNotFound, "unknown action")
 	}
