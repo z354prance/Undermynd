@@ -25,46 +25,53 @@
   // ------------------------------------------------------------ segmented circle
   var STAGES = ["requested", "found", "download", "transfer", "convert", "ready"];
   var STAGE_NAME = { requested: "Requested", found: "Found", download: "Downloading", transfer: "Transferring", convert: "Converting", ready: "Ready" };
-  // The segmented circle: six arcs, one per stage. Each arc is its own path,
-  // so a dash pattern (the marching track) stays inside its arc.
-  function arcPath(a0, a1) {
-    var r = 9, p = function (a) { return (12 + r * Math.sin(a)).toFixed(3) + " " + (12 - r * Math.cos(a)).toFixed(3); };
+  // The segmented circle, as drawn in the pinned dashboard: six thick arcs
+  // (Requested, Found, Download, Transfer, Convert, Ready), finished ones green.
+  // Working: the rest of the arc is a marching dashed track with the stage
+  // colour filling it, and the percent in the middle. Waiting pulses in the
+  // stage colour; stalled blinks yellow with "!"; failed flickers red with "x".
+  function arcPath(i, f0, f1) {
+    var r = 22, deg = Math.PI / 180, a0 = (i * 60 + 5 + 50 * (f0 || 0)) * deg, a1 = (i * 60 + 5 + 50 * (f1 == null ? 1 : f1)) * deg;
+    var p = function (a) { return (30 + r * Math.sin(a)).toFixed(2) + " " + (30 - r * Math.cos(a)).toFixed(2); };
     return "M" + p(a0) + " A" + r + " " + r + " 0 0 1 " + p(a1);
   }
   // Animations keep their phase across redraws (the lists redraw every few
   // seconds), so a pulse or blink never jumps back to its start.
   function phase(node, ms) { node.style.animationDelay = -(Date.now() % ms) + "ms"; return node; }
-  var ANIM = { waiting: 2800, stalled: 1000, failed: 1600 };
-  function seg(stage, state, progress, size) {
-    size = size || 22; var step = Math.PI / 3, gap = 0.17;
-    var s = svgEl("svg", { viewBox: "0 0 24 24", width: size, height: size, class: "seg", role: "img", "aria-label": (STAGE_NAME[stage] || stage) + ", " + state });
-    var at = STAGES.indexOf(stage);
-    function arc(a0, a1, cls, col) { var d = svgEl("path", { d: arcPath(a0, a1), fill: "none", "stroke-width": 3 }); d.setAttribute("class", cls); if (col) d.setAttribute("stroke", col); s.appendChild(d); return d; }
+  function seg(stage, state, progress, size, width) {
+    size = size || 30; var w = width || 8;
+    var at = STAGES.indexOf(stage), pct = Math.round((progress || 0) * 100);
+    var label = state === "failed" ? "failed at step " + (at + 1) + " of 6" : state === "stalled" ? "stalled at step " + (at + 1) + " of 6" : state === "waiting" ? "waiting at step " + (at + 1) + " of 6" : state === "done" ? "done" : "step " + (at + 1) + " of 6" + (pct ? ", " + pct + "% through it" : "");
+    var s = svgEl("svg", { viewBox: "0 0 60 60", width: size, height: size, class: "seg", role: "img", "aria-label": label });
+    function arc(i, cls, f0, f1) { var d = svgEl("path", { d: arcPath(i, f0, f1), fill: "none", "stroke-width": w }); d.setAttribute("class", cls); s.appendChild(d); return d; }
+    var txt = "", tcls = "rt";
     STAGES.forEach(function (st, i) {
-      var a0 = i * step + gap / 2, a1 = (i + 1) * step - gap / 2;
-      if (i < at || state === "done") { arc(a0, a1, "f"); return; }
-      if (i > at) { arc(a0, a1, "t"); return; }
-      var col = "var(--st-" + st + ")";
+      if (i < at || state === "done") { arc(i, "dn"); return; }
+      if (i > at) { arc(i, "trk"); return; }
       if (state === "working") {
-        var p = Math.max(.08, Math.min(1, progress || .5)), mid = a0 + (a1 - a0) * p;
-        arc(a0, mid, "w", col);
-        if (p < 1) phase(arc(mid, a1, "march", col), 1200);
-      } else {
-        var on = arc(a0, a1, "on " + state, col); if (ANIM[state]) phase(on, ANIM[state]);
-      }
+        phase(arc(i, "trk march"), 900);
+        if (pct > 0) { arc(i, "act k-" + st, 0, Math.min(1, pct / 100)); txt = String(pct); }
+      } else if (state === "stalled") { phase(arc(i, "stall"), 1100); txt = "!"; tcls = "rt y"; }
+      else if (state === "failed") { phase(arc(i, "fail"), 1600); txt = "×"; tcls = "rt r"; }
+      else phase(arc(i, "wait k-" + st), 2800);
     });
+    var t = svgEl("text", { x: 30, y: 36, "text-anchor": "middle", class: tcls }); t.textContent = txt; s.appendChild(t);
     return s;
   }
+  var VERB = { requested: "Requested", found: "Found", download: "Downloading", transfer: "Transferring", convert: "Converting", ready: "Ready" };
+  var NOUN = { requested: "Request", found: "Search", download: "Download", transfer: "Transfer", convert: "Convert", ready: "Import" };
   function stageLabel(it) {
-    if (it.state === "failed") return "Failed";
-    if (it.state === "stalled") return "Stalled · " + STAGE_NAME[it.stage];
-    if (it.state === "done") return "Imported";
-    var l = STAGE_NAME[it.stage];
-    if (it.stage === "download" && it.state === "working" && it.progress) l += " " + Math.round(it.progress * 100) + "%";
-    if (it.state === "waiting" && it.stage !== "requested") l = "Waiting · " + l;
-    if (it.stage === "requested" && it.state === "working") l = "Approved";
-    return (it.upgrade ? "Upgrade · " : "") + l;
+    var l;
+    if (it.state === "failed") l = NOUN[it.stage] + " failed";
+    else if (it.state === "stalled") l = NOUN[it.stage] + " stalled";
+    else if (it.state === "done") l = "Imported";
+    else if (it.state === "waiting") l = it.stage === "requested" ? "Requested" : VERB[it.stage] + ", in line";
+    else l = it.stage === "requested" ? "Approved" : VERB[it.stage];
+    if (it.upgrade) l = "Upgrade · " + l.charAt(0).toLowerCase() + l.slice(1);
+    return l;
   }
+  function stageTone(it) { return it.state === "failed" ? "bad" : it.state === "stalled" ? "warn" : ""; }
+
 
   // ------------------------------------------------------------ now playing
   var sessions = [];
@@ -116,10 +123,10 @@
     return b;
   }
   function epRow(it) {
-    var r = el("div", "ep"); r.appendChild(seg(it.stage, it.state, it.progress, 20));
+    var r = el("div", "ep"); r.appendChild(seg(it.stage, it.state, it.progress, 30, 8));
     r.appendChild(el("span", "code", it.code || ""));
-    if (it.upgrade) { var u = el("span", "up"); u.appendChild(icon("up", 12, "#fff")); r.appendChild(u); }
-    r.appendChild(el("span", "stage", stageLabel(it))); return r;
+    if (it.upgrade) { var u = el("span", "up"); u.title = "Upgrade of a file already in the library"; u.appendChild(icon("up", 13, "#fff")); r.appendChild(u); }
+    r.appendChild(el("span", "stage " + stageTone(it), stageLabel(it))); return r;
   }
   function onway() {
     api("/api/v2/onway").then(function (d) {
@@ -129,7 +136,7 @@
         var c = el("article", "card " + sh.kind); var h = el("div", "card-h"); h.appendChild(el("span", "name", sh.title));
         if (sh.bar && sh.bar.length) { h.appendChild(bar(sh.bar)); h.appendChild(el("span", "cnt", sh.imported + " / " + sh.total)); }
         c.appendChild(h);
-        var eps = el("div", "eps"); var key = sh.kind + ":" + sh.title;
+        var eps = el("div", "eps"); var key = sh.kind + ":" + sh.title; if (expanded[key]) c.classList.add("open");
         if (!expanded[key]) {
           sh.items.slice(0, 6).forEach(function (it) { eps.appendChild(epRow(it)); });
         } else {
@@ -137,14 +144,16 @@
           Object.keys(groups).forEach(function (k) { eps.appendChild(el("div", "group-h", k + " · " + groups[k].length)); groups[k].forEach(function (it) { eps.appendChild(epRow(it)); }); });
         }
         c.appendChild(eps);
-        if (sh.items.length > 6) { var m = el("button", "more", expanded[key] ? "Show less" : "+ " + (sh.items.length - 6) + " more"); m.type = "button"; m.onclick = function () { expanded[key] = !expanded[key]; onway(); }; c.appendChild(m); }
+        var shown = matchMedia("(max-width:860px)").matches ? 4 : 6;
+        if (sh.items.length > shown) { var m = el("button", "more", expanded[key] ? "Show less" : "+ " + (sh.items.length - shown) + " more"); m.type = "button"; m.onclick = function () { expanded[key] = !expanded[key]; onway(); }; c.appendChild(m); }
         L.appendChild(c);
       });
       d.others.forEach(function (it) {
-        var r = el("div", "slim " + it.kind); r.appendChild(seg(it.stage, it.state, it.progress, 20));
-        r.appendChild(el("span", "name", it.title + (it.sub ? " (" + it.sub + ")" : "")));
-        if (it.upgrade) r.appendChild(icon("up", 12, "#fff"));
-        r.appendChild(el("span", "stage", stageLabel(it))); R.appendChild(r);
+        var r = el("div", "slim " + it.kind); r.appendChild(seg(it.stage, it.state, it.progress, 40, 7));
+        var t = el("div", "txt"), n = el("div", "nm"); n.appendChild(el("span", "name", it.title + (it.sub && it.kind === "movie" ? " (" + it.sub + ")" : "")));
+        if (it.upgrade) { var u = el("span", "up"); u.title = "Upgrade of a file already in the library"; u.appendChild(icon("up", 13, "#fff")); n.appendChild(u); }
+        t.appendChild(n); var st = stageLabel(it); if (it.kind === "music" && it.sub) st = it.sub + " · " + st.charAt(0).toLowerCase() + st.slice(1);
+        t.appendChild(el("div", "stage " + stageTone(it), st)); r.appendChild(t); R.appendChild(r);
       });
     }).catch(function () { });
   }
@@ -173,9 +182,10 @@
       storage = d; var s = $("ring"); s.replaceChildren();
       var cats = (d.categories || []).filter(function (c) { return c.bytes; }), used = cats.reduce(function (n, c) { return n + c.bytes; }, 0);
       var total = d.total_bytes || used + (d.free_bytes || 0) || used;
-      var R = 20, C = 2 * Math.PI * R, off = 0;
-      s.appendChild(svgEl("circle", { cx: 22, cy: 22, r: R, fill: "none", stroke: "#2a2d30", "stroke-width": 3 }));
-      cats.forEach(function (c) { var l = total ? C * c.bytes / total : 0; s.appendChild(svgEl("circle", { cx: 22, cy: 22, r: R, fill: "none", stroke: mediaColor(libKind(c.name)) === "var(--tv)" && !libKind(c.name) ? "#8f959c" : mediaColor(libKind(c.name)), "stroke-width": 3, "stroke-dasharray": Math.max(0, l - 1) + " " + C, "stroke-dashoffset": -off, transform: "rotate(-90 22 22)" })); off += l; });
+      var R = 25, C = 2 * Math.PI * R, off = 0;
+      s.appendChild(svgEl("circle", { cx: 30, cy: 30, r: R, fill: "none", stroke: "#3a3d41", "stroke-width": 5 }));
+      cats.forEach(function (c) { var l = total ? C * c.bytes / total : 0, k = libKind(c.name); s.appendChild(svgEl("circle", { cx: 30, cy: 30, r: R, fill: "none", stroke: k ? mediaColor(k) : "#8f959c", "stroke-width": 5, "stroke-dasharray": l.toFixed(2) + " " + C.toFixed(2), "stroke-dashoffset": (-off).toFixed(2), transform: "rotate(-90 30 30)" })); off += l; });
+      $("ringBtn").setAttribute("aria-label", "Storage: " + (total ? Math.round(100 * (d.free_bytes || 0) / total) + "% free. " : "") + "Show details");
     }).catch(function () { });
   }
   function storagePop() {
