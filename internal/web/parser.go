@@ -10,13 +10,13 @@ import (
 	"github.com/z354prance/undermynd/internal/parser"
 )
 
-// parserTry shows what Undermynd reads from one release name.
+// parserTry shows what HyveMynd reads from one release name.
 func (s *Server) parserTry(w http.ResponseWriter, r *http.Request) {
 	in := parser.Parse(r.URL.Query().Get("name"))
 	writeJSON(w, map[string]any{"info": in, "quality": in.Quality.Name()})
 }
 
-// parserCheck compares Undermynd's reading of the releases an arr grabbed with
+// parserCheck compares HyveMynd's reading of the releases an arr grabbed with
 // what the arr decided about them.
 func (s *Server) parserCheck(w http.ResponseWriter, r *http.Request) {
 	c, ok := s.Cfg.Get().Category(r.URL.Query().Get("category"))

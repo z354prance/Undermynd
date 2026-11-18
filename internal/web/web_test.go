@@ -65,7 +65,7 @@ func (e *env) do(method, path string, body any, header bool) (int, []byte) {
 	}
 	req, _ := http.NewRequest(method, e.srv.URL+path, rd)
 	if header {
-		req.Header.Set("X-Undermynd-Request", "1")
+		req.Header.Set("X-HyveMynd-Request", "1")
 	}
 	resp, err := e.cl.Do(req)
 	if err != nil {
@@ -132,7 +132,7 @@ func TestStateChangesNeedHeaderAndSameOrigin(t *testing.T) {
 		t.Fatalf("missing header must be refused, got %d", code)
 	}
 	req, _ := http.NewRequest("POST", e.srv.URL+"/admin/api/jobs/x/cancel", nil)
-	req.Header.Set("X-Undermynd-Request", "1")
+	req.Header.Set("X-HyveMynd-Request", "1")
 	req.Header.Set("Origin", "https://evil.example")
 	resp, _ := e.cl.Do(req)
 	if resp.StatusCode != http.StatusForbidden {

@@ -17,7 +17,7 @@ type Sample struct {
 	Series   string // the arr's series or movie title, for display
 }
 
-// Diff is one release where Undermynd read something the arr did not.
+// Diff is one release where HyveMynd read something the arr did not.
 type Diff struct {
 	Title  string `json:"title"`
 	Field  string `json:"field"`
@@ -36,7 +36,7 @@ type Report struct {
 	Coverage map[string]int `json:"qualities"` // how many samples per arr quality
 }
 
-// Compare parses each sample's title and counts where Undermynd and the arr
+// Compare parses each sample's title and counts where HyveMynd and the arr
 // agree on quality and numbering (or year, for movies).
 func Compare(samples []Sample) Report {
 	r := Report{ByField: map[string]int{}, Coverage: map[string]int{}}
@@ -73,7 +73,7 @@ func Compare(samples []Sample) Report {
 	return r
 }
 
-// numbering returns what Undermynd read when it does not match the arr, or "".
+// numbering returns what HyveMynd read when it does not match the arr, or "".
 func numbering(s Sample, in Info) string {
 	if in.FullSeason {
 		for _, n := range in.Seasons {

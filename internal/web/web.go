@@ -54,7 +54,7 @@ var staticFS embed.FS
 
 const (
 	cookieName    = "um_session"
-	requestHeader = "X-Undermynd-Request"
+	requestHeader = "X-HyveMynd-Request"
 )
 
 type Server struct {
@@ -76,7 +76,7 @@ type Server struct {
 	Indexers *indexers.Service
 	// Profiles keeps quality profiles and custom formats; nil without the database.
 	Profiles *decision.Store
-	// Shadow compares the arrs' grabs with Undermynd's picks; nil without the database.
+	// Shadow compares the arrs' grabs with HyveMynd's picks; nil without the database.
 	Shadow *shadow.Service
 	// Movies keeps native movie categories; nil without the database.
 	Movies *movies.Service
@@ -96,7 +96,7 @@ type Server struct {
 	// Tokens are API tokens; Notify sends notifications. nil without the database.
 	Tokens *tokens.Store
 	Notify *notify.Notifier
-	// Requests keeps requests in Undermynd (native mode); nil without the database.
+	// Requests keeps requests in HyveMynd (native mode); nil without the database.
 	Requests *requests.Service
 	RSS      interface {
 		Status() []rss.FeedStatus
@@ -906,7 +906,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, own := range []string{s.Cfg.Env.Complete(), s.Cfg.Env.Work()} {
 			if wf.Dir == own || strings.HasPrefix(wf.Dir+"/", own+"/") {
-				jsonErr(w, http.StatusBadRequest, "watch folder "+wf.Dir+": that is one of Undermynd's own folders, so files would loop")
+				jsonErr(w, http.StatusBadRequest, "watch folder "+wf.Dir+": that is one of HyveMynd's own folders, so files would loop")
 				return
 			}
 		}
@@ -941,7 +941,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	next.Requests.MovieCategory, next.Requests.TVCategory = strings.TrimSpace(in.Requests.MovieCategory), strings.TrimSpace(in.Requests.TVCategory)
 	switch {
 	case next.Requests.Enabled && next.Requests.Native() && next.Metadata.TMDBKey == "":
-		jsonErr(w, http.StatusBadRequest, "requests kept by Undermynd search TMDB: add a TMDB key under Metadata first")
+		jsonErr(w, http.StatusBadRequest, "requests kept by HyveMynd search TMDB: add a TMDB key under Metadata first")
 		return
 	case next.Requests.Enabled && !next.Requests.Native() && (next.Requests.URL == "" || next.Requests.APIKey == "" || next.Requests.UserID <= 0):
 		jsonErr(w, http.StatusBadRequest, "media requests need the Seerr address, its API key and the user ID requests are made as")

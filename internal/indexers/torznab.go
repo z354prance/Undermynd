@@ -287,7 +287,7 @@ func get(ctx context.Context, hc *http.Client, u string, max int64) ([]byte, err
 	if err != nil {
 		return nil, errors.New("invalid indexer address")
 	}
-	req.Header.Set("User-Agent", "Undermynd")
+	req.Header.Set("User-Agent", "HyveMynd")
 	resp, err := hc.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {

@@ -75,7 +75,7 @@ func (s *Server) seerrAdmin() *seerr.Client {
 	return seerr.New(c.URL, string(c.APIKey), 0)
 }
 
-// native says requests are kept by Undermynd and can be taken now.
+// native says requests are kept by HyveMynd and can be taken now.
 func (s *Server) native() bool {
 	c := s.Cfg.Get()
 	return c.Requests.Native() && c.Requests.Enabled && s.Requests != nil && c.Metadata.TMDBKey != ""

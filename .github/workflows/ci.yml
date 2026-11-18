@@ -18,7 +18,7 @@ jobs:
       - run: go vet ./...
       - run: go test -race ./...
       - name: Validate Unraid template
-        run: python3 -c "import xml.dom.minidom as m; m.parse('unraid/undermynd.xml')"
+        run: python3 -c "import xml.dom.minidom as m; m.parse('unraid/undermynd.xml'); m.parse('unraid/hyvemynd.xml')"
       - name: Build container
         run: docker build -t undermynd:ci .
       - name: Smoke test the container (starts, creates the database and a backup)
@@ -64,6 +64,8 @@ jobs:
           tags: |
             ghcr.io/z354prance/undermynd:latest
             ghcr.io/z354prance/undermynd:sha-${{ github.sha }}
+            ghcr.io/z354prance/hyvemynd:latest
+            ghcr.io/z354prance/hyvemynd:sha-${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/z354prance/undermynd
             org.opencontainers.image.revision=${{ github.sha }}

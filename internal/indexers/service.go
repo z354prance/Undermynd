@@ -112,7 +112,7 @@ func (s *Service) scan(rows interface{ Scan(...any) error }) (Indexer, error) {
 }
 
 // List returns every indexer, by priority then name, keys included (for use
-// inside Undermynd; strip them before sending anywhere).
+// inside HyveMynd; strip them before sending anywhere).
 func (s *Service) List() ([]Indexer, error) {
 	rows, err := s.DB.Query(`SELECT `+cols+` FROM indexers i
 		LEFT JOIN indexer_status s ON s.indexer_id = i.id
@@ -482,7 +482,7 @@ type ProwlarrIndexer struct {
 // ImportProwlarr adds Prowlarr's indexers. Newznab and Torznab indexers whose
 // address and key Prowlarr shows are added directly; the rest (its built-in
 // tracker definitions) are reached through Prowlarr's own per-indexer feed,
-// marked "via prowlarr", until Undermynd can reach them by itself. Indexers
+// marked "via prowlarr", until HyveMynd can reach them by itself. Indexers
 // with a name already present are left as they are.
 func (s *Service) ImportProwlarr(ctx context.Context, base, key string) (added []string, err error) {
 	base = strings.TrimRight(strings.TrimSpace(base), "/")

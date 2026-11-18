@@ -1,4 +1,4 @@
-// Package requests keeps media requests in Undermynd (roadmap E1): the public
+// Package requests keeps media requests in HyveMynd (roadmap E1): the public
 // page searches TMDB, a request waits in the admin's approval queue, and an
 // approved request is handed on: movies to Radarr, shows to Sonarr, anime to
 // the Anime page. Its answers have the same shapes as the Seerr ones, so the

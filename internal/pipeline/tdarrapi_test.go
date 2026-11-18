@@ -196,7 +196,7 @@ func TestTdarrInFlightCap(t *testing.T) {
 }
 
 // A hardware AV1 encode can sit at one percentage for a long time. While a Tdarr worker
-// holds the file, Undermynd must not pull it back to staging and hand the original to the
+// holds the file, HyveMynd must not pull it back to staging and hand the original to the
 // arr, whatever the category's failure policy says.
 func TestTdarrWorkerHoldingFileIsNeverHandedBack(t *testing.T) {
 	u, td, id, in := setupTranscode(t, "passthrough")

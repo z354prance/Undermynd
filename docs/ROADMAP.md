@@ -1,10 +1,10 @@
-# Roadmap: folding the arr stack into Undermynd (v40, Nov 17, 2026)
+# Roadmap: folding the arr stack into Undermynd (v41, Nov 17, 2026)
 
 Goal: one app that does what Radarr, Sonarr, Lidarr, Prowlarr, Seerr, Houndarr and Recyclarr do today, so nothing else has to run or be configured. It will be renamed HyveMynd at the end.
 
 How to use this doc: the **milestones table** is the plan. Each milestone is one or a few pull requests, has a clear exit test, and lists what it depends on. Decisions and gates explain why the order is what it is. This file is kept in the repo (`docs/ROADMAP.md`) and in the Undermynd project (`design/roadmap-arr-consolidation.md`) with the same content. Supporting project docs: `design/metadata-sources.md`, `design/anime-pipeline.md`; in the repo: `docs/RENAME.md`.
 
-v13 restructured the plan into milestones. v14 to v17 answered every gate that blocks the start. v18 recorded Stage A progress. v19 recorded B1 merged and added B0 (Go upgrade). v20 closed A1. v21 closed B1 and B0. v22 recorded B2 merged. v23 recorded the B3 spike results. v24 recorded B4 (metadata layer) merged. v25 recorded C1 built. v26 recorded the C1 fixes and C2 built. v27 recorded that anime stays on the simple importer. v28 recorded C3 built. v29 recorded C4 built. v30 recorded E1 and F1 built. v31 recorded F2 built. v32 recorded F3 built. v33 recorded F4 built. v34 recorded F5 built. v35 recorded F6 built: Stage F is complete in code. v36 recorded G-1 built. v37 recorded G-2 built: Stage G is complete in code. v38 recorded H1 built. v39 recorded H2 built: Stage H is complete in code. v40 records I1 built.
+v13 restructured the plan into milestones. v14 to v17 answered every gate that blocks the start. v18 recorded Stage A progress. v19 recorded B1 merged and added B0 (Go upgrade). v20 closed A1. v21 closed B1 and B0. v22 recorded B2 merged. v23 recorded the B3 spike results. v24 recorded B4 (metadata layer) merged. v25 recorded C1 built. v26 recorded the C1 fixes and C2 built. v27 recorded that anime stays on the simple importer. v28 recorded C3 built. v29 recorded C4 built. v30 recorded E1 and F1 built. v31 recorded F2 built. v32 recorded F3 built. v33 recorded F4 built. v34 recorded F5 built. v35 recorded F6 built: Stage F is complete in code. v36 recorded G-1 built. v37 recorded G-2 built: Stage G is complete in code. v38 recorded H1 built. v39 recorded H2 built: Stage H is complete in code. v40 recorded I1 built. v41 records I2 built in code: the backend roadmap is complete; the design pass is next.
 
 ---
 
@@ -143,7 +143,7 @@ Notes: C3 and C4 search nyaa through RSS search URLs, so they do not wait for D1
 | ID | Milestone | Size | Depends on | Exit test |
 |---|---|---|---|---|
 | I1 | API tokens, webhooks, notifications | M | E1. **Built** (`internal/tokens`, `internal/notify`, migration 17; Connect page): API tokens (shown once, kept as hashes, revocable, last use shown) accepted as `X-Api-Key` or Bearer on every admin API except token management; notifications to Discord, ntfy or a JSON webhook for grabs, imports, failed downloads, new requests, replaced files and dry runs, with a test button and up to three tries |
-| I2 | Rename to HyveMynd, following `docs/RENAME.md` | S | everything else | Old image and variables still work during transition |
+| I2 | Rename to HyveMynd, following `docs/RENAME.md` | S | everything else | Old image and variables still work during transition. **Built in code** (see `docs/RENAME.md`): display name HyveMynd, both images published, `HYVEMYND_*` variables with `UNDERMYND_*` still working, new Unraid template. Left for the owner: the `v1.0-undermynd` tag and the GitHub repo rename (the build session cannot do either); then the Go module path. Final logo with the design pass |
 
 ## 6. Order and dependencies
 
@@ -221,6 +221,7 @@ The redesign doc says Settings, Library and Requests/Access are not designed yet
 - v16: requests need no sign-in; every request waits for admin approval. Stage E is one milestone. A4 done.
 - v17: G3 answered: TMDB plus anime-offline-database plus ID mapping.
 - v18: A1 merged (PR #2), A2 done (PR #3, Clone bug fixed), A3 done (README status, this file added to `docs/`). Merge rule recorded.
+- v41: I2 built in code (rename). Backend complete; design pass next, from the pinned v2 designs (`design/pinned-v2-hyvemynd-*.md`).
 - v40: I1 built: API tokens and notifications.
 - v39: H2 built: native music; tags are not rewritten.
 - v38: H1 built: MusicBrainz client.

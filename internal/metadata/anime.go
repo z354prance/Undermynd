@@ -16,7 +16,7 @@ import (
 	"github.com/z354prance/undermynd/internal/library"
 )
 
-// Default sources for the anime lists. Both are optional: Undermynd works from
+// Default sources for the anime lists. Both are optional: HyveMynd works from
 // TMDB alone when they cannot be fetched.
 const (
 	DefaultAnimeTitlesURL = "https://github.com/manami-project/anime-offline-database/releases/latest/download/anime-offline-database-minified.json"

@@ -381,7 +381,7 @@ func (s *Service) AddArtist(ctx context.Context, category, mbid string) (Artist,
 	return ar, err
 }
 
-// refresh adds the artist's albums MusicBrainz knows and Undermynd not yet.
+// refresh adds the artist's albums MusicBrainz knows and HyveMynd not yet.
 // first marks the studio albums monitored; later new albums are monitored
 // when they are studio albums released after the artist was added.
 func (s *Service) refresh(ctx context.Context, artistID int64, mbid string, first bool) error {
@@ -877,7 +877,7 @@ func (s *Service) Folder(al Album) string {
 }
 
 // ImportJob is the pipeline's hook for finished jobs: the audio files of an
-// album Undermynd grabbed go into the album's folder, as they came.
+// album HyveMynd grabbed go into the album's folder, as they came.
 func (s *Service) ImportJob(ctx context.Context, j job.Job) (own bool, placed []string, left []string, err error) {
 	var id int64
 	if s.DB.QueryRow(`SELECT id FROM albums WHERE job_id = ?`, j.ID).Scan(&id) != nil {

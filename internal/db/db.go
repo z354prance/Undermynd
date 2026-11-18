@@ -1,4 +1,4 @@
-// Package db opens Undermynd's SQLite database, applies its schema migrations,
+// Package db opens HyveMynd's SQLite database, applies its schema migrations,
 // keeps rolling backups, and stores named state blobs. It uses a pure-Go SQLite
 // driver, so the binary stays static.
 package db
@@ -308,7 +308,7 @@ var migrations = []string{
 		max     REAL NOT NULL DEFAULT 0
 	);`,
 	// 11: shadow mode (roadmap F3): each grab an arr made, and what
-	// Undermynd would have picked for the same thing.
+	// HyveMynd would have picked for the same thing.
 	`CREATE TABLE shadow (
 		id           INTEGER PRIMARY KEY,
 		category     TEXT NOT NULL,

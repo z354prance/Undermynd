@@ -144,7 +144,7 @@ func TestNativeMovies(t *testing.T) {
 		t.Fatalf("dry run: %v %v %v %v", own, placed, left, err)
 	}
 	if other, _, _, _ := s.ImportJob(ctx, job.Job{ID: "unknown"}); other {
-		t.Fatal("a job Undermynd did not grab was taken")
+		t.Fatal("a job HyveMynd did not grab was taken")
 	}
 	st.Movies.DryRun = false
 	cfg.Set(st)

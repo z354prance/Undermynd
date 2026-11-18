@@ -138,7 +138,7 @@ func (s Server) Updated(ctx context.Context, paths ...string) error {
 	return s.Do(ctx, http.MethodPost, "/Library/Media/Updated", body, nil)
 }
 
-// MapPath turns a path inside Undermynd into the path the media server sees,
+// MapPath turns a path inside HyveMynd into the path the media server sees,
 // replacing the prefix from with to ("" leaves it as it is).
 func MapPath(p, from, to string) string {
 	from, to = strings.TrimRight(from, "/"), strings.TrimRight(to, "/")

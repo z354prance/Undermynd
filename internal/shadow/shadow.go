@@ -1,5 +1,5 @@
-// Package shadow runs Undermynd's decision engine beside Sonarr and Radarr
-// (roadmap F3): for every grab an arr makes, it searches Undermynd's own
+// Package shadow runs HyveMynd's decision engine beside Sonarr and Radarr
+// (roadmap F3): for every grab an arr makes, it searches HyveMynd's own
 // indexers for the same thing, decides with the profile of the same name, and
 // records whether it would have picked the same release. Nothing is grabbed.
 package shadow
@@ -29,11 +29,11 @@ type Searcher interface {
 
 // Verdicts.
 const (
-	Same     = "same"     // Undermynd's first pick is the release the arr grabbed
+	Same     = "same"     // HyveMynd's first pick is the release the arr grabbed
 	Equal    = "equal"    // another release of the same quality and score
-	Better   = "better"   // Undermynd's pick ranks above the arr's by its own rules
-	Worse    = "worse"    // the arr's pick ranks above Undermynd's (not found, or ranked lower)
-	Rejected = "rejected" // Undermynd would turn the arr's pick down
+	Better   = "better"   // HyveMynd's pick ranks above the arr's by its own rules
+	Worse    = "worse"    // the arr's pick ranks above HyveMynd's (not found, or ranked lower)
+	Rejected = "rejected" // HyveMynd would turn the arr's pick down
 	None     = "none"     // nothing acceptable found
 	Skipped  = "skipped"  // not compared (no profile, no indexers, over the budget)
 )
@@ -159,7 +159,7 @@ func (s *Service) category(ctx context.Context, c config.Category) (int, error) 
 	return n, nil
 }
 
-// profileFor finds Undermynd's profile for an arr profile name: the one
+// profileFor finds HyveMynd's profile for an arr profile name: the one
 // imported from this category, else one of the same name.
 func (s *Service) profileFor(category, name string) (decision.Profile, bool) {
 	if name == "" {
@@ -201,7 +201,7 @@ func (s *Service) compare(ctx context.Context, c config.Category, g arr.GrabReco
 	}
 	p, ok := s.profileFor(c.Name, arrProfile)
 	if !ok {
-		row.Verdict, row.Note = Skipped, fmt.Sprintf("no Undermynd profile named %q: import the profiles from %s on the Profiles page", arrProfile, c.Name)
+		row.Verdict, row.Note = Skipped, fmt.Sprintf("no HyveMynd profile named %q: import the profiles from %s on the Profiles page", arrProfile, c.Name)
 		return row
 	}
 	row.Profile = p.Name
@@ -255,7 +255,7 @@ func (s *Service) compare(ctx context.Context, c config.Category, g arr.GrabReco
 	}
 	var notes []string
 	if !found {
-		notes = append(notes, "Undermynd's indexers did not return the arr's release")
+		notes = append(notes, "HyveMynd's indexers did not return the arr's release")
 	}
 	if len(res.Errors) > 0 {
 		notes = append(notes, fmt.Sprintf("%d indexer(s) failed", len(res.Errors)))

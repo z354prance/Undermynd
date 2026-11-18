@@ -1,6 +1,6 @@
 // Package trash reads the TRaSH Guides (roadmap G-1, Recyclarr parity): their
 // custom formats with scores, quality profiles and quality sizes, turns the
-// chosen profiles into Undermynd's, shows what would change, and keeps them
+// chosen profiles into HyveMynd's, shows what would change, and keeps them
 // in sync, leaving scores changed here alone.
 package trash
 
@@ -184,7 +184,7 @@ func Read(b []byte) (*Guide, error) {
 func Source(app string) string { return "trash-" + app }
 
 // Plan turns the chosen guide profiles of one app, the formats they score and
-// a quality-size file into what Undermynd stores.
+// a quality-size file into what HyveMynd stores.
 func (g *Guide) Plan(app string, profileIDs []string, sizeType string) (decision.Imported, error) {
 	a := g.Apps[app]
 	if a == nil {
@@ -205,7 +205,7 @@ func (g *Guide) Plan(app string, profileIDs []string, sizeType string) (decision
 		if p.Language != "" && p.Language != "Any" {
 			dp.Language = p.Language
 		}
-		// The guides list qualities best first; Undermynd keeps them lowest first.
+		// The guides list qualities best first; HyveMynd keeps them lowest first.
 		for i := len(p.Items) - 1; i >= 0; i-- {
 			it := p.Items[i]
 			item := decision.Item{Name: parser.Canonical(it.Name), Allowed: it.Allowed}

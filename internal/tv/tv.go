@@ -1,5 +1,5 @@
 // Package tv runs native TV categories (roadmap F5): the library is read from
-// Sonarr once, then Undermynd keeps it: new episodes come from TMDB, recent
+// Sonarr once, then HyveMynd keeps it: new episodes come from TMDB, recent
 // releases on the indexers are checked every 15 minutes, monitored episodes
 // that are missing or below their profile's cutoff are searched (a whole
 // season at once when it has finished airing), the best release is grabbed
@@ -1175,7 +1175,7 @@ func safe(s string) string {
 }
 
 // ImportJob is the pipeline's hook for finished jobs (pipeline.Engine.Native):
-// each video file of a job Undermynd grabbed for TV goes to its episode(s).
+// each video file of a job HyveMynd grabbed for TV goes to its episode(s).
 func (s *Service) ImportJob(ctx context.Context, j job.Job) (own bool, placed []string, left []string, err error) {
 	t, err := s.Catalog.JobTarget(j.ID)
 	if err != nil || len(t.EpisodeIDs) == 0 {
