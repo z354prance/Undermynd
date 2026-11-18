@@ -804,9 +804,9 @@ func (e *Engine) doReady(ctx context.Context, j job.Job) {
 		e.doReencodeSwap(ctx, j)
 		return
 	}
-	// RSS and watch-folder jobs were not grabbed by an arr, so none will import
+	// RSS, watch-folder and indexer-search jobs were not grabbed by an arr, so none will import
 	// them: the finished files stay where they were delivered and the job ends.
-	if j.Source == "rss" || j.Source == "watch" {
+	if j.Source == "rss" || j.Source == "watch" || j.Source == "indexer" {
 		if cat, ok := e.Cfg.Get().Category(j.Category); ok && cat.LibraryDir != "" {
 			e.placeInLibrary(ctx, j, cat)
 			return
@@ -1021,7 +1021,7 @@ func (e *Engine) doFailed(ctx context.Context, j job.Job) {
 	// Do not wait for the arr's own failed-download handling (it may be switched
 	// off, or the item may already be gone from its queue): tell it directly, so it
 	// blocklists this release and grabs a different one, then end the job.
-	if j.ArrDeleted || j.Source == "rss" || j.Source == "watch" || j.Source == "reencode" {
+	if j.ArrDeleted || j.Source == "rss" || j.Source == "watch" || j.Source == "indexer" || j.Source == "reencode" {
 		e.endFailed(j, "failed job cleaned up; the arr has dealt with it")
 		return
 	}

@@ -21,6 +21,7 @@ import (
 	"github.com/z354prance/undermynd/internal/catalog"
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/db"
+	"github.com/z354prance/undermynd/internal/indexers"
 	"github.com/z354prance/undermynd/internal/logbuf"
 	"github.com/z354prance/undermynd/internal/mediaserver"
 	"github.com/z354prance/undermynd/internal/metadata"
@@ -206,6 +207,7 @@ func main() {
 		eng.FolderTitles = site.Shows.FolderTitles
 		rp.Claim = site.Shows.Claims
 		go site.Shows.Run(ctx)
+		site.Indexers = &indexers.Service{DB: dbh, HTTP: &http.Client{Timeout: 60 * time.Second}, Engine: eng, Log: logger, Now: time.Now, Gap: 2 * time.Second}
 	}
 	go rp.Run(ctx)
 	go watch.New(cfg, eng, logger).Run(ctx)

@@ -24,6 +24,7 @@ import (
 	"github.com/z354prance/undermynd/internal/arr"
 	"github.com/z354prance/undermynd/internal/auth"
 	"github.com/z354prance/undermynd/internal/config"
+	"github.com/z354prance/undermynd/internal/indexers"
 	"github.com/z354prance/undermynd/internal/job"
 	"github.com/z354prance/undermynd/internal/logbuf"
 	"github.com/z354prance/undermynd/internal/metadata"
@@ -59,7 +60,9 @@ type Server struct {
 	// Shows follows show folders of the simple importer (the Anime page); nil
 	// without the database.
 	Shows *shows.Service
-	RSS   interface {
+	// Indexers searches Torznab and Newznab indexers; nil without the database.
+	Indexers *indexers.Service
+	RSS      interface {
 		Status() []rss.FeedStatus
 		Download(ctx context.Context, feed string, index int, title, category string) (string, error)
 		CheckNow(context.Context)
@@ -155,6 +158,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /admin/api/shows/{action}", s.guard(s.admin(s.showsAction)))
 	mux.HandleFunc("GET /admin/api/shows/search", s.admin(s.showsSearch))
 	mux.HandleFunc("GET /admin/api/shows/discover", s.admin(s.showsDiscover))
+	mux.HandleFunc("GET /admin/api/indexers", s.admin(s.indexersList))
+	mux.HandleFunc("POST /admin/api/indexers", s.guard(s.admin(s.indexersSave)))
+	mux.HandleFunc("DELETE /admin/api/indexers/{id}", s.guard(s.admin(s.indexersDelete)))
+	mux.HandleFunc("POST /admin/api/indexers/test", s.guard(s.admin(s.indexersTest)))
+	mux.HandleFunc("POST /admin/api/indexers/import-prowlarr", s.guard(s.admin(s.indexersImport)))
+	mux.HandleFunc("GET /admin/api/indexers/search", s.admin(s.indexersSearch))
+	mux.HandleFunc("POST /admin/api/indexers/grab", s.guard(s.admin(s.indexersGrab)))
 	mux.HandleFunc("POST /admin/api/tdarr/test", s.guard(s.admin(s.tdarrTest)))
 	mux.HandleFunc("POST /admin/api/settings/client-password", s.guard(s.admin(s.newClientPassword)))
 	return secure(mux)
