@@ -3,12 +3,13 @@ package web
 import (
 	"fmt"
 	"net/http"
+	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/z354prance/undermynd/internal/job"
 	"github.com/z354prance/undermynd/internal/library"
-	"github.com/z354prance/undermynd/internal/parser"
 )
 
 // The public dashboard's "On the way" (design v2): shows and anime as cards
@@ -92,38 +93,25 @@ func (s *Server) onway(w http.ResponseWriter, r *http.Request) {
 			state = "stalled"
 		}
 		kind := s.kindOf(j.Category)
-		in := parser.Parse(j.Name)
-		title := in.Title
-		if title == "" {
-			title = j.Name
-		}
 		it := onwayItem{Kind: kind, Stage: st[0], State: state, Progress: job.Overall(j), Since: j.Updated}
-		if t, err := s.jobTargetUpgrade(j.ID); err == nil {
-			it.Upgrade = t
-		}
-		if kind == "movie" || kind == "music" || !in.IsTV() {
-			it.Title = title
-			if in.Year > 0 {
-				it.Sub = fmt.Sprint(in.Year)
-			}
+		rel, isEp := library.Parse(j.Name)
+		if kind == "movie" || kind == "music" || !isEp {
+			it.Title, it.Sub = movieTitle(j.Name)
 			if kind == "music" {
 				it.Sub = ""
 			}
 			others = append(others, it)
 			continue
 		}
+		title := rel.Title
+		if title == "" {
+			title = j.Name
+		}
 		switch {
-		case in.FullSeason && len(in.Seasons) > 0:
-			it.Code = fmt.Sprintf("Season %d", in.Seasons[0])
-		case len(in.Episodes) > 0 && len(in.Seasons) > 0:
-			it.Code = fmt.Sprintf("S%02dE%02d", in.Seasons[0], in.Episodes[0])
-			if len(in.Episodes) > 1 {
-				it.Code += fmt.Sprintf("-E%02d", in.Episodes[len(in.Episodes)-1])
-			}
-		case len(in.Absolute) > 0:
-			it.Code = fmt.Sprint(in.Absolute[0])
-		case in.Daily:
-			it.Code = in.AirDate
+		case rel.Marked:
+			it.Code = fmt.Sprintf("S%02dE%02d", rel.Season, rel.Episode)
+		default:
+			it.Code = rel.EpisodeS
 		}
 		key := library.Normalize(title)
 		sh := shows[key]
@@ -134,67 +122,7 @@ func (s *Server) onway(w http.ResponseWriter, r *http.Request) {
 		sh.Items = append(sh.Items, it)
 	}
 	// Waiting requests are at the first stage.
-	if s.Requests != nil && s.nativeMode() {
-		if list, err := s.Requests.List(""); err == nil {
-			for _, rq := range list {
-				if rq.Status != "pending" && rq.Status != "approved" {
-					continue
-				}
-				if rq.Status == "approved" && time.Since(rq.Decided) > 2*time.Hour {
-					continue // the library takes over once it is searching
-				}
-				it := onwayItem{Kind: rq.Kind, Stage: "requested", State: "waiting", Since: rq.Created}
-				if rq.Status == "approved" {
-					it.State = "working"
-				}
-				if rq.Kind == "movie" {
-					it.Title, it.Sub = rq.Title, fmt.Sprint(rq.Year)
-					others = append(others, it)
-					continue
-				}
-				key := library.Normalize(rq.Title)
-				sh := shows[key]
-				if sh == nil {
-					sh = &onwayShow{Title: rq.Title, Kind: rq.Kind}
-					shows[key] = sh
-				}
-				it.Code = "Requested"
-				sh.Items = append(sh.Items, it)
-			}
-		}
-	}
-	// Season bars: native TV first, then what the arrs report.
 	bars := map[string][]onwaySeason{}
-	if s.TV != nil {
-		if list, err := s.TV.List(""); err == nil {
-			for _, x := range list {
-				if shows[library.Normalize(x.Title)] == nil {
-					continue
-				}
-				if _, eps, err := s.TV.Get(x.ID); err == nil {
-					by := map[int]*onwaySeason{}
-					var order []int
-					for _, e := range eps {
-						if e.Season == 0 || e.Status == "unaired" {
-							continue
-						}
-						if by[e.Season] == nil {
-							by[e.Season] = &onwaySeason{Season: e.Season}
-							order = append(order, e.Season)
-						}
-						by[e.Season].Total++
-						if e.File != "" {
-							by[e.Season].Imported++
-						}
-					}
-					sort.Ints(order)
-					for _, n := range order {
-						bars[library.Normalize(x.Title)] = append(bars[library.Normalize(x.Title)], *by[n])
-					}
-				}
-			}
-		}
-	}
 	if s.Progress != nil {
 		for _, x := range s.Progress.Snapshot().Seasons {
 			k := library.Normalize(x.Show)
@@ -237,13 +165,16 @@ var stageOrder = map[string]int{"requested": 0, "found": 1, "download": 2, "tran
 func stageRank(it onwayItem) int { return stageOrder[it.Stage] }
 
 // jobTargetUpgrade says whether a native job replaces a file already held.
-func (s *Server) jobTargetUpgrade(jobID string) (bool, error) {
-	if s.Movies == nil || s.TV == nil {
-		return false, nil
+var yearAt = regexp.MustCompile(`^(.+?)[ ._(\[]+((?:19|20)\d\d)(?:[ ._)\]]|$)`)
+
+// movieTitle reads a movie or album release name as its title and year.
+func movieTitle(name string) (string, string) {
+	n := name
+	if m := yearAt.FindStringSubmatch(n); m != nil {
+		t := strings.Join(strings.Fields(strings.NewReplacer(".", " ", "_", " ").Replace(m[1])), " ")
+		if t != "" {
+			return t, m[2]
+		}
 	}
-	var n int
-	err := s.Movies.DB.QueryRow(`SELECT
-		(SELECT COUNT(*) FROM movies WHERE job_id = ? AND file_path != '') +
-		(SELECT COUNT(*) FROM episodes WHERE job_id = ? AND file_path != '')`, jobID, jobID).Scan(&n)
-	return n > 0, err
+	return strings.Join(strings.Fields(strings.NewReplacer(".", " ", "_", " ").Replace(n)), " "), ""
 }

@@ -61,10 +61,6 @@ type Category struct {
 	// LibraryDir, for categories no arr handles, is a library of show folders the
 	// finished episodes are placed into, matched by title.
 	LibraryDir string `json:"libraryDir,omitempty"`
-	// Native (roadmap F4, F5) means HyveMynd, not the arr, searches, grabs
-	// and imports this category's movies or shows into LibraryDir. The arr is
-	// still read for the starting library.
-	Native bool `json:"native,omitempty"`
 	// OnTranscodeFail is "fail" (default: the arr blocklists and searches again) or "passthrough" (hand back the original).
 	OnTranscodeFail string `json:"onTranscodeFail"`
 }
@@ -148,20 +144,7 @@ type Requests struct {
 	URL     string        `json:"url"`
 	APIKey  secret.String `json:"apiKey"`
 	UserID  int64         `json:"userId"`
-	// Mode is "seerr" (the default: requests go through Seerr) or "native"
-	// (HyveMynd searches TMDB, keeps the requests, and on approval adds movies
-	// to Radarr, shows to Sonarr and anime to the Anime page).
-	Mode string `json:"mode,omitempty"`
-	// AutoApprove approves native requests as they come in. Off by default.
-	AutoApprove bool `json:"autoApprove,omitempty"`
-	// MovieCategory and TVCategory name the Radarr and Sonarr categories
-	// approved requests go to; empty takes the first of that kind.
-	MovieCategory string `json:"movieCategory,omitempty"`
-	TVCategory    string `json:"tvCategory,omitempty"`
 }
-
-// Native says requests are kept by HyveMynd rather than Seerr.
-func (r Requests) Native() bool { return r.Mode == "native" }
 
 // Access lets visitors ask for a media server account; see the access package.
 type Access struct {
@@ -204,119 +187,21 @@ type Watch struct {
 	Enabled  bool   `json:"enabled"`
 }
 
-// Shadow mode (roadmap F3): for every grab Sonarr or Radarr makes, HyveMynd
-// searches its own indexers and records what it would have picked.
-type Shadow struct {
-	Enabled bool `json:"enabled"`
-	// PerHour caps the searches shadow mode makes, to spare the indexers.
-	// 0 means 20.
-	PerHour int `json:"perHour,omitempty"`
-}
-
-// Movies are the settings of native movie categories (roadmap F4).
-type Movies struct {
-	// DryRun leaves finished downloads where they are and only says where
-	// they would go.
-	DryRun bool `json:"dryRun"`
-	// Folder and File name the movie's folder and file; empty uses
-	// "{Title} ({Year})" and "{Title} ({Year}) {Quality}".
-	Folder string `json:"folder,omitempty"`
-	File   string `json:"file,omitempty"`
-	// SearchPerHour caps automatic searches; 0 means 10.
-	SearchPerHour int `json:"searchPerHour,omitempty"`
-}
-
-// TV are the settings of native TV categories (roadmap F5).
-type TV struct {
-	DryRun bool `json:"dryRun"`
-	// Folder, Season and File name a new series' folder, the season folder
-	// and the episode file; empty uses "{Title} ({Year})", "Season {season}"
-	// and "{Title} - S{season:00}E{episode:00} - {Episode} {Quality}".
-	Folder string `json:"folder,omitempty"`
-	Season string `json:"season,omitempty"`
-	File   string `json:"file,omitempty"`
-	// SearchPerHour caps automatic searches; 0 means 20.
-	SearchPerHour int `json:"searchPerHour,omitempty"`
-}
-
-// Trash is the TRaSH Guides sync (roadmap G-1): which guide profiles and
-// quality sizes to keep, by trash id, refreshed daily when Sync is on.
-type Trash struct {
-	Sync       bool     `json:"sync"`
-	Radarr     []string `json:"radarr,omitempty"`
-	Sonarr     []string `json:"sonarr,omitempty"`
-	SizeRadarr string   `json:"sizeRadarr,omitempty"` // a quality-size file, e.g. "movie"
-	SizeSonarr string   `json:"sizeSonarr,omitempty"` // e.g. "series"
-	// URL is the zip of the guides repository; empty is GitHub's.
-	URL string `json:"url,omitempty"`
-}
-
-// Scheduler (roadmap G-2, Houndarr parity) paces every automatic search.
-type Scheduler struct {
-	// PerHour is the global budget of automatic searches across native
-	// movies, TV, anime gap filling and the arrs' backlog; 0 means 30.
-	PerHour int `json:"perHour,omitempty"`
-	// Batch is the most searches one run of a backlog sends; 0 means 5.
-	Batch int `json:"batch,omitempty"`
-	// GraceHours waits after an episode's air date before searching it, as
-	// releases need time to appear; 0 means 2.
-	GraceHours int `json:"graceHours,omitempty"`
-	// Backlog asks Sonarr and Radarr categories (not native ones) to search
-	// their missing and cutoff-unmet items in small batches, as Houndarr does.
-	Backlog bool `json:"backlog,omitempty"`
-	// MissingDays and CutoffDays are how long an item rests after a backlog
-	// search; 0 means 7 and 14.
-	MissingDays int `json:"missingDays,omitempty"`
-	CutoffDays  int `json:"cutoffDays,omitempty"`
-}
-
-// Music are the settings of native music categories (roadmap H2).
-type Music struct {
-	DryRun bool `json:"dryRun"`
-	// Qualities are the wanted qualities, best first; empty means
-	// "FLAC 24bit", "FLAC", "ALAC". Cutoff stops upgrades; empty is the last.
-	Qualities []string `json:"qualities,omitempty"`
-	Cutoff    string   `json:"cutoff,omitempty"`
-	// Folder names an album's folder under the artist's; empty uses
-	// "{Album} ({Year})".
-	Folder string `json:"folder,omitempty"`
-	// SearchPerHour caps automatic searches; 0 means 10.
-	SearchPerHour int `json:"searchPerHour,omitempty"`
-}
-
-// Notification is one place HyveMynd tells about what happens (roadmap I1).
-type Notification struct {
-	Name    string        `json:"name"`
-	Kind    string        `json:"kind"` // webhook, discord, ntfy
-	URL     secret.String `json:"url"`
-	Enabled bool          `json:"enabled"`
-	// Events it is told about: grabbed, imported, failed, request, dry run,
-	// replaced; empty means all.
-	Events []string `json:"events,omitempty"`
-}
-
 type Settings struct {
-	Watches       []Watch        `json:"watches"`
-	IntakePaused  bool           `json:"intakePaused"` // new grabs are accepted but held until resumed
-	Feeds         []Feed         `json:"feeds"`
-	Rules         []Rule         `json:"rules"`
-	Tdarr         Tdarr          `json:"tdarr"`
-	Playback      Playback       `json:"playback"`
-	Donations     Donations      `json:"donations"`
-	Requests      Requests       `json:"requests"`
-	Access        Access         `json:"access"`
-	NZBGet        NZBGet         `json:"nzbget"`
-	TorBox        TorBox         `json:"torbox"`
-	Categories    []Category     `json:"categories"`
-	QBit          QBit           `json:"qbit"`
-	Metadata      Metadata       `json:"metadata"`
-	Shadow        Shadow         `json:"shadow"`
-	Movies        Movies         `json:"movies"`
-	TV            TV             `json:"tv"`
-	Trash         Trash          `json:"trash"`
-	Scheduler     Scheduler      `json:"scheduler"`
-	Music         Music          `json:"music"`
-	Notifications []Notification `json:"notifications,omitempty"`
+	Watches      []Watch    `json:"watches"`
+	IntakePaused bool       `json:"intakePaused"` // new grabs are accepted but held until resumed
+	Feeds        []Feed     `json:"feeds"`
+	Rules        []Rule     `json:"rules"`
+	Tdarr        Tdarr      `json:"tdarr"`
+	Playback     Playback   `json:"playback"`
+	Donations    Donations  `json:"donations"`
+	Requests     Requests   `json:"requests"`
+	Access       Access     `json:"access"`
+	NZBGet       NZBGet     `json:"nzbget"`
+	TorBox       TorBox     `json:"torbox"`
+	Categories   []Category `json:"categories"`
+	QBit         QBit       `json:"qbit"`
+	Metadata     Metadata   `json:"metadata"`
 
 	// Login the arrs use against the fake client API.
 	ClientUser     string        `json:"clientUser"`

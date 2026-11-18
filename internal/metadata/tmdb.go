@@ -12,7 +12,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -172,7 +171,6 @@ type SeasonSummary struct {
 	Number       int    `json:"season_number"`
 	EpisodeCount int    `json:"episode_count"`
 	Name         string `json:"name"`
-	AirDate      string `json:"air_date"`
 }
 
 type EpisodeGroupSummary struct {
@@ -183,15 +181,7 @@ type EpisodeGroupSummary struct {
 }
 
 type TV struct {
-	ID               int64  `json:"id"`
-	OriginalLanguage string `json:"original_language"`
-	PosterPath       string `json:"poster_path"`
-	BackdropPath     string `json:"backdrop_path"`
-	Overview         string `json:"overview"`
-	Genres           []struct {
-		ID   int    `json:"id"`
-		Name string `json:"name"`
-	} `json:"genres"`
+	ID           int64           `json:"id"`
 	Name         string          `json:"name"`
 	OriginalName string          `json:"original_name"`
 	FirstAirDate string          `json:"first_air_date"`
@@ -287,192 +277,4 @@ func (t *TMDB) FindByTVDB(ctx context.Context, tvdbID int64) (int64, error) {
 		return 0, nil
 	}
 	return r.TV[0].ID, nil
-}
-
-// MediaResult is a movie or show from TMDB's searches and lists.
-type MediaResult struct {
-	ID               int64   `json:"id"`
-	MediaType        string  `json:"media_type"`
-	Title            string  `json:"title"`
-	Name             string  `json:"name"`
-	OriginalTitle    string  `json:"original_title"`
-	OriginalName     string  `json:"original_name"`
-	ReleaseDate      string  `json:"release_date"`
-	FirstAirDate     string  `json:"first_air_date"`
-	Overview         string  `json:"overview"`
-	PosterPath       string  `json:"poster_path"`
-	GenreIDs         []int   `json:"genre_ids"`
-	OriginalLanguage string  `json:"original_language"`
-	Popularity       float64 `json:"popularity"`
-}
-
-// Anime says whether TMDB has it as Japanese animation.
-func (m MediaResult) Anime() bool {
-	if m.OriginalLanguage != "ja" {
-		return false
-	}
-	for _, g := range m.GenreIDs {
-		if g == 16 {
-			return true
-		}
-	}
-	return false
-}
-
-// SearchMulti searches movies and shows together.
-func (t *TMDB) SearchMulti(ctx context.Context, query string) ([]MediaResult, error) {
-	var r struct {
-		Results []MediaResult `json:"results"`
-	}
-	if err := t.get(ctx, "/search/multi", url.Values{"query": {query}, "include_adult": {"false"}}, time.Hour, &r); err != nil {
-		return nil, err
-	}
-	out := r.Results[:0]
-	for _, m := range r.Results {
-		if m.MediaType == "movie" || m.MediaType == "tv" {
-			out = append(out, m)
-		}
-	}
-	return out, nil
-}
-
-// Trending lists this week's trending movies and shows; kind is "all",
-// "movie" or "tv".
-func (t *TMDB) Trending(ctx context.Context, kind string) ([]MediaResult, error) {
-	var r struct {
-		Results []MediaResult `json:"results"`
-	}
-	if err := t.get(ctx, "/trending/"+kind+"/week", nil, 3*time.Hour, &r); err != nil {
-		return nil, err
-	}
-	for i := range r.Results {
-		if r.Results[i].MediaType == "" {
-			r.Results[i].MediaType = kind
-		}
-	}
-	return r.Results, nil
-}
-
-// MovieInfo is what a movie request needs.
-type MovieInfo struct {
-	ID               int64  `json:"id"`
-	Title            string `json:"title"`
-	ReleaseDate      string `json:"release_date"`
-	IMDB             string `json:"imdb_id"`
-	OriginalLanguage string `json:"original_language"`
-	Runtime          int    `json:"runtime"`
-	PosterPath       string `json:"poster_path"`
-	BackdropPath     string `json:"backdrop_path"`
-	Overview         string `json:"overview"`
-	Genres           []struct {
-		Name string `json:"name"`
-	} `json:"genres"`
-}
-
-// Image is a TMDB image's address at a width ("w342", "w780", "original").
-func Image(path, size string) string {
-	if path == "" {
-		return ""
-	}
-	return "https://image.tmdb.org/t/p/" + size + path
-}
-
-// Movie looks a movie up.
-func (t *TMDB) Movie(ctx context.Context, id int64) (MovieInfo, error) {
-	var m MovieInfo
-	err := t.get(ctx, fmt.Sprintf("/movie/%d", id), nil, 24*time.Hour, &m)
-	return m, err
-}
-
-// Anime says whether TMDB has the show as Japanese animation.
-func (t TV) Anime() bool {
-	if t.OriginalLanguage != "ja" {
-		return false
-	}
-	for _, g := range t.Genres {
-		if g.ID == 16 {
-			return true
-		}
-	}
-	return false
-}
-
-// List reads one of TMDB's lists: "popular-movies", "popular-tv",
-// "upcoming" (movies) or "anime" (popular Japanese animation series).
-func (t *TMDB) List(ctx context.Context, name string) ([]MediaResult, error) {
-	path, kind := "", ""
-	q := url.Values{}
-	switch name {
-	case "popular-movies":
-		path, kind = "/movie/popular", "movie"
-	case "popular-tv":
-		path, kind = "/tv/popular", "tv"
-	case "upcoming":
-		path, kind = "/movie/upcoming", "movie"
-	case "anime":
-		path, kind = "/discover/tv", "tv"
-		q.Set("with_genres", "16")
-		q.Set("with_original_language", "ja")
-		q.Set("sort_by", "popularity.desc")
-	default:
-		return nil, fmt.Errorf("unknown list %q", name)
-	}
-	var r struct {
-		Results []MediaResult `json:"results"`
-	}
-	if err := t.get(ctx, path, q, 3*time.Hour, &r); err != nil {
-		return nil, err
-	}
-	for i := range r.Results {
-		r.Results[i].MediaType = kind
-	}
-	return r.Results, nil
-}
-
-// Details is what a title page shows.
-type Details struct {
-	ID           int64           `json:"id"`
-	Title        string          `json:"title"`
-	Name         string          `json:"name"`
-	Overview     string          `json:"overview"`
-	PosterPath   string          `json:"poster_path"`
-	BackdropPath string          `json:"backdrop_path"`
-	ReleaseDate  string          `json:"release_date"`
-	FirstAirDate string          `json:"first_air_date"`
-	Runtime      int             `json:"runtime"`
-	EpisodeRun   []int           `json:"episode_run_time"`
-	Status       string          `json:"status"`
-	Seasons      []SeasonSummary `json:"seasons"`
-	OriginalLang string          `json:"original_language"`
-	Genres       []struct {
-		ID   int    `json:"id"`
-		Name string `json:"name"`
-	} `json:"genres"`
-	Networks []struct {
-		Name string `json:"name"`
-	} `json:"networks"`
-	Credits struct {
-		Cast []struct {
-			Name        string `json:"name"`
-			Character   string `json:"character"`
-			ProfilePath string `json:"profile_path"`
-		} `json:"cast"`
-	} `json:"credits"`
-	Videos struct {
-		Results []struct {
-			Key  string `json:"key"`
-			Site string `json:"site"`
-			Type string `json:"type"`
-		} `json:"results"`
-	} `json:"videos"`
-}
-
-// Details looks up a movie ("movie") or a show ("tv") with its cast and videos.
-func (t *TMDB) Details(ctx context.Context, kind string, id int64) (Details, error) {
-	var d Details
-	if kind != "movie" && kind != "tv" {
-		return d, fmt.Errorf("movie or tv")
-	}
-	err := t.get(ctx, "/"+kind+"/"+strconv.FormatInt(id, 10), url.Values{"append_to_response": {"credits,videos"}}, 12*time.Hour, &d)
-	return d, err
 }
