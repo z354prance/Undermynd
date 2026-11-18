@@ -27,9 +27,6 @@ type Poller struct {
 	Log    *log.Logger
 	Now    func() time.Time
 	HTTP   *http.Client
-	// Claim, when set, names the followed show a release belongs to; such a
-	// release is left to that show rather than started by a hand-made rule.
-	Claim func(title string) string
 
 	mu     sync.Mutex
 	seen   map[string]time.Time // item key -> when first seen
@@ -290,11 +287,6 @@ func (p *Poller) apply(ctx context.Context, f config.Feed, it item) string {
 		}
 		if exc != nil && exc.MatchString(it.Title) {
 			continue
-		}
-		if p.Claim != nil {
-			if show := p.Claim(it.Title); show != "" {
-				return fmt.Sprintf("rule %q matched; left to the followed show %q", r.Name, show)
-			}
 		}
 		if err := p.add(ctx, r, it); err != nil {
 			p.Log.Printf("rss %q: rule %q matched %q but adding failed: %v", f.Name, r.Name, it.Title, err)

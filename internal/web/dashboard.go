@@ -27,7 +27,6 @@ func (s *Server) dashboardRoutes(mux *http.ServeMux, files http.Handler) {
 	})
 	mux.HandleFunc("GET /api/v1/recently-added", s.v1Recent)
 	mux.HandleFunc("GET /api/v1/storage", s.v1Storage)
-	mux.HandleFunc("GET /api/v2/onway", s.onway)
 	mux.HandleFunc("GET /api/v1/playback", s.v1Playback)
 	mux.HandleFunc("GET /api/v1/playback/poster", s.v1Poster)
 	mux.HandleFunc("GET /api/v1/missing", func(w http.ResponseWriter, r *http.Request) {
@@ -49,6 +48,7 @@ func (s *Server) dashboardRoutes(mux *http.ServeMux, files http.Handler) {
 	mux.HandleFunc("GET /api/v1/media-request/search", s.requestSearch)
 	mux.HandleFunc("GET /api/v1/media-request/discover", s.requestDiscover)
 	mux.HandleFunc("GET /api/v1/media-request/title", s.requestTitle)
+	mux.HandleFunc("GET /api/v2/onway", s.onway)
 	mux.HandleFunc("POST /api/v1/media-request", s.requestCreate)
 	mux.HandleFunc("GET /api/v1/requests", s.requestsPending)
 	mux.HandleFunc("POST /api/v1/requests/{serviceID}/{requestID}/{action}", s.guard(s.admin(s.requestsDecide)))

@@ -296,7 +296,7 @@
       var b = el("button", view.tab === t[0] ? "on" : "", t[1]); b.type = "button"; b.setAttribute("role", "tab"); b.setAttribute("aria-selected", view.tab === t[0] ? "true" : "false"); b.onclick = function () { view.tab = t[0]; render(); }; tabs.appendChild(b);
     });
     panel.appendChild(tabs);
-    var rows = { discover: [["trending", "Trending"], ["popular-movies", "Popular movies"], ["upcoming", "Upcoming"]], movies: [["popular-movies", "Popular movies"], ["upcoming", "Upcoming"], ["movies", "Trending movies"]], series: [["popular-tv", "Popular series"], ["tv", "Trending series"]], anime: [["anime", "Popular anime"]] }[view.tab];
+    var rows = { discover: [["trending", "Trending"], ["popular-movies", "Popular movies"], ["upcoming", "Upcoming"]], movies: [["popular-movies", "Popular movies"], ["upcoming", "Upcoming"], ["trending-movies", "Trending movies"]], series: [["popular-tv", "Popular series"], ["trending-tv", "Trending series"]], anime: [["anime", "Popular anime"]] }[view.tab];
     rows.forEach(function (rw) {
       var sec = el("section", "rp-row"); sec.appendChild(el("h3", "", rw[1])); var strip = el("div", view.tab === "anime" ? "rp-grid" : "rp-strip"); strip.appendChild(el("span", "empty", "Loading…")); sec.appendChild(strip); panel.appendChild(sec);
       list(rw[0]).then(function (items) { strip.replaceChildren(); items.forEach(function (x) { strip.appendChild(card(x, rw[0] === "anime" ? "anime" : null)); }); if (!items.length) sec.remove(); }).catch(function () { sec.remove(); });
@@ -312,7 +312,6 @@
       if (!items.length) grid.appendChild(el("p", "rp-msg", "Nothing found.")); items.forEach(function (x) { grid.appendChild(card(x)); });
     }).catch(function (e) { grid.replaceChildren(el("p", "rp-msg", e.message)); });
   }
-  var askName = ""; try { askName = localStorage.getItem("hm-name") || ""; } catch (e) { }
   function detail() {
     var dv = view.detail; panel.appendChild(el("p", "rp-msg", "Loading…"));
     api("/api/v1/media-request/title?type=" + dv.type + "&id=" + dv.id).then(function (t) { panel.replaceChildren(); titlePage(t); }).catch(function () { panel.replaceChildren(); simplePage(dv.fallback, dv.type); });
@@ -337,10 +336,9 @@
     var body = el("div", "td-body"); var left = el("div"); left.appendChild(el("h3", "", "Overview")); left.appendChild(el("p", "", t.overview || "No overview."));
     if (t.cast && t.cast.length) { left.appendChild(el("h3", "", "Cast")).style.marginTop = "14px"; var cs = el("div", "cast"); t.cast.forEach(function (c) { var d = el("div"); if (c.photo) { var i = el("img"); i.src = c.photo; i.alt = ""; i.loading = "lazy"; d.appendChild(i); } else d.appendChild(el("span", "ph")); d.appendChild(el("span", "", c.name)); cs.appendChild(d); }); left.appendChild(cs); }
     body.appendChild(left);
-    if (t.kind !== "movie") body.appendChild(picker(t, msg)); else { var side = el("div"); side.appendChild(nameField()); side.appendChild(msg); body.appendChild(side); }
+    if (t.kind !== "movie") body.appendChild(picker(t, msg)); else { var side = el("div"); side.appendChild(msg); body.appendChild(side); }
     panel.appendChild(body);
   }
-  function nameField() { var l = el("label", ""); l.style.display = "flex"; l.style.flexDirection = "column"; l.style.gap = "4px"; l.style.fontSize = "12px"; l.style.color = "var(--dim)"; l.appendChild(document.createTextNode("Your name (optional)")); var i = el("input"); i.type = "text"; i.maxLength = 80; i.placeholder = "So the admin knows who asked"; i.value = askName; i.oninput = function () { askName = i.value; try { localStorage.setItem("hm-name", askName); } catch (e) { } }; i.style.height = "34px"; i.style.padding = "0 10px"; i.style.borderRadius = "8px"; i.style.border = "1px solid var(--line2)"; i.style.background = "var(--panel)"; l.appendChild(i); return l; }
   var SEASON = { available: ["Available", "var(--ok)"], partial: ["Partly available", "var(--warn)"], onTheWay: ["On the way", "var(--st-download)"], requested: ["Requested", "var(--anime)"], unreleased: ["Not released", "var(--st-requested)"] };
   function picker(t, msg) {
     var box = el("div", "picker"); var h = el("div", "h"); h.appendChild(document.createTextNode("Request seasons")); var al = el("label"); var all = el("input"); all.type = "checkbox"; al.appendChild(all); al.appendChild(document.createTextNode(" all seasons")); h.appendChild(al); box.appendChild(h);
@@ -351,7 +349,7 @@
       r.appendChild(el("b", "", "Season " + s.number)); r.appendChild(el("span", "e", s.episodes ? s.episodes + " episodes" : "announced"));
       var ss = SEASON[s.status]; if (ss) r.appendChild(pill(ss[0], ss[1])); box.appendChild(r);
     });
-    var f = el("div", "f"); f.appendChild(nameField()); var go = el("button", "btn primary"); go.type = "button"; f.appendChild(go); box.appendChild(f); box.appendChild(msg);
+    var f = el("div", "f"); var go = el("button", "btn primary"); go.type = "button"; f.appendChild(go); box.appendChild(f); box.appendChild(msg);
     function chosen() { return boxes.filter(function (b) { return b.checked; }).map(function (b) { return +b.dataset.n; }); }
     function upd() { var c = chosen(); all.checked = boxes.length && c.length === boxes.length; go.disabled = !c.length; go.textContent = !boxes.length ? "Nothing more to request" : !c.length ? "Pick seasons" : c.length === 1 ? "Request season " + c[0] : "Request " + c.length + " seasons"; }
     all.onchange = function () { boxes.forEach(function (b) { b.checked = all.checked; }); upd(); };
@@ -364,10 +362,10 @@
     panel.appendChild(backBtn()); var title = x.title || x.name;
     var b = el("div", "td-body"); var left = el("div"); left.appendChild(el("h3", "", title)); left.appendChild(el("p", "", x.overview || "")); b.appendChild(left);
     var side = el("div"); var msg = el("p", "rp-msg"); var go = el("button", "btn primary", type === "tv" ? "Request all seasons" : "Request"); go.type = "button";
-    go.onclick = function () { send({ media_type: type, media_id: x.id, all_seasons: type === "tv" }, go, msg); }; side.appendChild(nameField()); side.appendChild(go); side.appendChild(msg); b.appendChild(side); panel.appendChild(b);
+    go.onclick = function () { send({ media_type: type, media_id: x.id, all_seasons: type === "tv" }, go, msg); }; side.appendChild(go); side.appendChild(msg); b.appendChild(side); panel.appendChild(b);
   }
   function send(body, btn, msg) {
-    body.name = askName.trim(); btn.disabled = true; msg.textContent = "Sending…";
+    btn.disabled = true; msg.textContent = "Sending…";
     api("/api/v1/media-request", { method: "POST", body: body }).then(function () { msg.textContent = "Requested. It waits for the admin's approval."; btn.textContent = "Requested"; cache = {}; if (admin) pendingCount(); onway(); })
       .catch(function (e) { btn.disabled = false; msg.textContent = e.message; });
   }

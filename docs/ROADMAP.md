@@ -1,10 +1,20 @@
-# Roadmap: folding the arr stack into Undermynd (v42, Nov 18, 2026)
+# Roadmap: folding the arr stack into Undermynd (v43, Nov 18, 2026)
 
 Goal: one app that does what Radarr, Sonarr, Lidarr, Prowlarr, Seerr, Houndarr and Recyclarr do today, so nothing else has to run or be configured. It will be renamed HyveMynd at the end.
 
 How to use this doc: the **milestones table** is the plan. Each milestone is one or a few pull requests, has a clear exit test, and lists what it depends on. Decisions and gates explain why the order is what it is. This file is kept in the repo (`docs/ROADMAP.md`) and in the Undermynd project (`design/roadmap-arr-consolidation.md`) with the same content. Supporting project docs: `design/metadata-sources.md`, `design/anime-pipeline.md`; in the repo: `docs/RENAME.md`.
 
 v13 restructured the plan into milestones. v14 to v17 answered every gate that blocks the start. v18 recorded Stage A progress. v19 recorded B1 merged and added B0 (Go upgrade). v20 closed A1. v21 closed B1 and B0. v22 recorded B2 merged. v23 recorded the B3 spike results. v24 recorded B4 (metadata layer) merged. v25 recorded C1 built. v26 recorded the C1 fixes and C2 built. v27 recorded that anime stays on the simple importer. v28 recorded C3 built. v29 recorded C4 built. v30 recorded E1 and F1 built. v31 recorded F2 built. v32 recorded F3 built. v33 recorded F4 built. v34 recorded F5 built. v35 recorded F6 built: Stage F is complete in code. v36 recorded G-1 built. v37 recorded G-2 built: Stage G is complete in code. v38 recorded H1 built. v39 recorded H2 built: Stage H is complete in code. v40 recorded I1 built. v41 records I2 built in code: the backend roadmap is complete; the design pass is next. v42 records design parts 1 to 4 merged.
+
+## Rolled back (v43, Nov 18, 2026)
+
+The user decided to keep HyveMynd beside the arr stack instead of replacing it: the takeover features did not work the way they expected. The redesign stays.
+
+- **Kept:** everything up to and including the removal of the anime catalog (PR #22); the media-server interface (B5); the rename to HyveMynd (I2); the redesign: graphite look and icon-rail admin (design part 1), the public dashboard with its fixes (part 4), and the Seerr-style Request media dropdown, now backed by Seerr (part 3: Discover rows, poster search, title page with cast, trailer and a season picker; requests go to Seerr with the chosen seasons).
+- **Removed, kept on the branch `archive/arr-takeover`** (main at `0b4c385`, PRs #23 to #51): anime follow and gap filling (C3, C4), indexers and the Torznab proxy (D1, D2), requests kept by HyveMynd (E1), the release parser, profiles, shadow mode, native movies and TV, wanted and calendar (F1 to F6), TRaSH sync and the scheduler (G-1, G-2), MusicBrainz and native music (H1, H2), API tokens and notifications (I1), the poster library pages (design part 2) and the unfinished admin pages (part 5).
+- **Admin:** Overview; Library (Disk); Activity (On the way, Requests); Sources (Feeds); System (Connections, Public site, Re-encode, Settings, Log).
+- **Database:** the schema keeps every migration up to 18, so a database that already ran the takeover build opens unchanged; the tables only the archived features used stay empty or unused. Settings fields those features added are ignored.
+- **To revisit:** check out `archive/arr-takeover`; the rest of this document describes that work as it was.
 
 ---
 
@@ -225,6 +235,8 @@ The earlier plan below listed screens each UI milestone needed; parts 1 to 5 cov
 
 ## 11. Change log
 
+- v43: rolled back to beside-the-arrs; the takeover features are kept on `archive/arr-takeover`. The redesign stays, with requests through Seerr.
+- v42: design parts 1 to 4 merged.
 - v13: milestones with sizes, dependencies and exit tests; store tests before SQLite; which state moves to SQLite; backups in B1; anime search through nyaa RSS search URLs; per-category owner switch and shadow mode; corpus from the arrs' own history; dropped importers for other people's setups; design track and gates.
 - v14: G1 answered: per-series numbering mode, both numberings stored, optional season conversion tool (C6).
 - v15: Tdarr/AV1 answered (C5 optional).

@@ -131,23 +131,33 @@ func (c *Client) Search(ctx context.Context, query string) ([]SearchResult, erro
 	return clean, nil
 }
 
-// Discover lists Seerr's suggestions: "trending", "movies" (popular) or "tv" (popular).
+// Discover lists Seerr's suggestions: "trending", "trending-movies",
+// "trending-tv", "movies" or "popular-movies", "tv" or "popular-tv",
+// "upcoming" (movies) or "anime" (popular animated Japanese series).
 func (c *Client) Discover(ctx context.Context, kind string) ([]SearchResult, error) {
-	path, mediaType := "", ""
+	path, mediaType, only := "", "", ""
 	switch kind {
 	case "trending":
-		path = "discover/trending"
-	case "movies":
-		path, mediaType = "discover/movies", "movie"
-	case "tv":
-		path, mediaType = "discover/tv", "tv"
+		path = "discover/trending?page=1"
+	case "trending-movies":
+		path, only = "discover/trending?page=1", "movie"
+	case "trending-tv":
+		path, only = "discover/trending?page=1", "tv"
+	case "movies", "popular-movies":
+		path, mediaType = "discover/movies?page=1", "movie"
+	case "tv", "popular-tv":
+		path, mediaType = "discover/tv?page=1", "tv"
+	case "upcoming":
+		path, mediaType = "discover/movies/upcoming?page=1", "movie"
+	case "anime":
+		path, mediaType = "discover/tv?page=1&genre=16&keywords=210024", "tv"
 	default:
 		return nil, fmt.Errorf("unknown list")
 	}
 	var r struct {
 		Results []SearchResult `json:"results"`
 	}
-	if err := c.JSON(ctx, "GET", path+"?page=1", nil, &r); err != nil {
+	if err := c.JSON(ctx, "GET", path, nil, &r); err != nil {
 		return nil, err
 	}
 	out := make([]SearchResult, 0, 20)
@@ -155,7 +165,7 @@ func (c *Client) Discover(ctx context.Context, kind string) ([]SearchResult, err
 		if it.MediaType == "" {
 			it.MediaType = mediaType
 		}
-		if it.ID <= 0 || (it.MediaType != "movie" && it.MediaType != "tv") {
+		if it.ID <= 0 || (it.MediaType != "movie" && it.MediaType != "tv") || (only != "" && it.MediaType != only) {
 			continue
 		}
 		if !strings.HasPrefix(it.PosterPath, "/") || strings.Contains(it.PosterPath, "..") {
@@ -169,11 +179,158 @@ func (c *Client) Discover(ctx context.Context, kind string) ([]SearchResult, err
 	return out, nil
 }
 
+// Title is one movie or series with what the request page shows.
+type Title struct {
+	Kind     string   `json:"kind"` // movie or tv
+	ID       int64    `json:"id"`
+	Title    string   `json:"title"`
+	Year     int      `json:"year"`
+	Overview string   `json:"overview"`
+	Poster   string   `json:"poster"`   // TMDB path, e.g. /abc.jpg
+	Backdrop string   `json:"backdrop"` // TMDB path
+	Genres   []string `json:"genres"`
+	Runtime  int      `json:"runtime"`
+	Network  string   `json:"network"`
+	State    string   `json:"state"`  // TMDB's: Released, Returning Series, Ended...
+	Status   int      `json:"status"` // Seerr's: 0 none, 2 pending, 3 processing, 4 partly, 5 available
+	Seasons  []Season `json:"seasons,omitempty"`
+	Cast     []Cast   `json:"cast"`
+	Trailer  string   `json:"trailer,omitempty"` // a YouTube key
+}
+
+// Season is one season of a series and where it stands in Seerr.
+type Season struct {
+	Number   int    `json:"number"`
+	Episodes int    `json:"episodes"`
+	AirDate  string `json:"airDate"`
+	Status   string `json:"status"` // available, partial, onTheWay, requested, unreleased, or ""
+}
+
+// Cast is one actor; Photo is a TMDB path.
+type Cast struct {
+	Name  string `json:"name"`
+	Photo string `json:"photo"`
+}
+
+func tmdbPath(p string) string {
+	if !strings.HasPrefix(p, "/") || strings.Contains(p, "..") {
+		return ""
+	}
+	return p
+}
+
+// Title reads a movie or series from Seerr, with cast, trailer and, for a
+// series, each season's state.
+func (c *Client) Title(ctx context.Context, kind string, id int64) (Title, error) {
+	if kind != "movie" && kind != "tv" {
+		return Title{}, fmt.Errorf("unknown kind")
+	}
+	var r struct {
+		Title, Name, ReleaseDate, FirstAirDate, Overview, PosterPath, BackdropPath, Status string
+		Runtime                                                                            int
+		EpisodeRunTime                                                                     []int
+		Genres                                                                             []struct{ Name string }
+		Networks                                                                           []struct{ Name string }
+		Credits                                                                            struct {
+			Cast []struct{ Name, ProfilePath string }
+		}
+		RelatedVideos []struct{ Site, Key, Type string }
+		Seasons       []struct {
+			SeasonNumber, EpisodeCount int
+			AirDate                    string
+		}
+		MediaInfo *struct {
+			Status   int
+			Seasons  []struct{ SeasonNumber, Status int }
+			Requests []struct {
+				Status  int
+				Seasons []struct{ SeasonNumber, Status int }
+			}
+		}
+	}
+	if err := c.JSON(ctx, "GET", kind+"/"+strconv.FormatInt(id, 10), nil, &r); err != nil {
+		return Title{}, err
+	}
+	t := Title{Kind: kind, ID: id, Title: r.Title, Overview: r.Overview, Poster: tmdbPath(r.PosterPath), Backdrop: tmdbPath(r.BackdropPath), Runtime: r.Runtime, State: r.Status, Genres: []string{}, Cast: []Cast{}}
+	date := r.ReleaseDate
+	if kind == "tv" {
+		t.Title, date = r.Name, r.FirstAirDate
+		if len(r.EpisodeRunTime) > 0 {
+			t.Runtime = r.EpisodeRunTime[0]
+		}
+		if len(r.Networks) > 0 {
+			t.Network = r.Networks[0].Name
+		}
+	}
+	if len(date) >= 4 {
+		t.Year, _ = strconv.Atoi(date[:4])
+	}
+	for _, g := range r.Genres {
+		t.Genres = append(t.Genres, g.Name)
+	}
+	for i, x := range r.Credits.Cast {
+		if i == 12 {
+			break
+		}
+		t.Cast = append(t.Cast, Cast{Name: x.Name, Photo: tmdbPath(x.ProfilePath)})
+	}
+	for _, v := range r.RelatedVideos {
+		if v.Site == "YouTube" && v.Type == "Trailer" && v.Key != "" {
+			t.Trailer = v.Key
+			break
+		}
+	}
+	held, asked := map[int]int{}, map[int]bool{}
+	if r.MediaInfo != nil {
+		t.Status = r.MediaInfo.Status
+		for _, x := range r.MediaInfo.Seasons {
+			held[x.SeasonNumber] = x.Status
+		}
+		for _, q := range r.MediaInfo.Requests {
+			if q.Status == 3 { // declined
+				continue
+			}
+			for _, x := range q.Seasons {
+				asked[x.SeasonNumber] = true
+			}
+		}
+	}
+	today := time.Now().Format("2006-01-02")
+	for _, x := range r.Seasons {
+		if x.SeasonNumber == 0 {
+			continue
+		}
+		st := ""
+		switch held[x.SeasonNumber] {
+		case 5:
+			st = "available"
+		case 4:
+			st = "partial"
+		case 3:
+			st = "onTheWay"
+		case 2:
+			st = "requested"
+		}
+		if st == "" && asked[x.SeasonNumber] {
+			st = "requested"
+		}
+		if st == "" && (x.AirDate == "" || x.AirDate > today) {
+			st = "unreleased"
+		}
+		t.Seasons = append(t.Seasons, Season{Number: x.SeasonNumber, Episodes: x.EpisodeCount, AirDate: x.AirDate, Status: st})
+	}
+	return t, nil
+}
+
 // Request sends one request with no caller-controlled user, approval, quota, server or profile.
-func (c *Client) Request(ctx context.Context, mediaID int64, mediaType string) (int64, error) {
+// For a series, seasons names the seasons wanted; none means every season.
+func (c *Client) Request(ctx context.Context, mediaID int64, mediaType string, seasons ...int) (int64, error) {
 	payload := map[string]any{"mediaId": mediaID, "mediaType": mediaType}
 	if mediaType == "tv" {
 		payload["seasons"] = "all"
+		if len(seasons) > 0 {
+			payload["seasons"] = seasons
+		}
 	}
 	var r struct {
 		ID int64 `json:"id"`

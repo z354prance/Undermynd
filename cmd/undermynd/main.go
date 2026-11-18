@@ -17,37 +17,21 @@ import (
 	"time"
 	_ "time/tzdata" // so TZ works in a minimal image
 
-	"github.com/z354prance/undermynd/internal/arr"
 	"github.com/z354prance/undermynd/internal/auth"
 	"github.com/z354prance/undermynd/internal/catalog"
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/db"
-	"github.com/z354prance/undermynd/internal/decision"
-	"github.com/z354prance/undermynd/internal/history"
-	"github.com/z354prance/undermynd/internal/indexers"
-	"github.com/z354prance/undermynd/internal/job"
 	"github.com/z354prance/undermynd/internal/logbuf"
 	"github.com/z354prance/undermynd/internal/mediaserver"
 	"github.com/z354prance/undermynd/internal/metadata"
-	"github.com/z354prance/undermynd/internal/movies"
-	"github.com/z354prance/undermynd/internal/music"
-	"github.com/z354prance/undermynd/internal/musicbrainz"
-	"github.com/z354prance/undermynd/internal/notify"
 	"github.com/z354prance/undermynd/internal/pipeline"
 	"github.com/z354prance/undermynd/internal/progress"
 	"github.com/z354prance/undermynd/internal/qbitapi"
-	"github.com/z354prance/undermynd/internal/requests"
 	"github.com/z354prance/undermynd/internal/rss"
 	"github.com/z354prance/undermynd/internal/sabapi"
-	"github.com/z354prance/undermynd/internal/scheduler"
-	"github.com/z354prance/undermynd/internal/shadow"
-	"github.com/z354prance/undermynd/internal/shows"
 	"github.com/z354prance/undermynd/internal/state"
 	"github.com/z354prance/undermynd/internal/storage"
 	"github.com/z354prance/undermynd/internal/store"
-	"github.com/z354prance/undermynd/internal/tokens"
-	"github.com/z354prance/undermynd/internal/trash"
-	"github.com/z354prance/undermynd/internal/tv"
 	"github.com/z354prance/undermynd/internal/watch"
 	"github.com/z354prance/undermynd/internal/web"
 )
@@ -168,15 +152,6 @@ func main() {
 	machine.Handle("/sabnzbd/", sab.Handler())
 	machine.Handle("/", qb.Handler())
 	site := web.New(st, eng, cfg, au, logger)
-	// The indexers, served to the arrs as Torznab/Newznab (roadmap D2), on the
-	// same address and key as the download client.
-	machine.Handle("/indexers/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if site.Indexers == nil {
-			http.NotFound(w, r)
-			return
-		}
-		site.Indexers.Handler(func() string { return string(cfg.Get().ClientPassword) }).ServeHTTP(w, r)
-	}))
 	site.Logs = logs
 
 	if am, err := web.NewAccessWith(blobs, cfg); err != nil {
@@ -237,97 +212,6 @@ func main() {
 	rp := rss.New(cfg, eng, logger)
 	rp.State = blobs
 	site.RSS = rp
-	if dbh != nil {
-		hc := &http.Client{Timeout: 60 * time.Second}
-		site.Shows = &shows.Service{Store: &shows.Store{DB: dbh, Now: time.Now}, Nyaa: shows.Nyaa{HTTP: hc}, AniList: shows.AniList{HTTP: hc},
-			HTTP: hc, Cfg: cfg, Engine: eng, Log: logger, Now: time.Now, Grace: 24 * time.Hour, Every: 20 * time.Minute}
-		site.Shows.Jobs = eng.Store.List
-		eng.FolderTitles = site.Shows.FolderTitles
-		rp.Claim = site.Shows.Claims
-		go site.Shows.Run(ctx)
-		site.Requests = &requests.Service{DB: dbh, TMDB: site.Metadata.TMDB, Meta: site.Metadata, Cfg: cfg, Shows: site.Shows, Log: logger, Now: time.Now,
-			Arr: func(category string) *arr.Client {
-				c, ok := cfg.Get().Category(category)
-				if !ok || c.ArrURL == "" || c.ArrAPIKey == "" {
-					return nil
-				}
-				return arr.New(c.Kind, c.ArrURL, string(c.ArrAPIKey))
-			}}
-		go func() {
-			t := time.NewTicker(30 * time.Minute)
-			defer t.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-t.C:
-					if cfg.Get().Requests.Native() {
-						site.Requests.Refresh(ctx)
-					}
-				}
-			}
-		}()
-		site.Indexers = &indexers.Service{DB: dbh, HTTP: &http.Client{Timeout: 60 * time.Second}, Engine: eng, Log: logger, Now: time.Now, Gap: 2 * time.Second}
-		site.Profiles = &decision.Store{DB: dbh}
-		site.Shadow = &shadow.Service{DB: dbh, Cfg: cfg, Profiles: site.Profiles, Search: site.Indexers, Log: logger, Now: time.Now,
-			Arr: func(cat string) *arr.Client {
-				c, _ := cfg.Get().Category(cat)
-				return arr.New(c.Kind, c.ArrURL, string(c.ArrAPIKey))
-			}}
-		go site.Shadow.Run(ctx)
-		site.Budget = &scheduler.Budget{DB: dbh, Cfg: cfg, Now: time.Now}
-		site.History = &history.Log{DB: dbh, Now: time.Now}
-		site.Tokens = &tokens.Store{DB: dbh, Now: time.Now}
-		site.Notify = &notify.Notifier{Cfg: cfg, HTTP: &http.Client{Timeout: 20 * time.Second}, Log: logger}
-		site.Notify.Start(ctx)
-		site.History.OnAdd = func(e history.Event) {
-			site.Notify.Notify(notify.Event{Event: e.Event, Item: e.Item, Release: e.Release, Quality: e.Quality, Category: e.Category, Note: e.Note, At: e.At})
-		}
-		if site.Requests != nil {
-			site.Requests.OnRequest = func(r requests.Request) {
-				note := ""
-				if r.Requester != "" {
-					note = "asked by " + r.Requester
-				}
-				site.Notify.Notify(notify.Event{Event: "request", Item: fmt.Sprintf("%s (%d)", r.Title, r.Year), Category: r.Kind, Note: note})
-			}
-		}
-		site.History.Prune()
-		site.Movies = &movies.Service{Budget: site.Budget, History: site.History, DB: dbh, Catalog: catalog.New(dbh), Cfg: cfg, Profiles: site.Profiles, Indexers: site.Indexers, Jobs: st,
-			Move: pipeline.MoveFile, IsVideo: pipeline.IsVideo, Log: logger, Now: time.Now, Arr: site.Shadow.Arr}
-		site.TV = &tv.Service{Budget: site.Budget, History: site.History, DB: dbh, Catalog: catalog.New(dbh), TMDB: site.Metadata.TMDB, Cfg: cfg, Profiles: site.Profiles, Indexers: site.Indexers, Jobs: st,
-			Move: pipeline.MoveFile, IsVideo: pipeline.IsVideo, Log: logger, Now: time.Now, Arr: site.Shadow.Arr}
-		eng.Native = func(ctx context.Context, j job.Job) (bool, []string, []string, error) {
-			if own, placed, left, err := site.Movies.ImportJob(ctx, j); own {
-				return own, placed, left, err
-			}
-			if own, placed, left, err := site.TV.ImportJob(ctx, j); own {
-				return own, placed, left, err
-			}
-			if site.Music != nil {
-				return site.Music.ImportJob(ctx, j)
-			}
-			return false, nil, nil, nil
-		}
-		go site.TV.Run(ctx)
-		site.Trash = &trash.Syncer{Store: site.Profiles, Cfg: cfg, Log: logger,
-			Client: &trash.Client{HTTP: &http.Client{Timeout: 2 * time.Minute}, URL: func() string { return cfg.Get().Trash.URL }}}
-		go site.Trash.Run(ctx)
-		site.Backlog = &scheduler.Backlog{DB: dbh, Cfg: cfg, Budget: site.Budget, Arr: site.Shadow.Arr, Log: logger, Now: time.Now}
-		go site.Backlog.Run(ctx)
-		site.MusicBrainz = &musicbrainz.Client{DB: dbh, HTTP: &http.Client{Timeout: 30 * time.Second}}
-		site.Music = &music.Service{DB: dbh, MB: site.MusicBrainz, Cfg: cfg, Indexers: site.Indexers, Jobs: st, Arr: site.Shadow.Arr,
-			Move: pipeline.MoveFile, History: site.History, Budget: site.Budget, Log: logger, Now: time.Now}
-		go site.Music.Run(ctx)
-		if site.Shows != nil {
-			site.Shows.Budget = site.Budget
-		}
-		if site.Requests != nil {
-			site.Requests.Movies = site.Movies
-			site.Requests.TV = site.TV
-		}
-		go site.Movies.Run(ctx)
-	}
 	go rp.Run(ctx)
 	go watch.New(cfg, eng, logger).Run(ctx)
 

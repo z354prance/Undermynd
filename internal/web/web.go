@@ -25,29 +25,15 @@ import (
 	"github.com/z354prance/undermynd/internal/arr"
 	"github.com/z354prance/undermynd/internal/auth"
 	"github.com/z354prance/undermynd/internal/config"
-	"github.com/z354prance/undermynd/internal/decision"
-	"github.com/z354prance/undermynd/internal/history"
-	"github.com/z354prance/undermynd/internal/indexers"
 	"github.com/z354prance/undermynd/internal/job"
 	"github.com/z354prance/undermynd/internal/logbuf"
 	"github.com/z354prance/undermynd/internal/metadata"
-	"github.com/z354prance/undermynd/internal/movies"
-	"github.com/z354prance/undermynd/internal/music"
-	"github.com/z354prance/undermynd/internal/musicbrainz"
-	"github.com/z354prance/undermynd/internal/notify"
 	"github.com/z354prance/undermynd/internal/pipeline"
 	"github.com/z354prance/undermynd/internal/progress"
-	"github.com/z354prance/undermynd/internal/requests"
 	"github.com/z354prance/undermynd/internal/rss"
-	"github.com/z354prance/undermynd/internal/scheduler"
 	"github.com/z354prance/undermynd/internal/secret"
-	"github.com/z354prance/undermynd/internal/shadow"
-	"github.com/z354prance/undermynd/internal/shows"
 	"github.com/z354prance/undermynd/internal/storage"
 	"github.com/z354prance/undermynd/internal/store"
-	"github.com/z354prance/undermynd/internal/tokens"
-	"github.com/z354prance/undermynd/internal/trash"
-	"github.com/z354prance/undermynd/internal/tv"
 )
 
 //go:embed static
@@ -70,35 +56,6 @@ type Server struct {
 	Access   *access.Manager
 	// Metadata is nil when state is kept in JSON files (no database).
 	Metadata *metadata.Service
-	// Shows follows show folders of the simple importer (the Anime page); nil
-	// without the database.
-	Shows *shows.Service
-	// Indexers searches Torznab and Newznab indexers; nil without the database.
-	Indexers *indexers.Service
-	// Profiles keeps quality profiles and custom formats; nil without the database.
-	Profiles *decision.Store
-	// Shadow compares the arrs' grabs with HyveMynd's picks; nil without the database.
-	Shadow *shadow.Service
-	// Movies keeps native movie categories; nil without the database.
-	Movies *movies.Service
-	// TV keeps native TV categories; nil without the database.
-	TV *tv.Service
-	// History records what happened to native movies and episodes; nil without the database.
-	History *history.Log
-	// Trash syncs profiles from the TRaSH Guides; nil without the database.
-	Trash *trash.Syncer
-	// Budget and Backlog pace automatic searches; nil without the database.
-	Budget  *scheduler.Budget
-	Backlog *scheduler.Backlog
-	// MusicBrainz reads artists and albums; nil without the database.
-	MusicBrainz *musicbrainz.Client
-	// Music keeps native music categories; nil without the database.
-	Music *music.Service
-	// Tokens are API tokens; Notify sends notifications. nil without the database.
-	Tokens *tokens.Store
-	Notify *notify.Notifier
-	// Requests keeps requests in HyveMynd (native mode); nil without the database.
-	Requests *requests.Service
 	RSS      interface {
 		Status() []rss.FeedStatus
 		Download(ctx context.Context, feed string, index int, title, category string) (string, error)
@@ -195,84 +152,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /admin/api/metadata/test", s.guard(s.admin(s.metadataTest)))
 	mux.HandleFunc("GET /admin/api/metadata/status", s.admin(s.metadataStatus))
 	mux.HandleFunc("POST /admin/api/metadata/lists/refresh", s.guard(s.admin(s.metadataListsRefresh)))
-	mux.HandleFunc("GET /admin/api/shows", s.admin(s.showsList))
-	mux.HandleFunc("GET /admin/api/shows/one", s.admin(s.showsOne))
-	mux.HandleFunc("PUT /admin/api/shows/one", s.guard(s.admin(s.showsSave)))
-	mux.HandleFunc("POST /admin/api/shows/{action}", s.guard(s.admin(s.showsAction)))
-	mux.HandleFunc("GET /admin/api/shows/search", s.admin(s.showsSearch))
-	mux.HandleFunc("GET /admin/api/shows/discover", s.admin(s.showsDiscover))
-	mux.HandleFunc("GET /admin/api/indexers", s.admin(s.indexersList))
-	mux.HandleFunc("GET /admin/api/parser", s.admin(s.parserTry))
-	mux.HandleFunc("GET /admin/api/profiles", s.admin(s.profilesList))
-	mux.HandleFunc("GET /admin/api/trash", s.admin(s.trashCatalog))
-	mux.HandleFunc("POST /admin/api/trash/preview", s.guard(s.admin(s.trashPreview)))
-	mux.HandleFunc("POST /admin/api/trash/apply", s.guard(s.admin(s.trashApply)))
-	mux.HandleFunc("GET /admin/api/movies", s.admin(s.moviesList))
-	mux.HandleFunc("GET /admin/api/tv", s.admin(s.tvList))
-	mux.HandleFunc("GET /admin/api/wanted", s.admin(s.wanted))
-	mux.HandleFunc("GET /admin/api/tokens", s.browserOnly(s.tokensList))
-	mux.HandleFunc("POST /admin/api/tokens", s.guard(s.browserOnly(s.tokensCreate)))
-	mux.HandleFunc("DELETE /admin/api/tokens/{id}", s.guard(s.browserOnly(s.tokensDelete)))
-	mux.HandleFunc("GET /admin/api/notifications", s.admin(s.notificationsList))
-	mux.HandleFunc("PUT /admin/api/notifications", s.guard(s.admin(s.notificationsPut)))
-	mux.HandleFunc("POST /admin/api/notifications/test", s.guard(s.admin(s.notificationsTest)))
-	mux.HandleFunc("GET /admin/api/musicbrainz/artists", s.admin(s.mbArtists))
-	mux.HandleFunc("GET /admin/api/music", s.admin(s.musicList))
-	mux.HandleFunc("POST /admin/api/music/add", s.guard(s.admin(s.musicAdd)))
-	mux.HandleFunc("POST /admin/api/music/import", s.guard(s.admin(s.musicImport)))
-	mux.HandleFunc("PUT /admin/api/music/settings", s.guard(s.admin(s.musicSettings)))
-	mux.HandleFunc("POST /admin/api/music/search-wanted", s.guard(s.admin(s.musicSearchWanted)))
-	mux.HandleFunc("PUT /admin/api/music/albums/{id}", s.guard(s.admin(s.musicAlbumEdit)))
-	mux.HandleFunc("POST /admin/api/music/albums/{id}/search", s.guard(s.admin(s.musicAlbumSearch)))
-	mux.HandleFunc("POST /admin/api/music/albums/{id}/grab", s.guard(s.admin(s.musicAlbumGrab)))
-	mux.HandleFunc("GET /admin/api/music/{id}", s.admin(s.musicArtist))
-	mux.HandleFunc("PUT /admin/api/music/{id}", s.guard(s.admin(s.musicArtistEdit)))
-	mux.HandleFunc("DELETE /admin/api/music/{id}", s.guard(s.admin(s.musicArtistDelete)))
-	mux.HandleFunc("GET /admin/api/musicbrainz/artists/{id}/albums", s.admin(s.mbAlbums))
-	mux.HandleFunc("GET /admin/api/scheduler", s.admin(s.schedulerView))
-	mux.HandleFunc("PUT /admin/api/scheduler", s.guard(s.admin(s.schedulerPut)))
-	mux.HandleFunc("POST /admin/api/scheduler/backlog", s.guard(s.admin(s.backlogNow)))
-	mux.HandleFunc("GET /admin/api/calendar", s.admin(s.calendar))
-	mux.HandleFunc("GET /admin/api/history", s.admin(s.historyList))
-	mux.HandleFunc("GET /admin/api/manual-import", s.admin(s.manualImportList))
-	mux.HandleFunc("POST /admin/api/manual-import", s.guard(s.admin(s.manualImport)))
-	mux.HandleFunc("GET /admin/api/tv/lookup", s.admin(s.tvLookup))
-	mux.HandleFunc("POST /admin/api/tv/add", s.guard(s.admin(s.tvAdd)))
-	mux.HandleFunc("POST /admin/api/tv/import", s.guard(s.admin(s.tvImport)))
-	mux.HandleFunc("PUT /admin/api/tv/settings", s.guard(s.admin(s.tvSettings)))
-	mux.HandleFunc("POST /admin/api/tv/search-wanted", s.guard(s.admin(s.tvSearchWanted)))
-	mux.HandleFunc("GET /admin/api/tv/{id}", s.admin(s.tvGet))
-	mux.HandleFunc("PUT /admin/api/tv/{id}", s.guard(s.admin(s.tvEdit)))
-	mux.HandleFunc("DELETE /admin/api/tv/{id}", s.guard(s.admin(s.tvDelete)))
-	mux.HandleFunc("PUT /admin/api/tv/{id}/monitor", s.guard(s.admin(s.tvMonitor)))
-	mux.HandleFunc("POST /admin/api/tv/{id}/search", s.guard(s.admin(s.tvSearch)))
-	mux.HandleFunc("POST /admin/api/tv/{id}/grab", s.guard(s.admin(s.tvGrab)))
-	mux.HandleFunc("GET /admin/api/movies/lookup", s.admin(s.moviesLookup))
-	mux.HandleFunc("POST /admin/api/movies/add", s.guard(s.admin(s.moviesAdd)))
-	mux.HandleFunc("POST /admin/api/movies/import", s.guard(s.admin(s.moviesImport)))
-	mux.HandleFunc("PUT /admin/api/movies/settings", s.guard(s.admin(s.moviesSettings)))
-	mux.HandleFunc("POST /admin/api/movies/search-wanted", s.guard(s.admin(s.moviesSearchWanted)))
-	mux.HandleFunc("GET /admin/api/movies/{id}", s.admin(s.movieGet))
-	mux.HandleFunc("PUT /admin/api/movies/{id}", s.guard(s.admin(s.movieEdit)))
-	mux.HandleFunc("DELETE /admin/api/movies/{id}", s.guard(s.admin(s.movieDelete)))
-	mux.HandleFunc("POST /admin/api/movies/{id}/search", s.guard(s.admin(s.movieSearch)))
-	mux.HandleFunc("POST /admin/api/movies/{id}/grab", s.guard(s.admin(s.movieGrab)))
-	mux.HandleFunc("GET /admin/api/shadow", s.admin(s.shadowReport))
-	mux.HandleFunc("PUT /admin/api/shadow/settings", s.guard(s.admin(s.shadowSettings)))
-	mux.HandleFunc("POST /admin/api/shadow/check", s.guard(s.admin(s.shadowCheck)))
-	mux.HandleFunc("POST /admin/api/profiles", s.guard(s.admin(s.profileSave)))
-	mux.HandleFunc("DELETE /admin/api/profiles/{id}", s.guard(s.admin(s.profileDelete)))
-	mux.HandleFunc("POST /admin/api/profiles/import", s.guard(s.admin(s.profilesImport)))
-	mux.HandleFunc("POST /admin/api/profiles/try", s.guard(s.admin(s.profileTry)))
-	mux.HandleFunc("POST /admin/api/formats", s.guard(s.admin(s.formatSave)))
-	mux.HandleFunc("DELETE /admin/api/formats/{id}", s.guard(s.admin(s.formatDelete)))
-	mux.HandleFunc("GET /admin/api/parser/check", s.admin(s.parserCheck))
-	mux.HandleFunc("POST /admin/api/indexers", s.guard(s.admin(s.indexersSave)))
-	mux.HandleFunc("DELETE /admin/api/indexers/{id}", s.guard(s.admin(s.indexersDelete)))
-	mux.HandleFunc("POST /admin/api/indexers/test", s.guard(s.admin(s.indexersTest)))
-	mux.HandleFunc("POST /admin/api/indexers/import-prowlarr", s.guard(s.admin(s.indexersImport)))
-	mux.HandleFunc("GET /admin/api/indexers/search", s.admin(s.indexersSearch))
-	mux.HandleFunc("POST /admin/api/indexers/grab", s.guard(s.admin(s.indexersGrab)))
 	mux.HandleFunc("POST /admin/api/tdarr/test", s.guard(s.admin(s.tdarrTest)))
 	mux.HandleFunc("POST /admin/api/settings/client-password", s.guard(s.admin(s.newClientPassword)))
 	return secure(mux)
@@ -295,7 +174,7 @@ func secure(next http.Handler) http.Handler {
 		admin := strings.HasPrefix(r.URL.Path, "/admin") || strings.HasPrefix(r.URL.Path, "/assets/")
 		if admin {
 			// The admin pages may be framed only by the same sites as the public page.
-			h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https://coverartarchive.org https://*.archive.org; frame-ancestors "+embed+"; base-uri 'none'; form-action 'self'")
+			h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; frame-ancestors "+embed+"; base-uri 'none'; form-action 'self'")
 		} else {
 			h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https://image.tmdb.org; style-src 'self' 'unsafe-inline'; frame-ancestors "+embed+"; base-uri 'none'; form-action 'self'")
 		}
@@ -351,27 +230,8 @@ func (s *Server) host(r *http.Request) string {
 
 // guard protects state-changing routes: a required custom header (which a
 // cross-site form cannot send) and a same-origin check.
-// token reports whether the request carries a valid API token, as an
-// X-Api-Key header or a Bearer token.
-func (s *Server) token(r *http.Request) bool {
-	if s.Tokens == nil {
-		return false
-	}
-	v := r.Header.Get("X-Api-Key")
-	if v == "" {
-		if a := r.Header.Get("Authorization"); strings.HasPrefix(a, "Bearer ") {
-			v = strings.TrimPrefix(a, "Bearer ")
-		}
-	}
-	return v != "" && s.Tokens.Valid(strings.TrimSpace(v))
-}
-
 func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Cookie") == "" && s.token(r) {
-			next(w, r) // a script with a valid token: no browser, no cross-site risk
-			return
-		}
 		if r.Header.Get(requestHeader) != "1" {
 			jsonErr(w, http.StatusForbidden, "missing request header")
 			return
@@ -390,23 +250,8 @@ func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
 // admin requires a valid session before any handler runs.
 func (s *Server) admin(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Cookie") == "" && s.token(r) {
-			next(w, r)
-			return
-		}
 		c, err := r.Cookie(cookieName)
 		if err != nil || !s.Auth.Valid(c.Value) {
-			jsonErr(w, http.StatusUnauthorized, "sign in required")
-			return
-		}
-		next(w, r)
-	}
-}
-
-// browserOnly requires a signed-in browser: tokens cannot manage tokens.
-func (s *Server) browserOnly(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if !s.signedIn(r) {
 			jsonErr(w, http.StatusUnauthorized, "sign in required")
 			return
 		}
@@ -743,15 +588,11 @@ type settingsView struct {
 	} `json:"tdarr"`
 	Donations config.Donations `json:"donations"`
 	Requests  struct {
-		Enabled       bool   `json:"enabled"`
-		URL           string `json:"url"`
-		APIKey        string `json:"apiKey,omitempty"` // write-only
-		HasAPIKey     bool   `json:"hasApiKey"`
-		UserID        int64  `json:"userId"`
-		Mode          string `json:"mode"`
-		AutoApprove   bool   `json:"autoApprove"`
-		MovieCategory string `json:"movieCategory"`
-		TVCategory    string `json:"tvCategory"`
+		Enabled   bool   `json:"enabled"`
+		URL       string `json:"url"`
+		APIKey    string `json:"apiKey,omitempty"` // write-only
+		HasAPIKey bool   `json:"hasApiKey"`
+		UserID    int64  `json:"userId"`
 	} `json:"requests"`
 	Playback struct {
 		TracearrURL       string `json:"tracearrUrl"`
@@ -818,10 +659,6 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	v.Tdarr.MaxInFlight, v.Tdarr.StallMinutes = c.Tdarr.MaxInFlight, c.Tdarr.StallMinutes
 	v.Donations = c.Donations
 	v.Requests.Enabled, v.Requests.URL, v.Requests.HasAPIKey, v.Requests.UserID = c.Requests.Enabled, c.Requests.URL, c.Requests.APIKey != "", c.Requests.UserID
-	v.Requests.Mode, v.Requests.AutoApprove, v.Requests.MovieCategory, v.Requests.TVCategory = c.Requests.Mode, c.Requests.AutoApprove, c.Requests.MovieCategory, c.Requests.TVCategory
-	if v.Requests.Mode == "" {
-		v.Requests.Mode = "seerr"
-	}
 	v.Playback.TracearrURL, v.Playback.HasTracearrKey = c.Playback.TracearrURL, c.Playback.TracearrKey != ""
 	v.Playback.EmbyURL, v.Playback.HasEmbyKey, v.Playback.HiddenLibraries = c.Playback.EmbyURL, c.Playback.EmbyKey != "", c.Playback.HiddenLibraries
 	v.Playback.RefreshAfterPlace, v.Playback.PathFrom, v.Playback.PathTo = c.Playback.RefreshAfterPlace, c.Playback.PathFrom, c.Playback.PathTo
@@ -942,16 +779,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	if in.Requests.APIKey != "" {
 		next.Requests.APIKey = secret.String(strings.TrimSpace(in.Requests.APIKey))
 	}
-	next.Requests.Mode, next.Requests.AutoApprove = in.Requests.Mode, in.Requests.AutoApprove
-	if next.Requests.Mode != "native" {
-		next.Requests.Mode = ""
-	}
-	next.Requests.MovieCategory, next.Requests.TVCategory = strings.TrimSpace(in.Requests.MovieCategory), strings.TrimSpace(in.Requests.TVCategory)
-	switch {
-	case next.Requests.Enabled && next.Requests.Native() && next.Metadata.TMDBKey == "":
-		jsonErr(w, http.StatusBadRequest, "requests kept by HyveMynd search TMDB: add a TMDB key under Metadata first")
-		return
-	case next.Requests.Enabled && !next.Requests.Native() && (next.Requests.URL == "" || next.Requests.APIKey == "" || next.Requests.UserID <= 0):
+	if next.Requests.Enabled && (next.Requests.URL == "" || next.Requests.APIKey == "" || next.Requests.UserID <= 0) {
 		jsonErr(w, http.StatusBadRequest, "media requests need the Seerr address, its API key and the user ID requests are made as")
 		return
 	}
