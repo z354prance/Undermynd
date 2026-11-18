@@ -373,12 +373,11 @@ func (s *Service) Search(ctx context.Context, folder, query string, episode int)
 	if err != nil {
 		return nil, err
 	}
+	// Search the show, not the episode: releases number episodes their own way
+	// (a later cour starts again at 1), so the episode is put first, not required.
 	q := strings.TrimSpace(query)
 	if q == "" {
 		q = sh.Name
-		if episode > 0 {
-			q = fmt.Sprintf("%s %02d", sh.Name, episode)
-		}
 	}
 	res, err := s.Nyaa.Search(ctx, q)
 	if err != nil {
@@ -398,11 +397,18 @@ func (s *Service) Search(ctx context.Context, folder, query string, episode int)
 		} else {
 			x.Warning = Warning(st, files, sh.Summary.Season, sn)
 		}
-		if episode > 0 && x.Episode != episode {
-			continue
-		}
 		out = append(out, x)
 	}
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if (episode > 0 && a.Episode == episode) != (episode > 0 && b.Episode == episode) {
+			return episode > 0 && a.Episode == episode
+		}
+		if a.ThisShow != b.ThisShow {
+			return a.ThisShow
+		}
+		return (a.Warning == "") && (b.Warning != "")
+	})
 	return out, nil
 }
 
