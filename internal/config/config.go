@@ -61,6 +61,10 @@ type Category struct {
 	// LibraryDir, for categories no arr handles, is a library of show folders the
 	// finished episodes are placed into, matched by title.
 	LibraryDir string `json:"libraryDir,omitempty"`
+	// Native (roadmap F4) means Undermynd, not the arr, searches, grabs and
+	// imports this category's movies into LibraryDir. Radarr is still read
+	// for the starting library.
+	Native bool `json:"native,omitempty"`
 	// OnTranscodeFail is "fail" (default: the arr blocklists and searches again) or "passthrough" (hand back the original).
 	OnTranscodeFail string `json:"onTranscodeFail"`
 }
@@ -209,6 +213,19 @@ type Shadow struct {
 	PerHour int `json:"perHour,omitempty"`
 }
 
+// Movies are the settings of native movie categories (roadmap F4).
+type Movies struct {
+	// DryRun leaves finished downloads where they are and only says where
+	// they would go.
+	DryRun bool `json:"dryRun"`
+	// Folder and File name the movie's folder and file; empty uses
+	// "{Title} ({Year})" and "{Title} ({Year}) {Quality}".
+	Folder string `json:"folder,omitempty"`
+	File   string `json:"file,omitempty"`
+	// SearchPerHour caps automatic searches; 0 means 10.
+	SearchPerHour int `json:"searchPerHour,omitempty"`
+}
+
 type Settings struct {
 	Watches      []Watch    `json:"watches"`
 	IntakePaused bool       `json:"intakePaused"` // new grabs are accepted but held until resumed
@@ -225,6 +242,7 @@ type Settings struct {
 	QBit         QBit       `json:"qbit"`
 	Metadata     Metadata   `json:"metadata"`
 	Shadow       Shadow     `json:"shadow"`
+	Movies       Movies     `json:"movies"`
 
 	// Login the arrs use against the fake client API.
 	ClientUser     string        `json:"clientUser"`

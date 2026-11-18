@@ -17,9 +17,11 @@ import (
 	"time"
 
 	"github.com/z354prance/undermynd/internal/arr"
+	"github.com/z354prance/undermynd/internal/catalog"
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/db"
 	"github.com/z354prance/undermynd/internal/metadata"
+	"github.com/z354prance/undermynd/internal/movies"
 	"github.com/z354prance/undermynd/internal/seerr"
 	"github.com/z354prance/undermynd/internal/shows"
 )
@@ -43,6 +45,9 @@ type Service struct {
 	Now   func() time.Time
 	// Arr returns a client for a category's arr; nil when it has none.
 	Arr func(category string) *arr.Client
+	// Movies keeps native movie categories (roadmap F4); approved movies for
+	// a native category go there instead of Radarr.
+	Movies *movies.Service
 
 	mu      sync.Mutex
 	lib     map[string]libCache // by arr kind
@@ -70,6 +75,11 @@ func (s *Service) category(kind string) string {
 	return ""
 }
 
+func (s *Service) nativeMovies(cat string) bool {
+	c, ok := s.Cfg.Get().Category(cat)
+	return ok && c.Native
+}
+
 func (s *Service) client(kind string) *arr.Client {
 	cat := s.category(kind)
 	if cat == "" || s.Arr == nil {
@@ -80,6 +90,17 @@ func (s *Service) client(kind string) *arr.Client {
 
 // library is the arr's library by TMDB id, read at most every 10 minutes.
 func (s *Service) library(ctx context.Context, kind string) map[int64]arr.Have {
+	if cat := s.category(kind); kind == "movie" && s.Movies != nil && s.nativeMovies(cat) {
+		ms, err := s.Movies.List(cat)
+		if err != nil {
+			return nil
+		}
+		by := map[int64]arr.Have{}
+		for _, m := range ms {
+			by[m.TMDB] = arr.Have{TMDBID: m.TMDB, Monitored: m.Monitored, HasFile: m.File != ""}
+		}
+		return by
+	}
 	c := s.client(kind)
 	if c == nil {
 		return nil
@@ -367,6 +388,18 @@ func (s *Service) Decide(ctx context.Context, id int64, action, reason string) e
 func (s *Service) handOn(ctx context.Context, r Request) (string, error) {
 	switch r.Kind {
 	case "movie":
+		if cat := s.category("movie"); s.Movies != nil && s.nativeMovies(cat) {
+			info, err := s.TMDB.Movie(ctx, r.TMDBID)
+			if err != nil {
+				return "", err
+			}
+			m, err := s.Movies.Add(ctx, cat, catalog.Movie{Title: info.Title, Year: r.Year, TMDBID: r.TMDBID, IMDBID: info.IMDB}, info.Runtime, "")
+			if err != nil {
+				return "", err
+			}
+			go s.Movies.Search(context.WithoutCancel(ctx), m.ID, true)
+			return "added to " + cat + " (native), searching", nil
+		}
 		c := s.client("movie")
 		if c == nil {
 			return "", errors.New("no Radarr category with an address is set")

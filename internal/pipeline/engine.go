@@ -63,6 +63,11 @@ type Engine struct {
 	// places (to have the media server pick it up).
 	AfterPlace func(path string)
 
+	// Native, when set, imports a finished job that a native category grabbed
+	// (roadmap F4). own is false for jobs it did not grab; placed and left
+	// describe the files; an error is retried.
+	Native func(ctx context.Context, j job.Job) (own bool, placed []string, left []string, err error)
+
 	// FolderTitles, when set, gives the other titles of each show folder in a
 	// library folder, so a release under another title still finds its folder.
 	FolderTitles func(root string) map[string][]string
@@ -807,6 +812,17 @@ func (e *Engine) doReady(ctx context.Context, j job.Job) {
 	// RSS, watch-folder and indexer-search jobs were not grabbed by an arr, so none will import
 	// them: the finished files stay where they were delivered and the job ends.
 	if j.Source == "rss" || j.Source == "watch" || j.Source == "indexer" {
+		if e.Native != nil {
+			own, placed, left, err := e.Native(ctx, j)
+			if own {
+				if err != nil {
+					e.retry(j, err, 10, "import")
+					return
+				}
+				e.endPlaced(ctx, j, placed, left)
+				return
+			}
+		}
 		if cat, ok := e.Cfg.Get().Category(j.Category); ok && cat.LibraryDir != "" {
 			e.placeInLibrary(ctx, j, cat)
 			return
@@ -1059,7 +1075,42 @@ func (e *Engine) endFailed(j job.Job, why string) {
 	})
 }
 
+// endPlaced ends a job whose files an importer placed: the leftovers are
+// cleaned when everything was placed, kept when something was not.
+func (e *Engine) endPlaced(ctx context.Context, j job.Job, placed, left []string) {
+	now := e.Now()
+	if len(left) == 0 {
+		if err := e.cleanupExcept(ctx, j, false); err != nil {
+			e.retry2(j, err)
+			return
+		}
+		_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
+			c.Flag = ""
+			c.Move(job.Cleaned, "imported "+strings.Join(placed, ", "), now)
+			return nil
+		})
+		e.Log.Printf("job %s imported %s", short(j.ID), strings.Join(placed, ", "))
+		return
+	}
+	if err := e.cleanupExcept(ctx, j, true); err != nil {
+		e.retry2(j, err)
+		return
+	}
+	why := fmt.Sprintf("imported %d, left in %s: %s", len(placed), j.CompleteDir, strings.Join(dedupe(left), "; "))
+	_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
+		c.Move(job.Cleaned, why, now)
+		return nil
+	})
+	e.Log.Printf("job %s %s", short(j.ID), why)
+}
+
 // ---------------------------------------------------------------- files
+
+// MoveFile moves a file, across filesystems if it must, creating the folder.
+func MoveFile(src, dst string) error { return moveFile(src, dst) }
+
+// IsVideo reports whether a path has a video file extension.
+func IsVideo(p string) bool { return isVideo(p) }
 
 func moveFile(src, dst string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {

@@ -354,6 +354,7 @@ type MovieInfo struct {
 	ReleaseDate      string `json:"release_date"`
 	IMDB             string `json:"imdb_id"`
 	OriginalLanguage string `json:"original_language"`
+	Runtime          int    `json:"runtime"`
 }
 
 // Movie looks a movie up.
