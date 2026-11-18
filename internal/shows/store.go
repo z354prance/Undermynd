@@ -213,6 +213,7 @@ type Seen struct {
 	Seeders int       `json:"seeders"`
 	First   time.Time `json:"seen"`
 	Grabbed time.Time `json:"grabbed"`
+	Failed  bool      `json:"failed"` // grabbed, and its download failed: not tried again
 }
 
 // AddSeen records releases, keeping when each was first seen.
@@ -252,7 +253,12 @@ func (s *Store) SeenFor(folder string) ([]Seen, error) {
 		if err := rows.Scan(&r.Title, &r.Link, &r.Group, &r.Res, &r.Season, &marked, &r.Episode, &r.Size, &r.Seeders, &seen, &grabbed); err != nil {
 			return nil, err
 		}
-		r.Marked, r.First, r.Grabbed = marked != 0, parseTime(seen), parseTime(grabbed)
+		r.Marked, r.First = marked != 0, parseTime(seen)
+		if grabbed == "failed" {
+			r.Failed = true
+		} else {
+			r.Grabbed = parseTime(grabbed)
+		}
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -296,5 +302,12 @@ func (s *Store) Summaries() (map[string]Summary, error) {
 // DropSummary forgets a folder that is gone.
 func (s *Store) DropSummary(folder string) error {
 	_, err := s.DB.Exec(`DELETE FROM show_folders WHERE folder = ?`, folder)
+	return err
+}
+
+// MarkFailed records that a grabbed release failed to download, so another
+// release of the episode can be picked.
+func (s *Store) MarkFailed(folder, title string) error {
+	_, err := s.DB.Exec(`UPDATE show_releases SET grabbed = 'failed' WHERE folder = ? AND title = ?`, folder, title)
 	return err
 }

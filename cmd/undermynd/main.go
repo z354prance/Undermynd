@@ -187,6 +187,7 @@ func main() {
 		hc := &http.Client{Timeout: 60 * time.Second}
 		site.Shows = &shows.Service{Store: &shows.Store{DB: dbh, Now: time.Now}, Nyaa: shows.Nyaa{HTTP: hc}, AniList: shows.AniList{HTTP: hc},
 			HTTP: hc, Cfg: cfg, Engine: eng, Log: logger, Now: time.Now, Grace: 24 * time.Hour, Every: 20 * time.Minute}
+		site.Shows.Jobs = eng.Store.List
 		eng.FolderTitles = site.Shows.FolderTitles
 		rp.Claim = site.Shows.Claims
 		go site.Shows.Run(ctx)
