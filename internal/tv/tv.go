@@ -25,6 +25,7 @@ import (
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/db"
 	"github.com/z354prance/undermynd/internal/decision"
+	"github.com/z354prance/undermynd/internal/history"
 	"github.com/z354prance/undermynd/internal/indexers"
 	"github.com/z354prance/undermynd/internal/job"
 	"github.com/z354prance/undermynd/internal/library"
@@ -55,6 +56,7 @@ type Service struct {
 	Arr      func(category string) *arr.Client
 	Move     func(src, dst string) error
 	IsVideo  func(path string) bool
+	History  *history.Log
 	Log      *log.Logger
 	Now      func() time.Time
 }
@@ -653,6 +655,9 @@ func (s *Service) Follow() {
 			var sid int64
 			s.DB.QueryRow(`SELECT series_id FROM episodes WHERE job_id = ? LIMIT 1`, id).Scan(&sid)
 			s.block(sid, j.Name, "download failed: "+j.Reason)
+			if x, _, err := s.Get(sid); err == nil {
+				s.History.Add(history.Event{Kind: "episode", Item: x.Title, Event: history.Failed, Release: j.Name, Category: x.Category, Note: j.Reason})
+			}
 			s.DB.Exec(`UPDATE episodes SET job_id = '', searched = '', note = ? WHERE job_id = ?`, "download failed: "+j.Reason, id)
 		case j.State == job.Cleaned || j.State == job.Imported:
 			s.DB.Exec(`UPDATE episodes SET job_id = '' WHERE job_id = ?`, id)
@@ -1023,6 +1028,8 @@ func (s *Service) GrabResult(ctx context.Context, seriesID int64, r indexers.Res
 	for _, e := range eps {
 		s.DB.Exec(`UPDATE episodes SET job_id = ?, note = ? WHERE id = ?`, j.ID, "grabbed "+r.Title, e.ID)
 	}
+	s.History.Add(history.Event{Kind: "episode", ItemID: eps[0].ID, Item: epItem(&x, eps), Event: history.Grabbed, Release: r.Title,
+		Quality: parser.Parse(r.Title).Quality.Name(), Category: x.Category, Note: r.Indexer})
 	s.Log.Printf("tv: grabbed %s for %s (%d episode(s))", r.Title, x.Title, len(eps))
 	return j, nil
 }
@@ -1185,10 +1192,7 @@ func (s *Service) ImportJob(ctx context.Context, j job.Job) (own bool, placed []
 	for _, id := range t.EpisodeIDs {
 		targets[id] = true
 	}
-	dry := s.Cfg.Get().TV.DryRun
 	jobInfo := parser.Parse(j.Name)
-	p, _ := s.Profiles.ProfileByName(x.Profile)
-	eng, _ := s.Profiles.Engine(p)
 	done := map[int64]bool{}
 	for _, f := range j.Files {
 		if !s.IsVideo(f) || strings.Contains(strings.ToLower(filepath.Base(f)), "sample") {
@@ -1224,50 +1228,20 @@ func (s *Service) ImportJob(ctx context.Context, j job.Job) (own bool, placed []
 		if in.Quality.Source == parser.SourceUnknown && jobInfo.Quality.Source != parser.SourceUnknown {
 			in.Quality = jobInfo.Quality
 		}
-		folder, season, file := s.Name(x, mine, in, strings.ToLower(filepath.Ext(f)))
-		dir := x.Folder
-		if dir == "" {
-			dir = filepath.Join(c.LibraryDir, folder)
+		dst, msg, err := s.place(&x, c, mine, in, src, j.Name, st.Size())
+		if err != nil {
+			return true, placed, left, err
 		}
-		dst := filepath.Join(dir, season, file)
-		if dry {
-			left = append(left, "dry run: would move "+filepath.Base(f)+" to "+dst)
+		if strings.HasPrefix(msg, "dry run") {
 			for _, m := range mine {
 				done[m.ID] = true
 			}
-			continue
 		}
-		if _, err := os.Stat(dst); err == nil && dst != mine[0].File {
-			left = append(left, filepath.Base(dst)+" already exists and is not the episode's file")
+		if msg != "" {
+			left = append(left, msg)
 			continue
 		}
 		for _, m := range mine {
-			if m.File == "" || m.File == dst {
-				continue
-			}
-			if _, err := os.Stat(m.File); err == nil {
-				aside := filepath.Join(c.LibraryDir, ".undermynd-replaced", s.Now().Format("2006-01-02"), filepath.Base(m.File))
-				if err := s.Move(m.File, aside); err != nil {
-					return true, placed, left, fmt.Errorf("setting aside %s: %w", m.File, err)
-				}
-			}
-		}
-		if err := s.Move(src, dst); err != nil {
-			return true, placed, left, err
-		}
-		_ = os.Chmod(dst, 0o666)
-		_ = os.Chmod(filepath.Dir(dst), 0o777)
-		score := 0
-		if eng != nil {
-			_, score = eng.Score(in, decision.Candidate{Title: j.Name, Size: st.Size()})
-		}
-		if x.Folder == "" {
-			s.DB.Exec(`UPDATE series SET folder = ? WHERE id = ?`, dir, sid)
-			x.Folder = dir
-		}
-		for _, m := range mine {
-			s.DB.Exec(`UPDATE episodes SET file_path = ?, file_quality = ?, file_score = ?, file_version = ?, file_size = ?, job_id = '', note = ? WHERE id = ?`,
-				dst, in.Quality.Name(), score, in.Quality.Version, st.Size()/int64(len(mine)), "imported "+filepath.Base(dst), m.ID)
 			done[m.ID] = true
 		}
 		placed = append(placed, dst)
@@ -1282,4 +1256,107 @@ func (s *Service) ImportJob(ctx context.Context, j job.Job) (own bool, placed []
 		left = append(left, "no video file in the download")
 	}
 	return true, placed, left, nil
+}
+
+func epItem(x *Series, eps []Episode) string {
+	if len(eps) == 0 {
+		return x.Title
+	}
+	t := fmt.Sprintf("%s S%02dE%02d", x.Title, eps[0].Season, eps[0].Number)
+	if len(eps) > 1 {
+		t += fmt.Sprintf("-E%02d", eps[len(eps)-1].Number)
+	}
+	return t
+}
+
+// place moves one file into the library for the episodes it holds, under the
+// naming settings (or, in a dry run, only says where it would go). Replaced
+// files are set aside, never deleted. msg is set when nothing was moved.
+func (s *Service) place(x *Series, c config.Category, mine []Episode, in parser.Info, src, release string, size int64) (dst, msg string, err error) {
+	folder, season, file := s.Name(*x, mine, in, strings.ToLower(filepath.Ext(src)))
+	dir := x.Folder
+	if dir == "" {
+		dir = filepath.Join(c.LibraryDir, folder)
+	}
+	dst = filepath.Join(dir, season, file)
+	item := epItem(x, mine)
+	if s.Cfg.Get().TV.DryRun {
+		msg := "dry run: would move " + filepath.Base(src) + " to " + dst
+		s.History.Add(history.Event{Kind: "episode", ItemID: mine[0].ID, Item: item, Event: history.DryRun, Release: release, Quality: in.Quality.Name(), Category: x.Category, Note: msg})
+		return "", msg, nil
+	}
+	if _, err := os.Stat(dst); err == nil && dst != mine[0].File {
+		return "", filepath.Base(dst) + " already exists and is not the episode's file", nil
+	}
+	for _, m := range mine {
+		if m.File == "" || m.File == dst {
+			continue
+		}
+		if _, err := os.Stat(m.File); err == nil {
+			aside := filepath.Join(c.LibraryDir, ".undermynd-replaced", s.Now().Format("2006-01-02"), filepath.Base(m.File))
+			if err := s.Move(m.File, aside); err != nil {
+				return "", "", fmt.Errorf("setting aside %s: %w", m.File, err)
+			}
+			s.History.Add(history.Event{Kind: "episode", ItemID: m.ID, Item: epItem(x, []Episode{m}), Event: history.Replaced, Release: filepath.Base(m.File), Quality: m.Quality, Category: x.Category, Note: "set aside in " + aside})
+		}
+	}
+	if err := s.Move(src, dst); err != nil {
+		return "", "", err
+	}
+	_ = os.Chmod(dst, 0o666)
+	_ = os.Chmod(filepath.Dir(dst), 0o777)
+	score := 0
+	if p, err := s.Profiles.ProfileByName(x.Profile); err == nil {
+		if eng, err := s.Profiles.Engine(p); err == nil {
+			_, score = eng.Score(in, decision.Candidate{Title: release, Size: size})
+		}
+	}
+	if x.Folder == "" {
+		s.DB.Exec(`UPDATE series SET folder = ? WHERE id = ?`, dir, x.ID)
+		x.Folder = dir
+	}
+	for _, m := range mine {
+		s.DB.Exec(`UPDATE episodes SET file_path = ?, file_quality = ?, file_score = ?, file_version = ?, file_size = ?, job_id = '', note = ? WHERE id = ?`,
+			dst, in.Quality.Name(), score, in.Quality.Version, size/int64(len(mine)), "imported "+filepath.Base(dst), m.ID)
+	}
+	s.History.Add(history.Event{Kind: "episode", ItemID: mine[0].ID, Item: item, Event: history.Imported, Release: release, Quality: in.Quality.Name(), Category: x.Category, Note: dst})
+	return dst, "", nil
+}
+
+// ImportFile imports a file by hand (manual import) for some episodes of a series.
+func (s *Service) ImportFile(seriesID int64, episodeIDs []int64, path string) (string, error) {
+	x, all, err := s.Get(seriesID)
+	if err != nil {
+		return "", err
+	}
+	c, ok := s.Cfg.Get().Category(x.Category)
+	if !ok || c.LibraryDir == "" {
+		return "", fmt.Errorf("%s has no TV library folder", x.Category)
+	}
+	st, err := os.Stat(path)
+	if err != nil || st.IsDir() || !s.IsVideo(path) {
+		return "", fmt.Errorf("%s is not a video file", path)
+	}
+	want := map[int64]bool{}
+	for _, id := range episodeIDs {
+		want[id] = true
+	}
+	var mine []Episode
+	for _, e := range all {
+		if want[e.ID] {
+			mine = append(mine, e)
+		}
+	}
+	if len(mine) == 0 {
+		return "", errors.New("pick the episodes the file holds")
+	}
+	in := parser.Parse(filepath.Base(path))
+	dst, msg, err := s.place(&x, c, mine, in, path, filepath.Base(path), st.Size())
+	if err != nil {
+		return "", err
+	}
+	if msg != "" {
+		return "", errors.New(msg)
+	}
+	return dst, nil
 }

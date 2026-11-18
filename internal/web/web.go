@@ -25,6 +25,7 @@ import (
 	"github.com/z354prance/undermynd/internal/auth"
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/decision"
+	"github.com/z354prance/undermynd/internal/history"
 	"github.com/z354prance/undermynd/internal/indexers"
 	"github.com/z354prance/undermynd/internal/job"
 	"github.com/z354prance/undermynd/internal/logbuf"
@@ -75,6 +76,8 @@ type Server struct {
 	Movies *movies.Service
 	// TV keeps native TV categories; nil without the database.
 	TV *tv.Service
+	// History records what happened to native movies and episodes; nil without the database.
+	History *history.Log
 	// Requests keeps requests in Undermynd (native mode); nil without the database.
 	Requests *requests.Service
 	RSS      interface {
@@ -178,6 +181,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/api/profiles", s.admin(s.profilesList))
 	mux.HandleFunc("GET /admin/api/movies", s.admin(s.moviesList))
 	mux.HandleFunc("GET /admin/api/tv", s.admin(s.tvList))
+	mux.HandleFunc("GET /admin/api/wanted", s.admin(s.wanted))
+	mux.HandleFunc("GET /admin/api/calendar", s.admin(s.calendar))
+	mux.HandleFunc("GET /admin/api/history", s.admin(s.historyList))
+	mux.HandleFunc("GET /admin/api/manual-import", s.admin(s.manualImportList))
+	mux.HandleFunc("POST /admin/api/manual-import", s.guard(s.admin(s.manualImport)))
 	mux.HandleFunc("GET /admin/api/tv/lookup", s.admin(s.tvLookup))
 	mux.HandleFunc("POST /admin/api/tv/add", s.guard(s.admin(s.tvAdd)))
 	mux.HandleFunc("POST /admin/api/tv/import", s.guard(s.admin(s.tvImport)))

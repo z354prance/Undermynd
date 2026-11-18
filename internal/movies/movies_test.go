@@ -17,6 +17,7 @@ import (
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/db"
 	"github.com/z354prance/undermynd/internal/decision"
+	"github.com/z354prance/undermynd/internal/history"
 	"github.com/z354prance/undermynd/internal/indexers"
 	"github.com/z354prance/undermynd/internal/job"
 	"github.com/z354prance/undermynd/internal/movies"
@@ -90,7 +91,7 @@ func TestNativeMovies(t *testing.T) {
 		{Title: "Heat.1995.1080p.WEB-DL.H.264-OTHER", Size: 6 * gb, Indexer: "I", IndexerID: 1, Protocol: "usenet", Published: time.Now().Add(-48 * time.Hour)},
 		{Title: "Heat.1995.720p.BluRay.x264-LOW", Size: 4 * gb, Indexer: "I", IndexerID: 1, Protocol: "usenet"},
 	}}
-	s := &movies.Service{DB: h, Catalog: catalog.New(h), Cfg: cfg, Profiles: &decision.Store{DB: h}, Indexers: idx, Jobs: jobs,
+	s := &movies.Service{History: &history.Log{DB: h}, DB: h, Catalog: catalog.New(h), Cfg: cfg, Profiles: &decision.Store{DB: h}, Indexers: idx, Jobs: jobs,
 		Move: pipeline.MoveFile, IsVideo: pipeline.IsVideo, Log: log.New(io.Discard, "", 0), Now: time.Now,
 		Arr: func(string) *arr.Client { return arr.New("radarr", srv.URL, "k") }}
 	ctx := context.Background()
@@ -156,5 +157,27 @@ func TestNativeMovies(t *testing.T) {
 	}
 	if heat, _ = s.Get(heat.ID); heat.Status != "cutoff unmet" || heat.Quality != "WEBDL-1080p" || heat.File != want {
 		t.Fatalf("after import: %+v", heat)
+	}
+
+	// A Bluray imported by hand replaces it; the WEBDL file is set aside.
+	hand := filepath.Join(dir, "complete", "Heat.1995.1080p.BluRay.x264-HAND.mkv")
+	os.WriteFile(hand, make([]byte, 4096), 0o644)
+	dst, err := s.ImportFile(heat.ID, hand)
+	if err != nil || dst != filepath.Join(lib, "Heat (1995)", "Heat (1995) Bluray-1080p.mkv") {
+		t.Fatalf("manual import: %s %v", dst, err)
+	}
+	if _, err := os.Stat(want); err == nil {
+		t.Fatal("the replaced file is still in the movie folder")
+	}
+	if heat, _ = s.Get(heat.ID); heat.Status != "have" {
+		t.Fatalf("after manual import: %+v", heat)
+	}
+	events, _ := s.History.List("movie", heat.ID, 20)
+	kinds := map[string]int{}
+	for _, e := range events {
+		kinds[e.Event]++
+	}
+	if kinds["grabbed"] != 2 || kinds["failed"] != 1 || kinds["dry run"] != 1 || kinds["imported"] != 2 || kinds["replaced"] != 1 {
+		t.Fatalf("history: %v", kinds)
 	}
 }
