@@ -22,7 +22,7 @@ import (
 // hosts, and a copy is kept on disk for 30 days.
 
 var imageHosts = []string{"image.tmdb.org", "artworks.thetvdb.com", "thetvdb.com", "assets.fanart.tv", "coverartarchive.org",
-	"archive.org", "theaudiodb.com", "lastfm.freetls.fastly.net", "s4.anilist.co"}
+	"archive.org", "theaudiodb.com", "lastfm.freetls.fastly.net", "s4.anilist.co", "imagecache.lidarr.audio"}
 
 func imageHostOK(h string) bool {
 	h = strings.ToLower(h)
@@ -61,7 +61,13 @@ func (s *Server) image(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad link", http.StatusForbidden)
 		return
 	}
-	sum := sha256.Sum256([]byte(remote))
+	s.serveCachedImage(w, r, remote, func(ctx context.Context) ([]byte, string, error) { return fetchImage(ctx, remote) })
+}
+
+// serveCachedImage serves the image kept under key from the disk cache, or
+// fetches it (and keeps a copy for 30 days).
+func (s *Server) serveCachedImage(w http.ResponseWriter, r *http.Request, key string, fetch func(context.Context) ([]byte, string, error)) {
+	sum := sha256.Sum256([]byte(key))
 	name := hex.EncodeToString(sum[:])
 	dir := s.imageCacheDir()
 	path := filepath.Join(dir, name[:2], name)
@@ -77,7 +83,7 @@ func (s *Server) image(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	data, ct, err := fetchImage(ctx, remote)
+	data, ct, err := fetch(ctx)
 	if err != nil {
 		http.Error(w, "image not available", http.StatusBadGateway)
 		return
@@ -108,8 +114,13 @@ func fetchImage(ctx context.Context, remote string) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
+	return readImage(imageClient, req)
+}
+
+// readImage sends req and reads an image answer (no SVG, at most 8 MB).
+func readImage(c *http.Client, req *http.Request) ([]byte, string, error) {
 	req.Header.Set("User-Agent", "HyveMynd")
-	resp, err := imageClient.Do(req)
+	resp, err := c.Do(req)
 	if err != nil {
 		return nil, "", err
 	}
