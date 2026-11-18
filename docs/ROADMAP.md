@@ -1,10 +1,10 @@
-# Roadmap: folding the arr stack into Undermynd (v41, Nov 17, 2026)
+# Roadmap: folding the arr stack into Undermynd (v42, Nov 18, 2026)
 
 Goal: one app that does what Radarr, Sonarr, Lidarr, Prowlarr, Seerr, Houndarr and Recyclarr do today, so nothing else has to run or be configured. It will be renamed HyveMynd at the end.
 
 How to use this doc: the **milestones table** is the plan. Each milestone is one or a few pull requests, has a clear exit test, and lists what it depends on. Decisions and gates explain why the order is what it is. This file is kept in the repo (`docs/ROADMAP.md`) and in the Undermynd project (`design/roadmap-arr-consolidation.md`) with the same content. Supporting project docs: `design/metadata-sources.md`, `design/anime-pipeline.md`; in the repo: `docs/RENAME.md`.
 
-v13 restructured the plan into milestones. v14 to v17 answered every gate that blocks the start. v18 recorded Stage A progress. v19 recorded B1 merged and added B0 (Go upgrade). v20 closed A1. v21 closed B1 and B0. v22 recorded B2 merged. v23 recorded the B3 spike results. v24 recorded B4 (metadata layer) merged. v25 recorded C1 built. v26 recorded the C1 fixes and C2 built. v27 recorded that anime stays on the simple importer. v28 recorded C3 built. v29 recorded C4 built. v30 recorded E1 and F1 built. v31 recorded F2 built. v32 recorded F3 built. v33 recorded F4 built. v34 recorded F5 built. v35 recorded F6 built: Stage F is complete in code. v36 recorded G-1 built. v37 recorded G-2 built: Stage G is complete in code. v38 recorded H1 built. v39 recorded H2 built: Stage H is complete in code. v40 recorded I1 built. v41 records I2 built in code: the backend roadmap is complete; the design pass is next.
+v13 restructured the plan into milestones. v14 to v17 answered every gate that blocks the start. v18 recorded Stage A progress. v19 recorded B1 merged and added B0 (Go upgrade). v20 closed A1. v21 closed B1 and B0. v22 recorded B2 merged. v23 recorded the B3 spike results. v24 recorded B4 (metadata layer) merged. v25 recorded C1 built. v26 recorded the C1 fixes and C2 built. v27 recorded that anime stays on the simple importer. v28 recorded C3 built. v29 recorded C4 built. v30 recorded E1 and F1 built. v31 recorded F2 built. v32 recorded F3 built. v33 recorded F4 built. v34 recorded F5 built. v35 recorded F6 built: Stage F is complete in code. v36 recorded G-1 built. v37 recorded G-2 built: Stage G is complete in code. v38 recorded H1 built. v39 recorded H2 built: Stage H is complete in code. v40 recorded I1 built. v41 records I2 built in code: the backend roadmap is complete; the design pass is next. v42 records design parts 1 to 4 merged.
 
 ---
 
@@ -163,7 +163,17 @@ Recommended sequence for one builder: C3 → C4 → B5 → D1 → E1 → D2 → 
 
 ## 7. Design track
 
-The redesign doc says Settings, Library and Requests/Access are not designed yet. Each UI milestone needs its screen first, in the existing htop style:
+The design pass follows the pinned designs: `design/pinned-v2-hyvemynd-dashboard.md`, `-admin.md`, `-phone.md`, and `design/pinned-v3-posters-and-requests.md` (library posters and Seerr-style requests).
+
+| Part | What | Status |
+|---|---|---|
+| 1 | Theme (graphite, Barlow, IBM Plex Mono, self-hosted), icon rail with five sections, logo and favicon | **Merged** (#45) |
+| 2 | Library as poster grids with the name below; movie, show, artist and album pages; art through the `/img` proxy | **Merged** (#46) |
+| 3 | Request media, Seerr-style in the dropdown: Discover rows, poster search, title page with cast, trailer and season picker | **Merged** (#47) |
+| 4 | Public dashboard: Now Playing, On the way with segmented circles, Recently added, storage ring, Donate, Need access; old page at `/classic` | **Merged** (#47) |
+| 5 | Remaining admin pages: Overview health and Needs you, Requests cards, Calendar week grid, Settings cards, Categories under Connections, Notifications and API under Settings, sign-in card, phone layouts | Next |
+
+The earlier plan below listed screens each UI milestone needed; parts 1 to 5 cover them.
 
 | Screen | Needed by |
 |---|---|
