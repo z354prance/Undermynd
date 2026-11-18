@@ -96,3 +96,26 @@ func TestCleanQuery(t *testing.T) {
 		}
 	}
 }
+
+func TestPickGaps(t *testing.T) {
+	now := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+	st := Settings{Groups: []string{"Judas", "SubsPlease"}, Quality: "1080p"}
+	files := disk([2]int{1, 1}, [2]int{1, 2}, [2]int{1, 3}, [2]int{1, 5}, [2]int{1, 7}, [2]int{1, 8})
+	gaps := GapKeys(Summarize(files))
+	if !gaps[key{0, 4}] || !gaps[key{0, 6}] || len(gaps) != 2 {
+		t.Fatalf("gaps %v", gaps)
+	}
+	failed := rel("Judas", 6, "1080p", time.Hour, now)
+	failed.Failed = true
+	seen := []Seen{
+		rel("SubsPlease", 4, "1080p", time.Hour, now), // old gaps do not wait for Judas
+		rel("Judas", 5, "1080p", time.Hour, now),      // on disk
+		failed,
+		rel("SubsPlease", 6, "720p", time.Hour, now), // wrong quality
+		rel("Erai-raws", 6, "1080p", time.Hour, now), // not in the order
+	}
+	got := PickGaps(st, files, seen, gaps)
+	if len(got) != 1 || got[0].Episode != 4 || got[0].Group != "SubsPlease" {
+		t.Fatalf("got %+v", got)
+	}
+}

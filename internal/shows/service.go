@@ -509,6 +509,14 @@ func (s *Service) Check(ctx context.Context, folder string) ([]string, error) {
 		s.Log.Printf("shows: %s: grabbed %s", sh.Name, p.Title)
 		started = append(started, p.Title)
 	}
+	if sh.FillGaps && sh.Summary.Gaps > 0 && s.Now().Sub(sh.GapsChecked) >= 24*time.Hour {
+		filled, err := s.fillGaps(ctx, sh, files, res)
+		if err != nil {
+			s.Log.Printf("shows: %s: gaps: %v", sh.Name, err)
+		}
+		_ = s.Store.SetGapsChecked(folder)
+		started = append(started, filled...)
+	}
 	s.forget()
 	return started, nil
 }
@@ -632,38 +640,97 @@ func (s *Service) Grab(ctx context.Context, folder, title string) error {
 
 // SearchGaps grabs the best release for each missing number in a folder.
 func (s *Service) SearchGaps(ctx context.Context, folder string) ([]string, error) {
+	s.busy.Lock()
+	defer s.busy.Unlock()
 	sh, files, err := s.Get(folder)
 	if err != nil {
 		return nil, err
 	}
-	res, err := s.search(ctx, sh)
-	if err != nil {
-		return nil, err
+	return s.fillGaps(ctx, sh, files, nil)
+}
+
+// maxGapQueries caps how many single-episode searches one gap fill makes.
+const maxGapQueries = 4
+
+// fillGaps grabs releases for a folder's gaps: from what a show search finds
+// (have, when the caller already searched), then by searching single episodes
+// that are still missing. A followed show remembers what it grabbed.
+func (s *Service) fillGaps(ctx context.Context, sh Show, files []DiskFile, have []Release) ([]string, error) {
+	gaps := GapKeys(sh.Summary)
+	if len(gaps) == 0 {
+		return nil, nil
 	}
 	st := sh.Settings
 	if len(st.Groups) == 0 {
 		st.Groups = s.DefaultGroups(sh)
 	}
-	st.FromEpisode = 0
-	missing := map[key]bool{}
-	for _, ss := range sh.Summary.Seasons {
-		for _, g := range ss.Gaps {
-			missing[keyOf(ss.Season, ss.Season > 1, g)] = true
+	if have == nil {
+		var err error
+		if have, err = s.search(ctx, sh); err != nil {
+			return nil, err
 		}
 	}
-	var seen []Seen
-	for _, r := range res {
-		sn := seenOf(r)
-		if missing[keyOf(sn.Season, sn.Marked, sn.Episode)] {
-			sn.First = time.Time{} // gaps take the best group there is now
-			seen = append(seen, sn)
+	found := map[key]bool{}
+	byTitle := map[string]Release{}
+	for _, r := range have {
+		byTitle[r.Title] = r
+		found[keyOf(r.Parsed.Season, r.Parsed.Marked, r.Parsed.Episode)] = true
+	}
+	// Episodes the show search did not reach: search them one by one.
+	var keys []key
+	for k := range gaps {
+		if !found[k] {
+			keys = append(keys, k)
+		}
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].season != keys[j].season {
+			return keys[i].season < keys[j].season
+		}
+		return keys[i].episode < keys[j].episode
+	})
+	for i, k := range keys {
+		if i >= maxGapQueries || ctx.Err() != nil {
+			break
+		}
+		q := fmt.Sprintf("%s %02d", sh.Name, k.episode)
+		if k.season > 1 {
+			q = fmt.Sprintf("%s S%02dE%02d", sh.Name, k.season, k.episode)
+		}
+		res, err := s.Nyaa.Search(ctx, q)
+		if err != nil {
+			continue
+		}
+		for _, r := range res {
+			if r.OK && matchesShow(sh, r.Parsed) {
+				byTitle[r.Title] = r
+			}
+		}
+	}
+	var list []Seen
+	for _, r := range byTitle {
+		list = append(list, seenOf(r))
+	}
+	seen := list
+	if sh.Followed {
+		if err := s.Store.AddSeen(sh.Folder, list); err != nil {
+			return nil, err
+		}
+		var err error
+		if seen, err = s.Store.SeenFor(sh.Folder); err != nil {
+			return nil, err
 		}
 	}
 	var started []string
-	for _, p := range Pick(st, files, seen, s.Now(), 0) {
+	for _, p := range PickGaps(st, files, seen, gaps) {
 		if err := s.submit(ctx, sh, p.Title, p.Link); err != nil {
-			return started, err
+			s.Log.Printf("shows: %s: grabbing %s: %v", sh.Name, p.Title, err)
+			continue
 		}
+		if sh.Followed {
+			_ = s.Store.MarkGrabbed(sh.Folder, p.Title)
+		}
+		s.Log.Printf("shows: %s: filled gap with %s", sh.Name, p.Title)
 		started = append(started, p.Title)
 	}
 	return started, nil
