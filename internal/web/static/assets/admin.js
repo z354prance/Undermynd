@@ -409,6 +409,7 @@
     var c=el('div','a-content');w.appendChild(c);c.appendChild(msg);var pBox=el('div','a-tw'),fBox=el('div','a-tw');
     c.appendChild(el('h3','a-dim','Quality profiles'));c.appendChild(pBox);c.appendChild(el('h3','a-dim','Custom formats'));c.appendChild(fBox);
     var tryBox=el('div');c.appendChild(el('h3','a-dim','Try a profile'));c.appendChild(tryBox);
+    var shBox=el('div');c.appendChild(el('h3','a-dim','Shadow mode'));c.appendChild(shBox);shadowPanel(shBox,msg);
     api('GET','/profiles').then(function(d){data=d;
       var t=el('table','a-t'),hr=el('tr');['Name','Allowed','Cutoff','Upgrades','Formats scored','From',''].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tb=el('tbody');
       d.profiles.forEach(function(p){var tr=el('tr');tr.appendChild(el('td','',p.name));var al=el('td');p.items.filter(function(i){return i.allowed}).forEach(function(i){al.appendChild(aLbl(i.name))});tr.appendChild(al);tr.appendChild(el('td','',p.cutoff||''));tr.appendChild(el('td','a-dim',p.upgradesAllowed?'yes':'no'));tr.appendChild(el('td','a-dim',String(Object.keys(p.scores||{}).length)));tr.appendChild(el('td','a-dim',p.source||''));
@@ -420,6 +421,21 @@
           var a=el('td','a-acts');a.appendChild(aIcon('edit','edit '+f.name,function(){fmtEdit(f,function(){app()})}));a.appendChild(aIcon('x','delete '+f.name,function(){if(confirm('Delete the custom format '+f.name+'? Its scores go too.'))api('DELETE','/formats/'+f.id).then(function(){app()}).catch(function(e){setMsg(msg,e.message,true)})}));tr.appendChild(a);fb.appendChild(tr)});ft.appendChild(fb);fBox.appendChild(ft)}
       profTry(tryBox,d,msg)}).catch(function(e){if(e.status===401)fail(e);else setMsg(msg,e.message,true)});
   }
+  function shadowPanel(box,msg){api('GET','/shadow').then(function(d){var st=d.settings,r=d.report;
+    box.appendChild(el('div','a-dim a-small','For every grab Sonarr or Radarr makes, Undermynd searches its own indexers for the same movie or episode and decides with the profile of the same name (import the profiles first). Nothing is grabbed. Checked every 10 minutes.'));
+    var row=el('div','a-row');var l=el('label','a-check');var on=el('input');on.type='checkbox';on.checked=!!st.enabled;l.appendChild(on);l.appendChild(el('span','',' on'));row.appendChild(l);
+    var ph=el('input','a-input');ph.type='number';ph.min='0';ph.max='500';ph.style.maxWidth='110px';ph.value=String(st.perHour||20);ph.setAttribute('aria-label','searches an hour');row.appendChild(el('span','a-dim','searches an hour'));row.appendChild(ph);
+    var sv=el('button','a-btn','Save');sv.type='button';sv.onclick=function(){api('PUT','/shadow/settings',{enabled:on.checked,perHour:+ph.value||0}).then(function(){setMsg(msg,'Shadow mode '+(on.checked?'on':'off')+'.')}).catch(function(e){setMsg(msg,e.message,true)})};row.appendChild(sv);
+    var ck=el('button','a-btn','Check now');ck.type='button';ck.onclick=function(){ck.disabled=true;setMsg(msg,'Comparing new grabs…');api('POST','/shadow/check').then(function(x){ck.disabled=false;setMsg(msg,'Compared '+x.compared+' new grab(s).');app()}).catch(function(e){ck.disabled=false;setMsg(msg,e.message,true)})};row.appendChild(ck);box.appendChild(row);
+    if(!r.total){box.appendChild(el('div','a-empty','No grabs compared in the last 14 days.'));return}
+    var names={same:'same release',equal:'as good',better:'Undermynd better',worse:'arr better',rejected:'Undermynd would refuse the arr\'s pick',none:'nothing found',skipped:'not compared'};
+    box.appendChild(el('div','','Last 14 days: agrees on '+r.agree+' of '+r.compared+' compared grabs'+(r.compared?' ('+(r.rate*100).toFixed(1)+'%)':'')+'. '+Object.keys(r.byVerdict).map(function(k){return r.byVerdict[k]+' '+(names[k]||k)}).join(', ')+'.'));
+    var t=el('table','a-t'),hr=el('tr');['When','For','Arr grabbed','Undermynd would pick','Verdict'].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tb=el('tbody');
+    r.rows.forEach(function(x){var tr=el('tr');tr.appendChild(el('td','a-dim',ago(x.at)));var f=el('td','',x.item);f.appendChild(el('div','a-dim a-small',x.category+(x.profile?' · '+x.profile:'')));tr.appendChild(f);
+      var a=el('td','a-mono a-small',x.arrTitle);a.appendChild(el('div','a-dim',x.arrQuality+' · score '+x.arrScore+(x.arrIndexer?' · '+x.arrIndexer:'')));tr.appendChild(a);
+      var o=el('td','a-mono a-small',x.ourTitle||'—');if(x.ourTitle)o.appendChild(el('div','a-dim',x.ourQuality+' · score '+x.ourScore));tr.appendChild(o);
+      var v=el('td','a-small'+(x.verdict==='same'||x.verdict==='equal'?' a-ok':x.verdict==='skipped'?' a-dim':' a-warn'),names[x.verdict]||x.verdict);if(x.note)v.appendChild(el('div','a-dim',x.note));tr.appendChild(v);tb.appendChild(tr)});
+    t.appendChild(tb);var tw=el('div','a-tw');tw.appendChild(t);box.appendChild(tw)}).catch(function(e){setMsg(msg,e.message,true)})}
   function profTry(box,d,msg){var r1=el('div','a-row');var ps=el('select','a-input');ps.style.maxWidth='220px';ps.setAttribute('aria-label','profile');d.profiles.forEach(function(p){var o=new Option(p.name,p.id);o.selected=pView.profile==p.id;ps.appendChild(o)});
     var kind=el('select','a-input');kind.style.maxWidth='120px';kind.setAttribute('aria-label','movie or episode');[['movie','movie'],['tv','episode']].forEach(function(o){var op=new Option(o[1],o[0]);op.selected=(pView.kind||'movie')===o[0];kind.appendChild(op)});
     var ti=el('input','a-input');ti.placeholder='Title';ti.setAttribute('aria-label','title');ti.value=pView.title||'';var yr=el('input','a-input');yr.placeholder='Year';yr.style.maxWidth='90px';yr.setAttribute('aria-label','year');yr.value=pView.year||'';

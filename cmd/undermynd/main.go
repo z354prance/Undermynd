@@ -33,6 +33,7 @@ import (
 	"github.com/z354prance/undermynd/internal/requests"
 	"github.com/z354prance/undermynd/internal/rss"
 	"github.com/z354prance/undermynd/internal/sabapi"
+	"github.com/z354prance/undermynd/internal/shadow"
 	"github.com/z354prance/undermynd/internal/shows"
 	"github.com/z354prance/undermynd/internal/state"
 	"github.com/z354prance/undermynd/internal/storage"
@@ -243,6 +244,12 @@ func main() {
 		}()
 		site.Indexers = &indexers.Service{DB: dbh, HTTP: &http.Client{Timeout: 60 * time.Second}, Engine: eng, Log: logger, Now: time.Now, Gap: 2 * time.Second}
 		site.Profiles = &decision.Store{DB: dbh}
+		site.Shadow = &shadow.Service{DB: dbh, Cfg: cfg, Profiles: site.Profiles, Search: site.Indexers, Log: logger, Now: time.Now,
+			Arr: func(cat string) *arr.Client {
+				c, _ := cfg.Get().Category(cat)
+				return arr.New(c.Kind, c.ArrURL, string(c.ArrAPIKey))
+			}}
+		go site.Shadow.Run(ctx)
 	}
 	go rp.Run(ctx)
 	go watch.New(cfg, eng, logger).Run(ctx)

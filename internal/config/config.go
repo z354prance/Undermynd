@@ -200,6 +200,15 @@ type Watch struct {
 	Enabled  bool   `json:"enabled"`
 }
 
+// Shadow mode (roadmap F3): for every grab Sonarr or Radarr makes, Undermynd
+// searches its own indexers and records what it would have picked.
+type Shadow struct {
+	Enabled bool `json:"enabled"`
+	// PerHour caps the searches shadow mode makes, to spare the indexers.
+	// 0 means 20.
+	PerHour int `json:"perHour,omitempty"`
+}
+
 type Settings struct {
 	Watches      []Watch    `json:"watches"`
 	IntakePaused bool       `json:"intakePaused"` // new grabs are accepted but held until resumed
@@ -215,6 +224,7 @@ type Settings struct {
 	Categories   []Category `json:"categories"`
 	QBit         QBit       `json:"qbit"`
 	Metadata     Metadata   `json:"metadata"`
+	Shadow       Shadow     `json:"shadow"`
 
 	// Login the arrs use against the fake client API.
 	ClientUser     string        `json:"clientUser"`
