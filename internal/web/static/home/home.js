@@ -35,6 +35,11 @@
     var p = function (a) { return (30 + r * Math.sin(a)).toFixed(2) + " " + (30 - r * Math.cos(a)).toFixed(2); };
     return "M" + p(a0) + " A" + r + " " + r + " 0 0 1 " + p(a1);
   }
+  // An arc of a circle from deg0 to deg1 (clockwise from the top).
+  function ringArc(cx, cy, r, deg0, deg1) {
+    var d = Math.PI / 180, p = function (a) { return (cx + r * Math.sin(a * d)).toFixed(2) + " " + (cy - r * Math.cos(a * d)).toFixed(2); };
+    return "M" + p(deg0) + " A" + r + " " + r + " 0 " + (deg1 - deg0 > 180 ? 1 : 0) + " 1 " + p(deg1);
+  }
   // Animations keep their phase across redraws (the lists redraw every few
   // seconds), so a pulse or blink never jumps back to its start.
   function phase(node, ms) { node.style.animationDelay = -(Date.now() % ms) + "ms"; return node; }
@@ -48,16 +53,19 @@
     STAGES.forEach(function (st, i) {
       if (i < at || state === "done") { arc(i, "dn"); return; }
       if (i > at) { arc(i, "trk"); return; }
-      if (state === "working") {
-        // Filled part in the stage colour, and a streak racing through the
-        // empty part ahead of it.
-        arc(i, "trk");
-        var f = Math.min(1, pct / 100);
-        if (pct > 0) { arc(i, "act k-" + st, 0, f); txt = String(pct); }
-        if (f < 1) { var r = arc(i, "race k-" + st, f, 1); r.setAttribute("pathLength", "100"); phase(r, 1400); }
+      if (state === "working" || state === "waiting") {
+        // Only the current section moves: tinted in its stage colour with
+        // thin dashes flowing along it (slower while waiting in line).
+        arc(i, "trk"); arc(i, "cur k-" + st);
+        var fl = arc(i, "flow k-" + st + (state === "waiting" ? " slow" : "")); fl.setAttribute("stroke-width", 2.6);
+        phase(fl, state === "waiting" ? 2400 : 1200);
+        if (state === "working") {
+          // The section's own progress: a thin ring on the inner edge.
+          s.appendChild(svgEl("circle", { cx: 30, cy: 30, r: 15, fill: "none", class: "in-trk", "stroke-width": 2.2 }));
+          if (pct > 0) { var ip = svgEl("path", { d: ringArc(30, 30, 15, 0, Math.min(359.9, pct * 3.6)), fill: "none", "stroke-width": 2.2, "stroke-linecap": "round" }); ip.setAttribute("class", "in k-" + st); s.appendChild(ip); txt = String(pct); }
+        }
       } else if (state === "stalled") { phase(arc(i, "stall"), 1100); txt = "!"; tcls = "rt y"; }
       else if (state === "failed") { phase(arc(i, "fail"), 1600); txt = "×"; tcls = "rt r"; }
-      else { arc(i, "trk"); var wr = arc(i, "race slow k-" + st); wr.setAttribute("pathLength", "100"); phase(wr, 2800); }
     });
     var t = svgEl("text", { x: 30, y: 36, "text-anchor": "middle", class: tcls }); t.textContent = txt; s.appendChild(t);
     return s;
@@ -98,22 +106,21 @@
         var b = el("button", "det", "Details"); b.type = "button"; b.onclick = function () { playDetails(x); }; t.appendChild(b);
         c.appendChild(t);
         var frac = x.duration_ms ? Math.min(1, (x.progress_ms || 0) / x.duration_ms) : 0;
-        // The pinned dashboard's ring: track, progress in the media colour, a
-        // streak racing round the rest, and the play mode in the middle
-        // (green straight arrow, orange two-way arrows).
+        // The pinned dashboard's ring: track, progress in the media colour,
+        // a flowing dashed line round the rest, and the play mode in the
+        // middle (green straight arrow, orange two-way arrows).
         var pc = svgEl("svg", { viewBox: "0 0 60 60", width: 48, height: 48, class: "pc", role: "img", "aria-label": Math.round(frac * 100) + "% watched, " + (x.is_transcode ? "transcoding" : "direct play") });
         var tt = svgEl("title", {}); tt.textContent = Math.round(frac * 100) + "% watched, " + (x.is_transcode ? "transcoding" : "direct play"); pc.appendChild(tt);
         var R = 22, CC = 2 * Math.PI * R;
         pc.appendChild(svgEl("circle", { cx: 30, cy: 30, r: R, fill: "none", stroke: "#3a3d41", "stroke-width": 6 }));
         pc.appendChild(svgEl("circle", { cx: 30, cy: 30, r: R, fill: "none", stroke: mediaColor(kind), "stroke-width": 6, "stroke-dasharray": (CC * frac).toFixed(1) + " " + CC.toFixed(1), transform: "rotate(-90 30 30)" }));
-        // A streak races through the part still to watch, from the playhead
-        // round to the top.
+        // The old wire's flow through the part still to watch, and a white
+        // playhead at the edge of what has been watched.
         if (frac < 0.995) {
-          var a0 = Math.max(frac, 0.002) * 2 * Math.PI, a1 = 2 * Math.PI - 0.0001;
-          var pt = function (a) { return (30 + R * Math.sin(a)).toFixed(2) + " " + (30 - R * Math.cos(a)).toFixed(2); };
-          var rc = svgEl("path", { d: "M" + pt(a0) + " A" + R + " " + R + " 0 " + (a1 - a0 > Math.PI ? 1 : 0) + " 1 " + pt(a1), fill: "none", stroke: mediaColor(kind), "stroke-width": 6, pathLength: 100, class: "race" });
-          phase(rc, 2200); pc.appendChild(rc);
+          var fl = svgEl("path", { d: ringArc(30, 30, R, Math.max(frac, 0.003) * 360, 359.9), fill: "none", stroke: mediaColor(kind), "stroke-width": 2.6, class: "flow" });
+          phase(fl, 1200); pc.appendChild(fl);
         }
+        var ang = frac * 2 * Math.PI; pc.appendChild(svgEl("circle", { cx: (30 + R * Math.sin(ang)).toFixed(2), cy: (30 - R * Math.cos(ang)).toFixed(2), r: 3.2, class: "head" }));
         var gi = svgEl("g", { transform: "translate(30 30) scale(.86) translate(-12 -12)", fill: "none", stroke: x.is_transcode ? "#f0a35e" : "#3fb97a", "stroke-width": 2.3, "stroke-linecap": "round", "stroke-linejoin": "round" }); gi.innerHTML = x.is_transcode ? ICON.swap : ICON.straight; pc.appendChild(gi);
         c.appendChild(pc); box.appendChild(c);
       });
