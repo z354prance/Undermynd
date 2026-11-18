@@ -39,6 +39,7 @@ import (
 	"github.com/z354prance/undermynd/internal/shows"
 	"github.com/z354prance/undermynd/internal/storage"
 	"github.com/z354prance/undermynd/internal/store"
+	"github.com/z354prance/undermynd/internal/tv"
 )
 
 //go:embed static
@@ -72,6 +73,8 @@ type Server struct {
 	Shadow *shadow.Service
 	// Movies keeps native movie categories; nil without the database.
 	Movies *movies.Service
+	// TV keeps native TV categories; nil without the database.
+	TV *tv.Service
 	// Requests keeps requests in Undermynd (native mode); nil without the database.
 	Requests *requests.Service
 	RSS      interface {
@@ -174,6 +177,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/api/parser", s.admin(s.parserTry))
 	mux.HandleFunc("GET /admin/api/profiles", s.admin(s.profilesList))
 	mux.HandleFunc("GET /admin/api/movies", s.admin(s.moviesList))
+	mux.HandleFunc("GET /admin/api/tv", s.admin(s.tvList))
+	mux.HandleFunc("GET /admin/api/tv/lookup", s.admin(s.tvLookup))
+	mux.HandleFunc("POST /admin/api/tv/add", s.guard(s.admin(s.tvAdd)))
+	mux.HandleFunc("POST /admin/api/tv/import", s.guard(s.admin(s.tvImport)))
+	mux.HandleFunc("PUT /admin/api/tv/settings", s.guard(s.admin(s.tvSettings)))
+	mux.HandleFunc("POST /admin/api/tv/search-wanted", s.guard(s.admin(s.tvSearchWanted)))
+	mux.HandleFunc("GET /admin/api/tv/{id}", s.admin(s.tvGet))
+	mux.HandleFunc("PUT /admin/api/tv/{id}", s.guard(s.admin(s.tvEdit)))
+	mux.HandleFunc("DELETE /admin/api/tv/{id}", s.guard(s.admin(s.tvDelete)))
+	mux.HandleFunc("PUT /admin/api/tv/{id}/monitor", s.guard(s.admin(s.tvMonitor)))
+	mux.HandleFunc("POST /admin/api/tv/{id}/search", s.guard(s.admin(s.tvSearch)))
+	mux.HandleFunc("POST /admin/api/tv/{id}/grab", s.guard(s.admin(s.tvGrab)))
 	mux.HandleFunc("GET /admin/api/movies/lookup", s.admin(s.moviesLookup))
 	mux.HandleFunc("POST /admin/api/movies/add", s.guard(s.admin(s.moviesAdd)))
 	mux.HandleFunc("POST /admin/api/movies/import", s.guard(s.admin(s.moviesImport)))
