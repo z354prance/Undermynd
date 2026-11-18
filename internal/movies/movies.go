@@ -22,6 +22,7 @@ import (
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/db"
 	"github.com/z354prance/undermynd/internal/decision"
+	"github.com/z354prance/undermynd/internal/history"
 	"github.com/z354prance/undermynd/internal/indexers"
 	"github.com/z354prance/undermynd/internal/job"
 	"github.com/z354prance/undermynd/internal/library"
@@ -50,6 +51,7 @@ type Service struct {
 	Arr      func(category string) *arr.Client
 	Move     func(src, dst string) error
 	IsVideo  func(path string) bool
+	History  *history.Log
 	Log      *log.Logger
 	Now      func() time.Time
 }
@@ -380,6 +382,9 @@ func (s *Service) Follow() {
 			s.DB.Exec(`UPDATE movies SET job_id = '' WHERE id = ?`, p.id)
 		case j.State == job.Failed:
 			s.block(p.id, j.Name, "download failed: "+j.Reason)
+			if m, err := s.Get(p.id); err == nil {
+				s.History.Add(history.Event{Kind: "movie", ItemID: p.id, Item: fmt.Sprintf("%s (%d)", m.Title, m.Year), Event: history.Failed, Release: j.Name, Category: m.Category, Note: j.Reason})
+			}
 			s.DB.Exec(`UPDATE movies SET job_id = '', searched = '', note = ? WHERE id = ?`, "download failed: "+j.Reason, p.id)
 		case j.State == job.Cleaned || j.State == job.Imported:
 			s.DB.Exec(`UPDATE movies SET job_id = '' WHERE id = ? AND job_id = ?`, p.id, p.job)
@@ -548,6 +553,8 @@ func (s *Service) GrabResult(ctx context.Context, id int64, r indexers.Result) (
 		return j, err
 	}
 	s.DB.Exec(`UPDATE movies SET job_id = ?, note = ? WHERE id = ?`, j.ID, "grabbed "+r.Title, id)
+	s.History.Add(history.Event{Kind: "movie", ItemID: id, Item: fmt.Sprintf("%s (%d)", m.Title, m.Year), Event: history.Grabbed, Release: r.Title,
+		Quality: parser.Parse(r.Title).Quality.Name(), Category: m.Category, Note: r.Indexer})
 	s.Log.Printf("movies: grabbed %s for %s", r.Title, m.Title)
 	return j, nil
 }
@@ -610,50 +617,96 @@ func (s *Service) ImportJob(ctx context.Context, j job.Job) (own bool, placed []
 	if src == "" {
 		return true, nil, []string{"no video file in the download"}, nil
 	}
-	in := parser.Parse(j.Name)
-	if in.Title == "" {
-		in = parser.Parse(filepath.Base(src))
+	dst, msg, err := s.place(m, c, src, j.Name, size)
+	if err != nil {
+		return true, nil, nil, err
+	}
+	if msg != "" {
+		return true, nil, []string{msg}, nil
+	}
+	return true, []string{dst}, nil, nil
+}
+
+// place moves a movie's file into the library under the naming settings (or,
+// in a dry run, only says where it would go). The file it replaces is set
+// aside, never deleted. msg is set when nothing was moved.
+func (s *Service) place(m Movie, c config.Category, src, release string, size int64) (dst, msg string, err error) {
+	in := parser.Parse(release)
+	if in.Title == "" || in.Quality.Source == parser.SourceUnknown {
+		if f := parser.Parse(filepath.Base(src)); f.Quality.Source != parser.SourceUnknown || in.Title == "" {
+			in = f
+		}
 	}
 	folder, file := s.Name(m, in, strings.ToLower(filepath.Ext(src)))
 	dir := m.Folder
 	if dir == "" {
 		dir = filepath.Join(c.LibraryDir, folder)
 	}
-	dst := filepath.Join(dir, file)
+	dst = filepath.Join(dir, file)
+	item := m.Title
+	if m.Year > 0 {
+		item += fmt.Sprintf(" (%d)", m.Year)
+	}
 	if s.Cfg.Get().Movies.DryRun {
 		msg := "dry run: would move " + filepath.Base(src) + " to " + dst
 		if m.File != "" && m.File != dst {
 			msg += " and set aside " + m.File
 		}
 		s.DB.Exec(`UPDATE movies SET job_id = '', note = ? WHERE id = ?`, msg, m.ID)
-		return true, nil, []string{msg}, nil
+		s.History.Add(history.Event{Kind: "movie", ItemID: m.ID, Item: item, Event: history.DryRun, Release: release, Quality: in.Quality.Name(), Category: m.Category, Note: msg})
+		return "", msg, nil
 	}
 	if _, err := os.Stat(dst); err == nil && dst != m.File {
-		return true, nil, []string{filepath.Base(dst) + " already exists and is not the movie's file"}, nil
+		return "", filepath.Base(dst) + " already exists and is not the movie's file", nil
 	}
-	// The file being replaced is set aside, never deleted.
-	if m.File != "" {
+	if m.File != "" && m.File != dst {
 		if _, err := os.Stat(m.File); err == nil {
 			aside := filepath.Join(c.LibraryDir, ".undermynd-replaced", s.Now().Format("2006-01-02"), filepath.Base(m.File))
 			if err := s.Move(m.File, aside); err != nil {
-				return true, nil, nil, fmt.Errorf("setting aside %s: %w", m.File, err)
+				return "", "", fmt.Errorf("setting aside %s: %w", m.File, err)
 			}
+			s.History.Add(history.Event{Kind: "movie", ItemID: m.ID, Item: item, Event: history.Replaced, Release: filepath.Base(m.File), Quality: m.Quality, Category: m.Category, Note: "set aside in " + aside})
 		}
 	}
 	if err := s.Move(src, dst); err != nil {
-		return true, nil, nil, err
+		return "", "", err
 	}
 	_ = os.Chmod(dst, 0o666)
 	_ = os.Chmod(filepath.Dir(dst), 0o777)
 	score := 0
 	if p, err := s.Profiles.ProfileByName(m.Profile); err == nil {
 		if e, err := s.Profiles.Engine(p); err == nil {
-			_, score = e.Score(in, decision.Candidate{Title: j.Name, Size: size})
+			_, score = e.Score(in, decision.Candidate{Title: release, Size: size})
 		}
 	}
 	s.DB.Exec(`UPDATE movies SET folder = ?, file_path = ?, file_quality = ?, file_score = ?, file_version = ?, file_size = ?,
 		job_id = '', note = ?, updated = ? WHERE id = ?`, dir, dst, in.Quality.Name(), score, in.Quality.Version, size,
 		"imported "+filepath.Base(dst), db.Stamp(s.Now()), m.ID)
+	s.History.Add(history.Event{Kind: "movie", ItemID: m.ID, Item: item, Event: history.Imported, Release: release, Quality: in.Quality.Name(), Category: m.Category, Note: dst})
 	s.Log.Printf("movies: imported %s", dst)
-	return true, []string{dst}, nil, nil
+	return dst, "", nil
+}
+
+// ImportFile imports a file by hand (manual import) as a movie's file.
+func (s *Service) ImportFile(id int64, path string) (string, error) {
+	m, err := s.Get(id)
+	if err != nil {
+		return "", err
+	}
+	c, ok := s.Cfg.Get().Category(m.Category)
+	if !ok || c.LibraryDir == "" {
+		return "", fmt.Errorf("%s has no movie library folder", m.Category)
+	}
+	st, err := os.Stat(path)
+	if err != nil || st.IsDir() || !s.IsVideo(path) {
+		return "", fmt.Errorf("%s is not a video file", path)
+	}
+	dst, msg, err := s.place(m, c, path, filepath.Base(path), st.Size())
+	if err != nil {
+		return "", err
+	}
+	if msg != "" {
+		return "", errors.New(msg)
+	}
+	return dst, nil
 }

@@ -371,6 +371,21 @@ var migrations = []string{
 	CREATE INDEX series_category ON series(category);
 	CREATE INDEX episodes_job ON episodes(job_id) WHERE job_id != '';
 	CREATE INDEX blocklist_series ON blocklist(series_id);`,
+	// 14: history of native movies and episodes (roadmap F6).
+	`CREATE TABLE history (
+		id       INTEGER PRIMARY KEY,
+		at       TEXT NOT NULL,
+		kind     TEXT NOT NULL,
+		item_id  INTEGER NOT NULL,
+		item     TEXT NOT NULL,
+		event    TEXT NOT NULL,
+		release  TEXT NOT NULL DEFAULT '',
+		quality  TEXT NOT NULL DEFAULT '',
+		category TEXT NOT NULL DEFAULT '',
+		note     TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX history_at ON history(at);
+	CREATE INDEX history_item ON history(kind, item_id);`,
 }
 
 // Version is the schema version this build expects.

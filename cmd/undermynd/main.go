@@ -23,6 +23,7 @@ import (
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/db"
 	"github.com/z354prance/undermynd/internal/decision"
+	"github.com/z354prance/undermynd/internal/history"
 	"github.com/z354prance/undermynd/internal/indexers"
 	"github.com/z354prance/undermynd/internal/job"
 	"github.com/z354prance/undermynd/internal/logbuf"
@@ -253,9 +254,11 @@ func main() {
 				return arr.New(c.Kind, c.ArrURL, string(c.ArrAPIKey))
 			}}
 		go site.Shadow.Run(ctx)
-		site.Movies = &movies.Service{DB: dbh, Catalog: catalog.New(dbh), Cfg: cfg, Profiles: site.Profiles, Indexers: site.Indexers, Jobs: st,
+		site.History = &history.Log{DB: dbh, Now: time.Now}
+		site.History.Prune()
+		site.Movies = &movies.Service{History: site.History, DB: dbh, Catalog: catalog.New(dbh), Cfg: cfg, Profiles: site.Profiles, Indexers: site.Indexers, Jobs: st,
 			Move: pipeline.MoveFile, IsVideo: pipeline.IsVideo, Log: logger, Now: time.Now, Arr: site.Shadow.Arr}
-		site.TV = &tv.Service{DB: dbh, Catalog: catalog.New(dbh), TMDB: site.Metadata.TMDB, Cfg: cfg, Profiles: site.Profiles, Indexers: site.Indexers, Jobs: st,
+		site.TV = &tv.Service{History: site.History, DB: dbh, Catalog: catalog.New(dbh), TMDB: site.Metadata.TMDB, Cfg: cfg, Profiles: site.Profiles, Indexers: site.Indexers, Jobs: st,
 			Move: pipeline.MoveFile, IsVideo: pipeline.IsVideo, Log: logger, Now: time.Now, Arr: site.Shadow.Arr}
 		eng.Native = func(ctx context.Context, j job.Job) (bool, []string, []string, error) {
 			if own, placed, left, err := site.Movies.ImportJob(ctx, j); own {
