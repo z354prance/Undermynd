@@ -122,8 +122,15 @@ func TestShowStaysUntilComplete(t *testing.T) {
 	}
 }
 
+// A show whose episodes are all held stays listed while an upgrade for one is
+// on the way (its card needs the season bar), then drops off.
 func TestCompleteShowDropsOff(t *testing.T) {
-	tr, _ := rig(t, `[{"id":1,"seasonNumber":1,"monitored":true,"hasFile":true},{"id":2,"seasonNumber":1,"monitored":true,"hasFile":true}]`)
+	tr, st := rig(t, `[{"id":1,"seasonNumber":1,"monitored":true,"hasFile":true},{"id":2,"seasonNumber":1,"monitored":true,"hasFile":true}]`)
+	tr.Refresh(context.Background())
+	if n := len(tr.Snapshot().Seasons); n != 1 {
+		t.Fatalf("a show with an upgrade on the way should be listed: %d", n)
+	}
+	_, _ = st.Update("abc", func(j *job.Job) error { j.State = job.Cleaned; return nil })
 	tr.Refresh(context.Background())
 	if n := len(tr.Snapshot().Seasons); n != 0 {
 		t.Fatalf("a complete show should not be listed: %d", n)

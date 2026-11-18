@@ -1,7 +1,10 @@
 package web
 
 import (
+	"context"
+	"errors"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -68,6 +71,10 @@ func (s *Server) adminMissing(w http.ResponseWriter, r *http.Request) {
 		i, ok := idx[m.Category][key]
 		if !ok {
 			g := missingGroup{Title: m.Title, Kind: m.Kind, Poster: imgURL(m.Poster), Items: []missingItem{}}
+			if m.Cover != "" {
+				// The arr's own copy first: it has one whenever it shows art.
+				g.Poster = "/admin/api/missing/art?" + url.Values{"c": {m.Category}, "p": {m.Cover}}.Encode()
+			}
 			if m.Kind != "episode" {
 				g.Sub = m.Detail
 			}
@@ -107,4 +114,43 @@ func (s *Server) adminMissing(w http.ResponseWriter, r *http.Request) {
 	out["errors"] = snap.Errors
 	out["updatedAt"] = snap.UpdatedAt
 	writeJSON(w, out)
+}
+
+var arrImageClient = &http.Client{
+	Timeout:       20 * time.Second,
+	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+}
+
+// adminMissingArt serves an arr's own copy of a poster or cover
+// (/MediaCover/...), asked for with the category's API key and kept in the
+// image cache.
+func (s *Server) adminMissingArt(w http.ResponseWriter, r *http.Request) {
+	cat, ok := s.Cfg.Get().Category(r.URL.Query().Get("c"))
+	p := r.URL.Query().Get("p")
+	if !ok || !cat.IsArr() || cat.ArrURL == "" || !strings.HasPrefix(p, "/") || strings.Contains(p, "..") || !strings.Contains(strings.ToLower(p), "/mediacover/") {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	base, err := url.Parse(strings.TrimRight(cat.ArrURL, "/"))
+	if err != nil || base.Host == "" {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	// The arr's image paths already carry its URL base (/sonarr/MediaCover/...).
+	full := base.Scheme + "://" + base.Host + p
+	if base.Path != "" && !strings.HasPrefix(p, base.Path+"/") {
+		full = base.Scheme + "://" + base.Host + base.Path + p
+	}
+	s.serveCachedImage(w, r, "arr:"+cat.Name+":"+p, func(ctx context.Context) ([]byte, string, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, full, nil)
+		if err != nil {
+			return nil, "", err
+		}
+		key := string(cat.ArrAPIKey)
+		if key == "" {
+			return nil, "", errors.New("no api key")
+		}
+		req.Header.Set("X-Api-Key", key)
+		return readImage(arrImageClient, req)
+	})
 }

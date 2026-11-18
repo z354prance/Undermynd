@@ -126,10 +126,10 @@
     STAGES6.forEach(function(st,i){
       if(i<at||state==='done'){arc(i,'dn');return}
       if(i>at){arc(i,'trk');return}
-      if(state==='working'){phase(arc(i,'trk march'),900);if(pct>0){arc(i,'k-'+st,0,Math.min(1,pct/100));txt=String(pct)}}
+      if(state==='working'){arc(i,'trk');var f=Math.min(1,pct/100);if(pct>0){arc(i,'k-'+st,0,f);txt=String(pct)}if(f<1){var r=arc(i,'race k-'+st,f,1);r.setAttribute('pathLength','100');phase(r,1400)}}
       else if(state==='stalled'){phase(arc(i,'stall'),1100);txt='!';tc='rt y'}
       else if(state==='failed'){phase(arc(i,'fail'),1600);txt='×';tc='rt r'}
-      else phase(arc(i,'wait k-'+st),2800)});
+      else{arc(i,'trk');var wr=arc(i,'race slow k-'+st);wr.setAttribute('pathLength','100');phase(wr,2800)}});
     var t=svgN('text',{x:30,y:36,'text-anchor':'middle','class':tc});t.textContent=txt;s.appendChild(t);return s}
   var JOBSTAGE={received:['found','waiting'],submitted:['found','working'],downloading:['download','working'],pulling:['transfer','working'],downloaded:['convert','waiting'],queued_transcode:['convert','waiting'],transcoding:['convert','working'],verifying:['convert','working'],ready:['ready','waiting'],imported:['ready','done'],cleaned:['ready','done']};
   var FAILAT={download:'download',transfer:'transfer',convert:'convert',ready:'ready'};
@@ -483,7 +483,7 @@
         var sub=g.kind==='episode'?g.items.slice(0,3).map(function(x){return x.detail}).join(', ')+(g.items.length>3?' +'+(g.items.length-3):''):(g.sub||'');
         var sp=el('span','',sub);if(g.kind==='episode'&&g.items.length>3)sp.title=g.items.map(function(x){return x.detail}).join(', ');c.appendChild(sp);return c}
       function draw(){var ql=missQ.toLowerCase();secs.forEach(function(x){var gs=x.a.groups.filter(function(g){return !ql||(g.title+' '+(g.sub||'')).toLowerCase().indexOf(ql)>=0});
-        x.grid.replaceChildren();var lim=missAll[x.a.category]||ql?gs.length:24;
+        x.grid.replaceChildren();var lim=gs.length;
         gs.slice(0,lim).forEach(function(g){x.grid.appendChild(card(g,x.a.kind))});
         x.cnt.textContent=x.a.kind==='sonarr'?x.a.count+' episodes in '+x.a.groups.length+' series':x.a.kind==='lidarr'?x.a.count+' albums':x.a.count+' movies';
         if(!gs.length)x.grid.appendChild(el('div','hv-empty',ql?'Nothing matches.':'Nothing missing.'));

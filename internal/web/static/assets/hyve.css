@@ -274,3 +274,9 @@ body.ui .hv-poster.sq{aspect-ratio:1/1}
 body.ui .hv-badge{position:absolute;top:7px;right:7px;min-width:24px;height:24px;padding:0 7px;border-radius:12px;background:var(--warn);color:#151617;font:600 12px/24px var(--mono);text-align:center;box-sizing:border-box}
 body.ui .hv-more{margin-top:14px}
 @media (max-width:760px){body.ui .hv-pgrid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:12px 10px}body.ui .hv-pgrid.sq{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}}
+
+/* race: a streak running through the empty part of a ring (pathLength 100) */
+body.ui .seg .race{stroke-dasharray:45 100;animation:hvrace 1.4s cubic-bezier(.45,.05,.55,.95) infinite}
+body.ui .seg .race.slow{animation-duration:2.8s;opacity:.55}
+@keyframes hvrace{from{stroke-dashoffset:45}to{stroke-dashoffset:-100}}
+@media (prefers-reduced-motion:reduce){body.ui .seg .race{animation:none}}

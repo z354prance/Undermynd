@@ -102,13 +102,29 @@ type Missing struct {
 	// Poster is the artwork address the arr knows (series or movie poster,
 	// album cover); Path opens the item in the arr, relative to its address.
 	Poster string `json:"poster,omitempty"`
-	Path   string `json:"path,omitempty"`
+	// Cover is the arr's own copy of the artwork (/MediaCover/...), used when
+	// Poster is missing or from a host the image proxy does not fetch.
+	Cover string `json:"cover,omitempty"`
+	Path  string `json:"path,omitempty"`
 }
 
 // arrImage is an entry of an arr's images list.
 type arrImage struct {
 	CoverType string `json:"coverType"`
 	RemoteURL string `json:"remoteUrl"`
+	URL       string `json:"url"`
+}
+
+// localImage chooses the arr's own copy of the first image of the wanted types.
+func localImage(imgs []arrImage, types ...string) string {
+	for _, t := range types {
+		for _, i := range imgs {
+			if strings.EqualFold(i.CoverType, t) && strings.Contains(strings.ToLower(i.URL), "/mediacover/") {
+				return i.URL
+			}
+		}
+	}
+	return ""
 }
 
 // pickImage chooses the remote address of the first image of the wanted types.
@@ -163,7 +179,7 @@ func (c *Client) MissingItems(ctx context.Context) ([]Missing, error) {
 			if t == "" {
 				t = x.Title
 			}
-			m := Missing{Kind: "episode", Title: t, Detail: fmt.Sprintf("S%02dE%02d", x.Season, x.Episode), Date: parseTime(x.AirDateUTC), Group: t, Poster: pickImage(x.Series.Images, "poster")}
+			m := Missing{Kind: "episode", Title: t, Detail: fmt.Sprintf("S%02dE%02d", x.Season, x.Episode), Date: parseTime(x.AirDateUTC), Group: t, Poster: pickImage(x.Series.Images, "poster"), Cover: localImage(x.Series.Images, "poster")}
 			if x.Series.TitleSlug != "" {
 				m.Path = "/series/" + url.PathEscape(x.Series.TitleSlug)
 			}
@@ -195,7 +211,7 @@ func (c *Client) MissingItems(ctx context.Context) ([]Missing, error) {
 			if d == nil {
 				d = parseTime(x.InCinemas)
 			}
-			m := Missing{Kind: "movie", Title: x.Title, Detail: fmt.Sprint(x.Year), Date: d, Group: x.Title, Poster: pickImage(x.Images, "poster")}
+			m := Missing{Kind: "movie", Title: x.Title, Detail: fmt.Sprint(x.Year), Date: d, Group: x.Title, Poster: pickImage(x.Images, "poster"), Cover: localImage(x.Images, "poster")}
 			switch {
 			case x.TmdbID > 0:
 				m.Path = "/movie/" + fmt.Sprint(x.TmdbID)
@@ -228,9 +244,10 @@ func (c *Client) MissingItems(ctx context.Context) ([]Missing, error) {
 				continue
 			}
 			m := Missing{Kind: "album", Title: x.Artist.Name, Detail: x.Title, Date: parseTime(x.ReleaseDate), Group: x.Artist.Name + " \u2014 " + x.Title,
-				Poster: pickImage(x.Images, "cover", "disc")}
-			if m.Poster == "" {
+				Poster: pickImage(x.Images, "cover", "disc"), Cover: localImage(x.Images, "cover", "disc")}
+			if m.Poster == "" && m.Cover == "" {
 				m.Poster = pickImage(x.Artist.Images, "poster", "fanart")
+				m.Cover = localImage(x.Artist.Images, "poster", "fanart")
 			}
 			if x.ForeignID != "" {
 				m.Path = "/album/" + url.PathEscape(x.ForeignID)

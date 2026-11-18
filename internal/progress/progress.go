@@ -206,8 +206,8 @@ func (t *Tracker) Refresh(ctx context.Context) {
 		title, runtime, err := c.SeriesInfo(ctx, tr.SeriesID)
 		if err != nil {
 			var se *arr.StatusError
-			if errors.As(err, &se) && se.Code == http.StatusNotFound && now.Sub(tr.Since) > 7*24*time.Hour {
-				delete(t.tracked, key) // removed from Sonarr and long idle
+			if errors.As(err, &se) && se.Code == http.StatusNotFound {
+				delete(t.tracked, key) // removed from Sonarr: nothing to show
 			} else {
 				errs = append(errs, fmt.Sprintf("%s series %d: %v", cat.Name, tr.SeriesID, err))
 			}
@@ -230,6 +230,13 @@ func (t *Tracker) Refresh(ctx context.Context) {
 		complete := len(eps) > 0
 		for _, n := range counts {
 			if n.Imported < n.Total {
+				complete = false
+			}
+		}
+		// An upgrade on the way is for an episode already held: the series
+		// is "complete" but its card still needs the season bar.
+		for _, e := range eps {
+			if active[e.ID] {
 				complete = false
 			}
 		}

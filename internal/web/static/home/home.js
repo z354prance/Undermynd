@@ -49,11 +49,15 @@
       if (i < at || state === "done") { arc(i, "dn"); return; }
       if (i > at) { arc(i, "trk"); return; }
       if (state === "working") {
-        phase(arc(i, "trk march"), 900);
-        if (pct > 0) { arc(i, "act k-" + st, 0, Math.min(1, pct / 100)); txt = String(pct); }
+        // Filled part in the stage colour, and a streak racing through the
+        // empty part ahead of it.
+        arc(i, "trk");
+        var f = Math.min(1, pct / 100);
+        if (pct > 0) { arc(i, "act k-" + st, 0, f); txt = String(pct); }
+        if (f < 1) { var r = arc(i, "race k-" + st, f, 1); r.setAttribute("pathLength", "100"); phase(r, 1400); }
       } else if (state === "stalled") { phase(arc(i, "stall"), 1100); txt = "!"; tcls = "rt y"; }
       else if (state === "failed") { phase(arc(i, "fail"), 1600); txt = "×"; tcls = "rt r"; }
-      else phase(arc(i, "wait k-" + st), 2800);
+      else { arc(i, "trk"); var wr = arc(i, "race slow k-" + st); wr.setAttribute("pathLength", "100"); phase(wr, 2800); }
     });
     var t = svgEl("text", { x: 30, y: 36, "text-anchor": "middle", class: tcls }); t.textContent = txt; s.appendChild(t);
     return s;
@@ -95,14 +99,21 @@
         c.appendChild(t);
         var frac = x.duration_ms ? Math.min(1, (x.progress_ms || 0) / x.duration_ms) : 0;
         // The pinned dashboard's ring: track, progress in the media colour, a
-        // white playhead dot that pulses at the end of the arc, and the play
-        // mode in the middle (green straight arrow, orange two-way arrows).
+        // streak racing round the rest, and the play mode in the middle
+        // (green straight arrow, orange two-way arrows).
         var pc = svgEl("svg", { viewBox: "0 0 60 60", width: 48, height: 48, class: "pc", role: "img", "aria-label": Math.round(frac * 100) + "% watched, " + (x.is_transcode ? "transcoding" : "direct play") });
         var tt = svgEl("title", {}); tt.textContent = Math.round(frac * 100) + "% watched, " + (x.is_transcode ? "transcoding" : "direct play"); pc.appendChild(tt);
         var R = 22, CC = 2 * Math.PI * R;
         pc.appendChild(svgEl("circle", { cx: 30, cy: 30, r: R, fill: "none", stroke: "#3a3d41", "stroke-width": 6 }));
         pc.appendChild(svgEl("circle", { cx: 30, cy: 30, r: R, fill: "none", stroke: mediaColor(kind), "stroke-width": 6, "stroke-dasharray": (CC * frac).toFixed(1) + " " + CC.toFixed(1), transform: "rotate(-90 30 30)" }));
-        var ang = frac * 2 * Math.PI, dot = svgEl("circle", { cx: (30 + R * Math.sin(ang)).toFixed(2), cy: (30 - R * Math.cos(ang)).toFixed(2), r: 3, class: "dot" }); phase(dot, 1800); pc.appendChild(dot);
+        // A streak races through the part still to watch, from the playhead
+        // round to the top.
+        if (frac < 0.995) {
+          var a0 = Math.max(frac, 0.002) * 2 * Math.PI, a1 = 2 * Math.PI - 0.0001;
+          var pt = function (a) { return (30 + R * Math.sin(a)).toFixed(2) + " " + (30 - R * Math.cos(a)).toFixed(2); };
+          var rc = svgEl("path", { d: "M" + pt(a0) + " A" + R + " " + R + " 0 " + (a1 - a0 > Math.PI ? 1 : 0) + " 1 " + pt(a1), fill: "none", stroke: mediaColor(kind), "stroke-width": 6, pathLength: 100, class: "race" });
+          phase(rc, 2200); pc.appendChild(rc);
+        }
         var gi = svgEl("g", { transform: "translate(30 30) scale(.86) translate(-12 -12)", fill: "none", stroke: x.is_transcode ? "#f0a35e" : "#3fb97a", "stroke-width": 2.3, "stroke-linecap": "round", "stroke-linejoin": "round" }); gi.innerHTML = x.is_transcode ? ICON.swap : ICON.straight; pc.appendChild(gi);
         c.appendChild(pc); box.appendChild(c);
       });

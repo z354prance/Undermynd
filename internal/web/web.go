@@ -91,6 +91,7 @@ func (s *Server) Handler() http.Handler {
 	s.dashboardRoutes(mux, files)
 	mux.HandleFunc("GET /admin/api/library", s.admin(s.adminLibrary))
 	mux.HandleFunc("GET /admin/api/missing", s.admin(s.adminMissing))
+	mux.HandleFunc("GET /admin/api/missing/art", s.admin(s.adminMissingArt))
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, map[string]string{"status": "ok"}) })
 	mux.Handle("GET /assets/", files)
 	mux.HandleFunc("GET /img", s.image)
