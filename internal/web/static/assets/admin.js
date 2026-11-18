@@ -367,6 +367,7 @@
     var ty=el('select','a-input');ty.setAttribute('aria-label','kind of search');ty.style.maxWidth='160px';[['search','anything'],['tv','TV'],['movie','movies'],['music','music']].forEach(function(o){var op=new Option(o[1],o[0]);op.selected=iView.type===o[0];ty.appendChild(op)});
     var go=el('button','a-btn primary','Search');go.type='button';sb.appendChild(q);sb.appendChild(ty);sb.appendChild(go);c.appendChild(sb);var res=el('div');c.appendChild(res);
     var listBox=el('div','a-tw');c.appendChild(el('h3','a-dim','Indexers'));c.appendChild(listBox);
+    c.appendChild(el('div','a-dim a-small','For Sonarr and Radarr: add a Torznab (torrents) or Newznab (usenet) indexer with the same address as their Undermynd download client, plus /indexers/all-torrent or /indexers/all-usenet (every indexer at once), or /indexers/<number> for one; API path /api; API key: the download client password.'));
     var cats=[];
     api('GET','/indexers').then(function(d){cats=d.categories||[];if(!d.indexers.length){listBox.appendChild(el('div','a-empty','No indexers yet. Import them from Prowlarr, or add one by its Torznab or Newznab address.'));return}
       var t=el('table','a-t'),hr=el('tr');['Name','Kind','Priority','Status','Today','',''].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tb=el('tbody');

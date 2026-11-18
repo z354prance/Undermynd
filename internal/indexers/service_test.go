@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"net/url"
+
 	"github.com/z354prance/undermynd/internal/db"
 	"github.com/z354prance/undermynd/internal/indexers"
 	"github.com/z354prance/undermynd/internal/job"
@@ -188,5 +190,34 @@ func TestIndexers(t *testing.T) {
 	}
 	if again, _ := svc.ImportProwlarr(ctx, prowlarr.URL, "PK"); len(again) != 0 {
 		t.Fatalf("import twice: %v", again)
+	}
+
+	// The arrs' side: Torznab endpoints with Undermynd's key.
+	srv := httptest.NewServer(svc.Handler(func() string { return "UK" }))
+	defer srv.Close()
+	call := func(path string, v url.Values) string {
+		resp, err := http.Get(srv.URL + path + "?" + v.Encode())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return string(b)
+	}
+	if b := call("/indexers/all-torrent/api", url.Values{"t": {"search"}, "q": {"Show"}, "apikey": {"wrong"}}); !strings.Contains(b, `code="100"`) {
+		t.Fatalf("wrong key: %s", b)
+	}
+	if b := call("/indexers/all-torrent/api", url.Values{"t": {"caps"}, "apikey": {"UK"}}); !strings.Contains(b, "tv-search") {
+		t.Fatalf("caps: %s", b)
+	}
+	now = now.Add(24 * time.Hour) // a new day: the tracker's limit starts again
+	b := call("/indexers/all-usenet/api", url.Values{"t": {"tvsearch"}, "q": {"Show"}, "season": {"1"}, "ep": {"2"}, "apikey": {"UK"}})
+	got, err := indexers.Parse([]byte(b), "usenet")
+	if err != nil || len(got) != 1 || got[0].Title != "Show.S01E02.1080p.WEB" || got[0].Size != 200 {
+		t.Fatalf("aggregate: %v %+v %s", err, got, b)
+	}
+	b = call(fmt.Sprintf("/indexers/%d/api", tr.ID), url.Values{"t": {"search"}, "q": {"Show"}, "apikey": {"UK"}})
+	if got, err := indexers.Parse([]byte(b), "torrent"); err != nil || len(got) != 1 || got[0].Seeders != 9 {
+		t.Fatalf("pass-through: %v %+v %s", err, got, b)
 	}
 }
