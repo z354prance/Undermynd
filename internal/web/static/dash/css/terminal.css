@@ -238,7 +238,7 @@ body .dashboard-footer > .live-indicator { display:flex; align-items:center; gap
 
 a.nav-item { text-decoration:none; color:inherit; display:inline-flex; align-items:center; gap:6px; }
 
-/* Undermynd: posters come back as small thumbnails beside the text rows. */
+/* HyveMynd: posters come back as small thumbnails beside the text rows. */
 #dashboardView :is(#playbackList,#recentlyAddedList) .playback-art { display:block !important; position:relative; overflow:hidden; border-radius:2px; background:var(--panel-soft); }
 #playbackList .now-playing-card { grid-template-columns:46px minmax(0,1fr); column-gap:10px; }
 #playbackList .playback-art { grid-column:1; grid-row:1 / span 2; width:46px; height:69px; align-self:start; }

@@ -83,9 +83,24 @@ func healthcheck(addr string) {
 	}
 }
 
+// envAliases lets HYVEMYND_* variables stand for the UNDERMYND_* ones the
+// code reads; an UNDERMYND_* variable that is set wins, so existing
+// containers keep working unchanged.
+func envAliases() {
+	for _, kv := range os.Environ() {
+		k, v, _ := strings.Cut(kv, "=")
+		if name, ok := strings.CutPrefix(k, "HYVEMYND_"); ok {
+			if _, set := os.LookupEnv("UNDERMYND_" + name); !set {
+				os.Setenv("UNDERMYND_"+name, v)
+			}
+		}
+	}
+}
+
 func main() {
+	envAliases()
 	logs := logbuf.New(2000)
-	logger := log.New(io.MultiWriter(os.Stdout, logs), "undermynd ", log.LstdFlags)
+	logger := log.New(io.MultiWriter(os.Stdout, logs), "hyvemynd ", log.LstdFlags)
 	env := config.LoadEnv()
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		healthcheck(env.PublicAddr)

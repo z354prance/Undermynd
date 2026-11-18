@@ -40,7 +40,7 @@ var staticFS embed.FS
 
 const (
 	cookieName    = "um_session"
-	requestHeader = "X-Undermynd-Request"
+	requestHeader = "X-HyveMynd-Request"
 )
 
 type Server struct {
@@ -744,7 +744,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, own := range []string{s.Cfg.Env.Complete(), s.Cfg.Env.Work()} {
 			if wf.Dir == own || strings.HasPrefix(wf.Dir+"/", own+"/") {
-				jsonErr(w, http.StatusBadRequest, "watch folder "+wf.Dir+": that is one of Undermynd's own folders, so files would loop")
+				jsonErr(w, http.StatusBadRequest, "watch folder "+wf.Dir+": that is one of HyveMynd's own folders, so files would loop")
 				return
 			}
 		}

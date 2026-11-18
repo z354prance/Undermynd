@@ -1,4 +1,4 @@
-// Package db opens Undermynd's SQLite database, applies its schema migrations,
+// Package db opens HyveMynd's SQLite database, applies its schema migrations,
 // keeps rolling backups, and stores named state blobs. It uses a pure-Go SQLite
 // driver, so the binary stays static.
 package db
@@ -212,6 +212,255 @@ var migrations = []string{
 		JOIN episodes e ON e.id = fe.episode_id JOIN series s ON s.id = e.series_id WHERE s.kind = 'anime');
 	DELETE FROM series WHERE kind = 'anime';
 	DELETE FROM kv WHERE name IN ('anime-import.json', 'placement-mode.json', 'placement-queue.json', 'placement-dryrun.json');`,
+
+	// 6: followed shows (roadmap C3): settings per show folder of the simple
+	// importer, and the releases nyaa has offered for followed shows.
+	`CREATE TABLE shows (
+		folder          TEXT PRIMARY KEY,
+		followed        INTEGER NOT NULL DEFAULT 0,
+		groups          TEXT NOT NULL DEFAULT '[]',
+		quality         TEXT NOT NULL DEFAULT '1080p',
+		titles          TEXT NOT NULL DEFAULT '[]',
+		from_episode    INTEGER NOT NULL DEFAULT 0,
+		anilist_id      INTEGER NOT NULL DEFAULT 0,
+		anilist         TEXT NOT NULL DEFAULT '',
+		anilist_checked TEXT NOT NULL DEFAULT '',
+		checked         TEXT NOT NULL DEFAULT '',
+		check_error     TEXT NOT NULL DEFAULT '',
+		added           TEXT NOT NULL
+	);
+	CREATE TABLE show_releases (
+		folder   TEXT NOT NULL REFERENCES shows(folder) ON DELETE CASCADE,
+		title    TEXT NOT NULL,
+		link     TEXT NOT NULL,
+		grp      TEXT NOT NULL,
+		res      TEXT NOT NULL,
+		season   INTEGER NOT NULL,
+		marked   INTEGER NOT NULL,
+		episode  INTEGER NOT NULL,
+		size     INTEGER NOT NULL DEFAULT 0,
+		seeders  INTEGER NOT NULL DEFAULT 0,
+		seen     TEXT NOT NULL,
+		grabbed  TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (folder, title)
+	);`,
+
+	// 7: what each show folder holds, kept between restarts so the Anime page
+	// opens at once; refreshed in the background.
+	`CREATE TABLE show_folders (
+		folder  TEXT PRIMARY KEY,
+		summary TEXT NOT NULL,
+		scanned TEXT NOT NULL
+	);`,
+
+	// 8: gap filling (roadmap C4): whether a followed show fills its gaps by
+	// itself, and when it last looked.
+	`ALTER TABLE shows ADD COLUMN fill_gaps INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE shows ADD COLUMN gaps_checked TEXT NOT NULL DEFAULT '';`,
+
+	// 9: indexers (roadmap D1): Torznab and Newznab indexers (direct, or
+	// through Prowlarr while it still runs), their health and daily use.
+	`CREATE TABLE indexers (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		name        TEXT NOT NULL UNIQUE,
+		kind        TEXT NOT NULL,
+		url         TEXT NOT NULL,
+		api_key     TEXT NOT NULL DEFAULT '',
+		categories  TEXT NOT NULL DEFAULT '',
+		priority    INTEGER NOT NULL DEFAULT 25,
+		enabled     INTEGER NOT NULL DEFAULT 1,
+		query_limit INTEGER NOT NULL DEFAULT 0,
+		grab_limit  INTEGER NOT NULL DEFAULT 0,
+		via         TEXT NOT NULL DEFAULT '',
+		added       TEXT NOT NULL
+	);
+	CREATE TABLE indexer_status (
+		indexer_id     INTEGER PRIMARY KEY REFERENCES indexers(id) ON DELETE CASCADE,
+		failures       INTEGER NOT NULL DEFAULT 0,
+		disabled_until TEXT NOT NULL DEFAULT '',
+		last_error     TEXT NOT NULL DEFAULT '',
+		last_ok        TEXT NOT NULL DEFAULT ''
+	);
+	CREATE TABLE indexer_usage (
+		indexer_id INTEGER NOT NULL REFERENCES indexers(id) ON DELETE CASCADE,
+		day        TEXT NOT NULL,
+		queries    INTEGER NOT NULL DEFAULT 0,
+		grabs      INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (indexer_id, day)
+	);`,
+	// 10: quality profiles, custom formats and quality sizes (roadmap F2).
+	// Each is kept as JSON; source is the category it was imported from.
+	`CREATE TABLE profiles (
+		id     INTEGER PRIMARY KEY,
+		name   TEXT NOT NULL UNIQUE,
+		source TEXT NOT NULL DEFAULT '',
+		body   TEXT NOT NULL
+	);
+	CREATE TABLE custom_formats (
+		id     INTEGER PRIMARY KEY,
+		name   TEXT NOT NULL UNIQUE,
+		source TEXT NOT NULL DEFAULT '',
+		body   TEXT NOT NULL
+	);
+	CREATE TABLE quality_sizes (
+		quality TEXT PRIMARY KEY,
+		min     REAL NOT NULL DEFAULT 0,
+		max     REAL NOT NULL DEFAULT 0
+	);`,
+	// 11: shadow mode (roadmap F3): each grab an arr made, and what
+	// HyveMynd would have picked for the same thing.
+	`CREATE TABLE shadow (
+		id           INTEGER PRIMARY KEY,
+		category     TEXT NOT NULL,
+		grab_key     TEXT NOT NULL UNIQUE,
+		at           TEXT NOT NULL,
+		item         TEXT NOT NULL,
+		profile      TEXT NOT NULL DEFAULT '',
+		arr_title    TEXT NOT NULL,
+		arr_quality  TEXT NOT NULL DEFAULT '',
+		arr_indexer  TEXT NOT NULL DEFAULT '',
+		our_title    TEXT NOT NULL DEFAULT '',
+		our_quality  TEXT NOT NULL DEFAULT '',
+		our_score    INTEGER NOT NULL DEFAULT 0,
+		arr_score    INTEGER NOT NULL DEFAULT 0,
+		verdict      TEXT NOT NULL,
+		note         TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX shadow_at ON shadow(at);`,
+	// 12: native movies (roadmap F4): which category and profile a movie
+	// belongs to, the file on disk, the download under way, and releases not
+	// to grab again.
+	`ALTER TABLE movies ADD COLUMN category TEXT NOT NULL DEFAULT '';
+	ALTER TABLE movies ADD COLUMN profile TEXT NOT NULL DEFAULT '';
+	ALTER TABLE movies ADD COLUMN runtime INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE movies ADD COLUMN file_path TEXT NOT NULL DEFAULT '';
+	ALTER TABLE movies ADD COLUMN file_quality TEXT NOT NULL DEFAULT '';
+	ALTER TABLE movies ADD COLUMN file_score INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE movies ADD COLUMN file_version INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE movies ADD COLUMN file_size INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE movies ADD COLUMN job_id TEXT NOT NULL DEFAULT '';
+	ALTER TABLE movies ADD COLUMN searched TEXT NOT NULL DEFAULT '';
+	ALTER TABLE movies ADD COLUMN note TEXT NOT NULL DEFAULT '';
+	CREATE INDEX movies_category ON movies(category);
+	CREATE TABLE blocklist (
+		id       INTEGER PRIMARY KEY,
+		movie_id INTEGER REFERENCES movies(id) ON DELETE CASCADE,
+		title    TEXT NOT NULL,
+		norm     TEXT NOT NULL,
+		reason   TEXT NOT NULL DEFAULT '',
+		at       TEXT NOT NULL
+	);
+	CREATE INDEX blocklist_movie ON blocklist(movie_id);`,
+	// 13: native TV (roadmap F5): a series' category, profile and type, and
+	// each episode's monitoring, file and download.
+	`ALTER TABLE series ADD COLUMN category TEXT NOT NULL DEFAULT '';
+	ALTER TABLE series ADD COLUMN profile TEXT NOT NULL DEFAULT '';
+	ALTER TABLE series ADD COLUMN runtime INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE series ADD COLUMN series_type TEXT NOT NULL DEFAULT 'standard';
+	ALTER TABLE series ADD COLUMN refreshed TEXT NOT NULL DEFAULT '';
+	ALTER TABLE episodes ADD COLUMN monitored INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE episodes ADD COLUMN file_path TEXT NOT NULL DEFAULT '';
+	ALTER TABLE episodes ADD COLUMN file_quality TEXT NOT NULL DEFAULT '';
+	ALTER TABLE episodes ADD COLUMN file_score INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE episodes ADD COLUMN file_version INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE episodes ADD COLUMN file_size INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE episodes ADD COLUMN job_id TEXT NOT NULL DEFAULT '';
+	ALTER TABLE episodes ADD COLUMN searched TEXT NOT NULL DEFAULT '';
+	ALTER TABLE episodes ADD COLUMN note TEXT NOT NULL DEFAULT '';
+	ALTER TABLE blocklist ADD COLUMN series_id INTEGER REFERENCES series(id) ON DELETE CASCADE;
+	CREATE INDEX series_category ON series(category);
+	CREATE INDEX episodes_job ON episodes(job_id) WHERE job_id != '';
+	CREATE INDEX blocklist_series ON blocklist(series_id);`,
+	// 14: history of native movies and episodes (roadmap F6).
+	`CREATE TABLE history (
+		id       INTEGER PRIMARY KEY,
+		at       TEXT NOT NULL,
+		kind     TEXT NOT NULL,
+		item_id  INTEGER NOT NULL,
+		item     TEXT NOT NULL,
+		event    TEXT NOT NULL,
+		release  TEXT NOT NULL DEFAULT '',
+		quality  TEXT NOT NULL DEFAULT '',
+		category TEXT NOT NULL DEFAULT '',
+		note     TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX history_at ON history(at);
+	CREATE INDEX history_item ON history(kind, item_id);`,
+	// 15: the scheduler (roadmap G-2): every automatic search, for the global
+	// budget, and when each arr backlog item was last asked for.
+	`CREATE TABLE search_log (
+		id   INTEGER PRIMARY KEY,
+		at   TEXT NOT NULL,
+		kind TEXT NOT NULL,
+		item TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX search_log_at ON search_log(at);
+	CREATE TABLE backlog (
+		category TEXT NOT NULL,
+		kind     TEXT NOT NULL,
+		item_id  INTEGER NOT NULL,
+		label    TEXT NOT NULL DEFAULT '',
+		at       TEXT NOT NULL,
+		PRIMARY KEY (category, kind, item_id)
+	);`,
+	// 16: native music (roadmap H2): artists and their albums (MusicBrainz
+	// release groups), the files of each album and the download under way.
+	`CREATE TABLE artists (
+		id        INTEGER PRIMARY KEY,
+		mbid      TEXT NOT NULL UNIQUE,
+		name      TEXT NOT NULL,
+		sort_name TEXT NOT NULL DEFAULT '',
+		folder    TEXT NOT NULL DEFAULT '',
+		monitored INTEGER NOT NULL DEFAULT 1,
+		category  TEXT NOT NULL DEFAULT '',
+		added     TEXT NOT NULL,
+		refreshed TEXT NOT NULL DEFAULT ''
+	);
+	CREATE TABLE albums (
+		id           INTEGER PRIMARY KEY,
+		artist_id    INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+		mbid         TEXT NOT NULL UNIQUE,
+		title        TEXT NOT NULL,
+		year         INTEGER NOT NULL DEFAULT 0,
+		release_date TEXT NOT NULL DEFAULT '',
+		type         TEXT NOT NULL DEFAULT '',
+		secondary    TEXT NOT NULL DEFAULT '',
+		monitored    INTEGER NOT NULL DEFAULT 0,
+		tracks       INTEGER NOT NULL DEFAULT 0,
+		folder       TEXT NOT NULL DEFAULT '',
+		file_quality TEXT NOT NULL DEFAULT '',
+		file_count   INTEGER NOT NULL DEFAULT 0,
+		file_size    INTEGER NOT NULL DEFAULT 0,
+		job_id       TEXT NOT NULL DEFAULT '',
+		searched     TEXT NOT NULL DEFAULT '',
+		note         TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX albums_artist ON albums(artist_id);
+	ALTER TABLE blocklist ADD COLUMN album_id INTEGER REFERENCES albums(id) ON DELETE CASCADE;
+	CREATE INDEX albums_job ON albums(job_id) WHERE job_id != '';`,
+	// 17: API tokens (roadmap I1), kept as hashes.
+	`CREATE TABLE api_tokens (
+		id        INTEGER PRIMARY KEY,
+		name      TEXT NOT NULL,
+		hash      TEXT NOT NULL UNIQUE,
+		hint      TEXT NOT NULL DEFAULT '',
+		created   TEXT NOT NULL,
+		last_used TEXT NOT NULL DEFAULT ''
+	);`,
+	// 18: posters and descriptions for the library pages (design v3).
+	`ALTER TABLE movies ADD COLUMN poster TEXT NOT NULL DEFAULT '';
+	ALTER TABLE movies ADD COLUMN fanart TEXT NOT NULL DEFAULT '';
+	ALTER TABLE movies ADD COLUMN overview TEXT NOT NULL DEFAULT '';
+	ALTER TABLE movies ADD COLUMN genres TEXT NOT NULL DEFAULT '';
+	ALTER TABLE series ADD COLUMN poster TEXT NOT NULL DEFAULT '';
+	ALTER TABLE series ADD COLUMN fanart TEXT NOT NULL DEFAULT '';
+	ALTER TABLE series ADD COLUMN overview TEXT NOT NULL DEFAULT '';
+	ALTER TABLE series ADD COLUMN genres TEXT NOT NULL DEFAULT '';
+	ALTER TABLE series ADD COLUMN network TEXT NOT NULL DEFAULT '';
+	ALTER TABLE series ADD COLUMN ended INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE artists ADD COLUMN poster TEXT NOT NULL DEFAULT '';
+	ALTER TABLE artists ADD COLUMN fanart TEXT NOT NULL DEFAULT '';
+	ALTER TABLE artists ADD COLUMN overview TEXT NOT NULL DEFAULT '';`,
 }
 
 // Version is the schema version this build expects.

@@ -12,7 +12,7 @@ type DiskUse struct {
 	Path       string `json:"path"`
 	FreeBytes  uint64 `json:"freeBytes"`
 	TotalBytes uint64 `json:"totalBytes"`
-	UsedByUs   int64  `json:"usedByUs"` // bytes in Undermynd's own folders (capped scan)
+	UsedByUs   int64  `json:"usedByUs"` // bytes in HyveMynd's own folders (capped scan)
 	Partial    bool   `json:"partial"`  // the scan stopped early
 }
 

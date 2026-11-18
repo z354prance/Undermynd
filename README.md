@@ -1,6 +1,6 @@
-<p align="center"><img src="assets/undermynd-logo.svg" width="160" alt="Undermynd"></p>
+<p align="center"><img src="assets/undermynd-logo.svg" width="160" alt="HyveMynd"></p>
 
-# Undermynd
+# HyveMynd
 
 One container that owns the whole download-to-library path for Sonarr, Radarr and Lidarr.
 
@@ -25,7 +25,7 @@ One container that owns the whole download-to-library path for Sonarr, Radarr an
 | Overmynd merge | Requests (through Seerr), access requests, playback, storage | built |
 | Hardening | Reconciler, retries, cleanup, log viewer | partly (notifications and API tokens not yet) |
 
-**Where it is going:** Undermynd is growing into one app that replaces Radarr, Sonarr, Lidarr, Prowlarr, Seerr, Houndarr and Recyclarr, and will be renamed HyveMynd at the end (`docs/RENAME.md`). The plan is in `docs/ROADMAP.md`. Current stage: A (stabilise), then B (SQLite and a title catalog).
+**Where it is going:** HyveMynd is growing into one app that replaces Radarr, Sonarr, Lidarr, Prowlarr, Seerr, Houndarr and Recyclarr, and will be renamed HyveMynd at the end (`docs/RENAME.md`). The plan is in `docs/ROADMAP.md`. Current stage: A (stabilise), then B (SQLite and a title catalog).
 
 The design is in `docs/`.
 
@@ -44,7 +44,7 @@ docker run -d --name undermynd -p 8080:8080 -p 8081:8081 \
 3. Under *settings*: set each category's arr URL and API key (the arr that confirms the import), and the local qBittorrent URL and login.
 4. In Sonarr, Radarr and Lidarr add a **qBittorrent** download client: host = this machine, port = **8081**, the login from step 1, and the category (`radarr`, `tv-sonarr`, `lidarr`).
 
-Mount the same `/data` in Undermynd, qBittorrent, the arrs and Tdarr, on one cache-only share, so every move is a rename.
+Mount the same `/data` in HyveMynd, qBittorrent, the arrs and Tdarr, on one cache-only share, so every move is a rename.
 
 ## Ports
 
@@ -79,7 +79,7 @@ Behind a reverse proxy set `UNDERMYND_TRUST_PROXY=true` so the real client IP is
 
 ## Metadata
 
-Undermynd keeps its own catalog of shows, episodes and the other titles each show is known by, filled from:
+HyveMynd keeps its own catalog of shows, episodes and the other titles each show is known by, filled from:
 
 - **TMDB**, with your own free API key (Admin → Metadata, under Connections in the sidebar). Both the short API key and the long read access token work.
 - **Two optional anime lists**, downloaded once a week: the [anime-offline-database](https://github.com/manami-project/anime-offline-database) for other titles, and [Kometa Anime-IDs](https://github.com/Kometa-Team/Anime-IDs) to connect them to TMDB through TVDB. Set either address to `off` to skip it.
@@ -101,15 +101,15 @@ Logo files are in `assets/`; the Unraid icon is `unraid/undermynd-icon.png`.
 
 ## Usenet (SABnzbd side)
 
-Add Undermynd to Sonarr/Radarr/Lidarr as a **SABnzbd** client on the machine port (host 18081 by default).
+Add HyveMynd to Sonarr/Radarr/Lidarr as a **SABnzbd** client on the machine port (host 18081 by default).
 The **API key is the client password** (shown once in the log on first run, rotatable in the admin page).
 Usenet goes to TorBox when a token is set, otherwise to NZBGet when its address is set.
 
 ## Tdarr hand-off
 
-For categories with transcode on, finished videos go to the Tdarr **input folder** and Undermynd collects the result from the **output folder**. Create a dedicated Tdarr library that reads the input folder and writes folder-to-folder into the output folder. Undermynd never touches any other library.
+For categories with transcode on, finished videos go to the Tdarr **input folder** and HyveMynd collects the result from the **output folder**. Create a dedicated Tdarr library that reads the input folder and writes folder-to-folder into the output folder. HyveMynd never touches any other library.
 
-With a Tdarr address (and API key, if Tdarr has authentication on) and the library's ID set on the Transcode tab, Undermynd also:
+With a Tdarr address (and API key, if Tdarr has authentication on) and the library's ID set on the Transcode tab, HyveMynd also:
 - asks Tdarr to scan just that job's folder, so timing does not depend on a folder watcher;
 - shows the node, worker and percentage while a worker holds the file (`get-nodes`, and `cruddb` file records, the same calls Overmynd uses);
 - fails the job at once when Tdarr marks the file errored, and treats a worker with no progress for the stall time as failed;
@@ -129,11 +129,11 @@ Keep both inside one mount of one cache-only share so every move is a rename.
 
 ## Log
 
-Admin → Log shows the last 2000 lines of the container log since Undermynd started, with a filter box (a job id, `tdarr`, `failed`) and a follow switch. The one-time setup key is never kept in it.
+Admin → Log shows the last 2000 lines of the container log since HyveMynd started, with a filter box (a job id, `tdarr`, `failed`) and a follow switch. The one-time setup key is never kept in it.
 
 ## Resolution check
 
-When a download finishes, Undermynd reads the real frame size of each video from its container header and asks the arr (Sonarr or Radarr, through the download's history) what quality it grabbed the release as. If the video is below that step (2160, 1080, 720, 480), such as a release labelled 1080p that is really 480p, the job fails and the arr is told to blocklist the release and search again. Wider-than-tall crops count by width, so a 1920x800 film is 1080p. If the arr cannot say, cannot be reached, or the frame size cannot be read, the download goes on as normal. Turn it off under Admin → System → Timing ("check resolution against the arr").
+When a download finishes, HyveMynd reads the real frame size of each video from its container header and asks the arr (Sonarr or Radarr, through the download's history) what quality it grabbed the release as. If the video is below that step (2160, 1080, 720, 480), such as a release labelled 1080p that is really 480p, the job fails and the arr is told to blocklist the release and search again. Wider-than-tall crops count by width, so a 1920x800 film is 1080p. If the arr cannot say, cannot be reached, or the frame size cannot be read, the download goes on as normal. Turn it off under Admin → System → Timing ("check resolution against the arr").
 
 ## Re-encoding files already in the library
 

@@ -99,11 +99,11 @@ type NZBGet struct {
 }
 
 // Tdarr hands videos to a Tdarr library by folder. Create a library in Tdarr that
-// watches InDir and writes to OutDir (folder to folder); Undermynd does not touch any other library.
+// watches InDir and writes to OutDir (folder to folder); HyveMynd does not touch any other library.
 type Tdarr struct {
-	URL            string        `json:"url"` // optional; with it Undermynd watches Tdarr over its API
+	URL            string        `json:"url"` // optional; with it HyveMynd watches Tdarr over its API
 	APIKey         secret.String `json:"apiKey"`
-	LibraryID      string        `json:"libraryId"` // the dedicated Undermynd library
+	LibraryID      string        `json:"libraryId"` // the dedicated HyveMynd library
 	MaxInFlight    int           `json:"maxInFlight"`
 	StallMinutes   int           `json:"stallMinutes"`
 	InDir          string        `json:"inDir"`
@@ -123,7 +123,7 @@ type Playback struct {
 	// importer places, so it shows up without waiting for a library scan. Off
 	// by default: Emby finds new files by itself.
 	RefreshAfterPlace bool `json:"refreshAfterPlace,omitempty"`
-	// PathFrom and PathTo map Undermynd's paths to the media server's when
+	// PathFrom and PathTo map HyveMynd's paths to the media server's when
 	// they differ ("/media" here is "/mnt/user/media" there).
 	PathFrom string `json:"pathFrom,omitempty"`
 	PathTo   string `json:"pathTo,omitempty"`
@@ -403,7 +403,7 @@ func SafeName(s string) string {
 	return s
 }
 
-// Work is the folder for everything Undermynd creates while a job is in flight.
+// Work is the folder for everything HyveMynd creates while a job is in flight.
 func (e Env) Work() string {
 	if e.WorkDir != "" {
 		return e.WorkDir
