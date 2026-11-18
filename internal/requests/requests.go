@@ -424,6 +424,11 @@ func (s *Service) handOn(ctx context.Context, r Request) (string, error) {
 			if err != nil {
 				return "", err
 			}
+			var genres []string
+			for _, g := range info.Genres {
+				genres = append(genres, g.Name)
+			}
+			s.Movies.SetArt(m.ID, metadata.Image(info.PosterPath, "w500"), metadata.Image(info.BackdropPath, "w1280"), info.Overview, strings.Join(genres, ", "))
 			go s.Movies.Search(context.WithoutCancel(ctx), m.ID, true)
 			return "added to " + cat + " (native), searching", nil
 		}

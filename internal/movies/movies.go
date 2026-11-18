@@ -79,16 +79,20 @@ type Movie struct {
 	Searched  time.Time `json:"searched"`
 	Note      string    `json:"note"`
 	Status    string    `json:"status"` // missing, downloading, cutoff unmet, have, unmonitored
+	Poster    string    `json:"poster"`
+	Fanart    string    `json:"fanart"`
+	Overview  string    `json:"overview"`
+	Genres    string    `json:"genres"`
 }
 
 const cols = `id, title, year, COALESCE(tmdb_id, 0), imdb_id, folder, monitored, category, profile, runtime,
-	file_path, file_quality, file_score, file_version, file_size, job_id, searched, note`
+	file_path, file_quality, file_score, file_version, file_size, job_id, searched, note, poster, fanart, overview, genres`
 
 func scan(r interface{ Scan(...any) error }) (Movie, error) {
 	var m Movie
 	var searched string
 	err := r.Scan(&m.ID, &m.Title, &m.Year, &m.TMDB, &m.IMDB, &m.Folder, &m.Monitored, &m.Category, &m.Profile, &m.Runtime,
-		&m.File, &m.Quality, &m.Score, &m.Version, &m.Size, &m.JobID, &searched, &m.Note)
+		&m.File, &m.Quality, &m.Score, &m.Version, &m.Size, &m.JobID, &searched, &m.Note, &m.Poster, &m.Fanart, &m.Overview, &m.Genres)
 	if searched != "" {
 		m.Searched, _ = time.Parse(db.TimeFormat, searched)
 	}
@@ -176,6 +180,28 @@ func (s *Service) Remove(id int64) error {
 	return err
 }
 
+type arrImage struct {
+	CoverType string `json:"coverType"`
+	RemoteURL string `json:"remoteUrl"`
+}
+
+// imageOf picks an image of a type, at a sensible TMDB size.
+func imageOf(imgs []arrImage, kind, size string) string {
+	for _, i := range imgs {
+		if i.CoverType == kind && i.RemoteURL != "" {
+			return strings.Replace(i.RemoteURL, "/t/p/original/", "/t/p/"+size+"/", 1)
+		}
+	}
+	return ""
+}
+
+// SetArt records a movie's poster, backdrop, overview and genres.
+func (s *Service) SetArt(id int64, poster, fanart, overview, genres string) {
+	s.DB.Exec(`UPDATE movies SET poster = CASE WHEN ? != '' THEN ? ELSE poster END, fanart = CASE WHEN ? != '' THEN ? ELSE fanart END,
+		overview = CASE WHEN ? != '' THEN ? ELSE overview END, genres = CASE WHEN ? != '' THEN ? ELSE genres END WHERE id = ?`,
+		poster, poster, fanart, fanart, overview, overview, genres, genres, id)
+}
+
 // ImportResult says what an import from Radarr did.
 type ImportResult struct {
 	Added    int      `json:"added"`
@@ -184,14 +210,17 @@ type ImportResult struct {
 }
 
 type radarrMovie struct {
-	Title            string `json:"title"`
-	Year             int    `json:"year"`
-	TMDB             int64  `json:"tmdbId"`
-	IMDB             string `json:"imdbId"`
-	Path             string `json:"path"`
-	Monitored        bool   `json:"monitored"`
-	Runtime          int    `json:"runtime"`
-	QualityProfileID int    `json:"qualityProfileId"`
+	Title            string     `json:"title"`
+	Year             int        `json:"year"`
+	TMDB             int64      `json:"tmdbId"`
+	IMDB             string     `json:"imdbId"`
+	Path             string     `json:"path"`
+	Monitored        bool       `json:"monitored"`
+	Runtime          int        `json:"runtime"`
+	QualityProfileID int        `json:"qualityProfileId"`
+	Overview         string     `json:"overview"`
+	Genres           []string   `json:"genres"`
+	Images           []arrImage `json:"images"`
 	MovieFile        *struct {
 		Path         string `json:"path"`
 		RelativePath string `json:"relativePath"`
@@ -290,6 +319,7 @@ func (s *Service) Import(ctx context.Context, category string) (ImportResult, er
 			m.Title, m.Year, m.IMDB, folder, m.Monitored, category, prof, m.Runtime, file, quality, score, version, size, now, id); err != nil {
 			return res, err
 		}
+		s.SetArt(id, imageOf(m.Images, "poster", "w500"), imageOf(m.Images, "fanart", "w1280"), m.Overview, strings.Join(m.Genres, ", "))
 	}
 	s.Log.Printf("movies: imported %d new and %d known movies from %s", res.Added, res.Updated, category)
 	return res, nil

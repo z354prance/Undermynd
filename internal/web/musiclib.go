@@ -40,6 +40,9 @@ func (s *Server) musicList(w http.ResponseWriter, r *http.Request) {
 			cats = append(cats, cat{c.Name, c.Native, c.LibraryDir})
 		}
 	}
+	for i := range list {
+		list[i].Poster, list[i].Fanart = imgURL(list[i].Poster), imgURL(list[i].Fanart)
+	}
 	writeJSON(w, map[string]any{"artists": list, "categories": cats, "settings": st.Music, "qualities": music.Qualities})
 }
 
@@ -51,6 +54,10 @@ func (s *Server) musicArtist(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		jsonErr(w, http.StatusNotFound, err.Error())
 		return
+	}
+	a.Poster, a.Fanart = imgURL(a.Poster), imgURL(a.Fanart)
+	for i := range als {
+		als[i].Cover = imgURL(als[i].Cover)
 	}
 	writeJSON(w, map[string]any{"artist": a, "albums": als})
 }

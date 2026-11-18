@@ -11,6 +11,7 @@ import (
 
 	"github.com/z354prance/undermynd/internal/catalog"
 	"github.com/z354prance/undermynd/internal/indexers"
+	"github.com/z354prance/undermynd/internal/metadata"
 )
 
 func (s *Server) moviesReady(w http.ResponseWriter) bool {
@@ -53,6 +54,9 @@ func (s *Server) moviesList(w http.ResponseWriter, r *http.Request) {
 		for _, p := range ps {
 			profiles = append(profiles, p.Name)
 		}
+	}
+	for i := range list {
+		list[i].Poster, list[i].Fanart = imgURL(list[i].Poster), imgURL(list[i].Fanart)
 	}
 	writeJSON(w, map[string]any{"movies": list, "categories": cats, "settings": st.Movies, "profiles": profiles})
 }
@@ -271,8 +275,44 @@ func (s *Server) moviesAdd(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.Movies.SetArt(m.ID, metadata.Image(info.PosterPath, "w500"), metadata.Image(info.BackdropPath, "w1280"), info.Overview, genreNames(info))
 	if in.Search {
 		go s.Movies.Search(context.Background(), m.ID, true)
 	}
 	writeJSON(w, m)
+}
+
+func genreNames(m metadata.MovieInfo) string {
+	var g []string
+	for _, x := range m.Genres {
+		g = append(g, x.Name)
+	}
+	return strings.Join(g, ", ")
+}
+
+// movieGet is one movie with its history, for its page.
+func (s *Server) movieGet(w http.ResponseWriter, r *http.Request) {
+	if !s.moviesReady(w) {
+		return
+	}
+	m, err := s.Movies.Get(movieID(r))
+	if err != nil {
+		jsonErr(w, http.StatusNotFound, "no such movie")
+		return
+	}
+	m.Poster, m.Fanart = imgURL(m.Poster), imgURL(m.Fanart)
+	var hist any = []any{}
+	if s.History != nil {
+		if h, err := s.History.List("movie", m.ID, 50); err == nil && h != nil {
+			hist = h
+		}
+	}
+	var profiles []string
+	if s.Profiles != nil {
+		ps, _ := s.Profiles.Profiles()
+		for _, p := range ps {
+			profiles = append(profiles, p.Name)
+		}
+	}
+	writeJSON(w, map[string]any{"movie": m, "history": hist, "profiles": profiles})
 }

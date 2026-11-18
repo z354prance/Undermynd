@@ -50,6 +50,9 @@ func (s *Server) tvList(w http.ResponseWriter, r *http.Request) {
 			profiles = append(profiles, p.Name)
 		}
 	}
+	for i := range list {
+		list[i].Poster, list[i].Fanart = imgURL(list[i].Poster), imgURL(list[i].Fanart)
+	}
 	writeJSON(w, map[string]any{"series": list, "categories": cats, "settings": st.TV, "profiles": profiles})
 }
 
@@ -65,7 +68,15 @@ func (s *Server) tvGet(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, map[string]any{"series": x, "episodes": eps})
+	x.Poster, x.Fanart = imgURL(x.Poster), imgURL(x.Fanart)
+	var profiles []string
+	if s.Profiles != nil {
+		ps, _ := s.Profiles.Profiles()
+		for _, p := range ps {
+			profiles = append(profiles, p.Name)
+		}
+	}
+	writeJSON(w, map[string]any{"series": x, "episodes": eps, "profiles": profiles})
 }
 
 func (s *Server) tvEdit(w http.ResponseWriter, r *http.Request) {

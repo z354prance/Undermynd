@@ -164,6 +164,9 @@ type Artist struct {
 	Albums    int    `json:"albums"` // monitored, released
 	Have      int    `json:"have"`
 	Size      int64  `json:"size"`
+	Poster    string `json:"poster"`
+	Fanart    string `json:"fanart"`
+	Overview  string `json:"overview"`
 }
 
 // Album is an album with its state.
@@ -226,7 +229,7 @@ func (s *Service) status(a *Album, artistMonitored bool, cutoff string) {
 
 // Artists lists a category's artists (all when empty) with their counts.
 func (s *Service) Artists(category string) ([]Artist, error) {
-	q := `SELECT id, mbid, name, sort_name, folder, monitored, category FROM artists`
+	q := `SELECT id, mbid, name, sort_name, folder, monitored, category, poster, fanart, overview FROM artists`
 	var args []any
 	if category != "" {
 		q += ` WHERE category = ?`
@@ -239,7 +242,7 @@ func (s *Service) Artists(category string) ([]Artist, error) {
 	var out []Artist
 	for rows.Next() {
 		var a Artist
-		if err := rows.Scan(&a.ID, &a.MBID, &a.Name, &a.SortName, &a.Folder, &a.Monitored, &a.Category); err != nil {
+		if err := rows.Scan(&a.ID, &a.MBID, &a.Name, &a.SortName, &a.Folder, &a.Monitored, &a.Category, &a.Poster, &a.Fanart, &a.Overview); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -287,8 +290,8 @@ func (s *Service) allAlbums() (map[int64][]Album, error) {
 // Artist returns an artist and its albums, newest first.
 func (s *Service) Artist(id int64) (Artist, []Album, error) {
 	var a Artist
-	err := s.DB.QueryRow(`SELECT id, mbid, name, sort_name, folder, monitored, category FROM artists WHERE id = ?`, id).
-		Scan(&a.ID, &a.MBID, &a.Name, &a.SortName, &a.Folder, &a.Monitored, &a.Category)
+	err := s.DB.QueryRow(`SELECT id, mbid, name, sort_name, folder, monitored, category, poster, fanart, overview FROM artists WHERE id = ?`, id).
+		Scan(&a.ID, &a.MBID, &a.Name, &a.SortName, &a.Folder, &a.Monitored, &a.Category, &a.Poster, &a.Fanart, &a.Overview)
 	if errors.Is(err, sql.ErrNoRows) {
 		return a, nil, errors.New("no such artist")
 	} else if err != nil {
@@ -443,6 +446,11 @@ type lidarrArtist struct {
 	MBID      string `json:"foreignArtistId"`
 	Path      string `json:"path"`
 	Monitored bool   `json:"monitored"`
+	Overview  string `json:"overview"`
+	Images    []struct {
+		CoverType string `json:"coverType"`
+		RemoteURL string `json:"remoteUrl"`
+	} `json:"images"`
 }
 
 type lidarrAlbum struct {
@@ -522,6 +530,16 @@ func (s *Service) Import(ctx context.Context, category string) (ImportResult, er
 		}
 		var aid int64
 		s.DB.QueryRow(`SELECT id FROM artists WHERE mbid = ?`, la.MBID).Scan(&aid)
+		var poster, fanart string
+		for _, im := range la.Images {
+			switch im.CoverType {
+			case "poster":
+				poster = im.RemoteURL
+			case "fanart":
+				fanart = im.RemoteURL
+			}
+		}
+		s.DB.Exec(`UPDATE artists SET poster = ?, fanart = ?, overview = ? WHERE id = ?`, poster, fanart, la.Overview, aid)
 		res.Artists++
 		var als []lidarrAlbum
 		if err := cl.Get(ctx, "/album?artistId="+strconv.FormatInt(la.ID, 10), &als); err != nil {

@@ -183,8 +183,12 @@ type EpisodeGroupSummary struct {
 type TV struct {
 	ID               int64  `json:"id"`
 	OriginalLanguage string `json:"original_language"`
+	PosterPath       string `json:"poster_path"`
+	BackdropPath     string `json:"backdrop_path"`
+	Overview         string `json:"overview"`
 	Genres           []struct {
-		ID int `json:"id"`
+		ID   int    `json:"id"`
+		Name string `json:"name"`
 	} `json:"genres"`
 	Name         string          `json:"name"`
 	OriginalName string          `json:"original_name"`
@@ -355,6 +359,20 @@ type MovieInfo struct {
 	IMDB             string `json:"imdb_id"`
 	OriginalLanguage string `json:"original_language"`
 	Runtime          int    `json:"runtime"`
+	PosterPath       string `json:"poster_path"`
+	BackdropPath     string `json:"backdrop_path"`
+	Overview         string `json:"overview"`
+	Genres           []struct {
+		Name string `json:"name"`
+	} `json:"genres"`
+}
+
+// Image is a TMDB image's address at a width ("w342", "w780", "original").
+func Image(path, size string) string {
+	if path == "" {
+		return ""
+	}
+	return "https://image.tmdb.org/t/p/" + size + path
 }
 
 // Movie looks a movie up.

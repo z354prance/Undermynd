@@ -128,6 +128,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/api/library", s.admin(s.adminLibrary))
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, map[string]string{"status": "ok"}) })
 	mux.Handle("GET /assets/", files)
+	mux.HandleFunc("GET /img", s.image)
 
 	// ---- admin: everything under /admin
 	mux.HandleFunc("GET /admin", s.page("admin.html"))
@@ -248,6 +249,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /admin/api/movies/import", s.guard(s.admin(s.moviesImport)))
 	mux.HandleFunc("PUT /admin/api/movies/settings", s.guard(s.admin(s.moviesSettings)))
 	mux.HandleFunc("POST /admin/api/movies/search-wanted", s.guard(s.admin(s.moviesSearchWanted)))
+	mux.HandleFunc("GET /admin/api/movies/{id}", s.admin(s.movieGet))
 	mux.HandleFunc("PUT /admin/api/movies/{id}", s.guard(s.admin(s.movieEdit)))
 	mux.HandleFunc("DELETE /admin/api/movies/{id}", s.guard(s.admin(s.movieDelete)))
 	mux.HandleFunc("POST /admin/api/movies/{id}/search", s.guard(s.admin(s.movieSearch)))
