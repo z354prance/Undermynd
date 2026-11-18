@@ -308,7 +308,7 @@ body.ui .arr .a-bar i{position:absolute;left:0;top:0;bottom:0;background:#4b8fd6
 body.ui .arr .a-bar.done i{background:#3fb37f}body.ui .arr .a-bar.gap i{background:#d9822b}
 body.ui .arr .a-bar span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,.7)}
 body.ui .arr .a-lbl{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:3px;font-size:12px;background:var(--a-line2);color:var(--a-text);white-space:nowrap}
-body.ui .arr .a-lbl.teal{background:#1f5c52;color:#d6fff7}body.ui .arr .a-lbl.orange{background:#7a4a1c;color:#ffe9d1}body.ui .arr .a-lbl.green{background:#235c3d;color:#dcffe9}
+body.ui .arr .a-lbl.teal{background:#1f5c52;color:#d6fff7}body.ui .arr .a-lbl.orange{background:#7a4a1c;color:#ffe9d1}body.ui .arr .a-lbl.green{background:#235c3d;color:#dcffe9}body.ui .arr .a-lbl.purple{background:#4b3478;color:#efe4ff}
 body.ui .arr .a-grp{display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap}
 body.ui .arr .a-arrow{color:#6d737a;font-size:11px}
 body.ui .arr button.a-iconbtn{background:none;border:0;color:#a3a8af;padding:5px;height:auto;display:inline-flex;border-radius:3px}
@@ -326,7 +326,9 @@ body.ui .arr .a-season-h{display:flex;align-items:center;gap:14px;padding:12px 1
 body.ui .arr .a-season-h h2{margin:0;font:500 18px "IBM Plex Sans",system-ui,sans-serif;color:#fff}
 body.ui .arr tr.a-miss td{background:rgba(217,130,43,.07)}
 body.ui .arr .a-status{display:inline-flex;width:10px;height:10px;border-radius:50%;background:#3fb37f}
-body.ui .arr .a-status.gap{background:#d9822b}body.ui .arr .a-status.grabbed{background:#4b8fd6}
+body.ui .arr .a-status.gap{background:#d9822b}body.ui .arr .a-status.processing{background:#a77bea;box-shadow:0 0 0 3px rgba(167,123,234,.25)}
+body.ui .arr tr.a-proc td{background:rgba(167,123,234,.08)}
+body.ui .arr .a-proct{color:#c9a8ff}
 body.ui .arr input.a-input,body.ui .arr select.a-input,body.ui .arr textarea.a-input{height:36px;box-sizing:border-box;width:100%;max-width:520px;background:var(--a-bg);border:1px solid #444a50;border-radius:4px;color:var(--a-text);font:14px "IBM Plex Sans",system-ui,sans-serif;padding:0 10px}
 body.ui .arr textarea.a-area{height:84px;padding:8px 10px;resize:vertical}
 body.ui .arr .a-search{display:flex;align-items:center;gap:8px;background:var(--a-bg);border:1px solid #444a50;border-radius:4px;height:44px;padding:0 12px;max-width:720px;color:var(--a-dim);margin:0}

@@ -120,6 +120,28 @@ func TestFollowAndGrab(t *testing.T) {
 	if started, _ := svc.Check(ctx, sc.Folder); len(started) != 0 {
 		t.Fatalf("again: %v", started)
 	}
+	// While 7 downloads it shows as being processed.
+	jobs := []job.Job{{Name: "[SubsPlease] Seitokai ni mo Ana wa Aru! - 07 (1080p) [AAAA].mkv", Category: "anime", State: job.Downloading},
+		{Name: "[Judas] Seitokai ni mo Ana wa Aru! - S01E08 [1080p].mkv", Category: "anime", State: job.Failed}}
+	svc.Jobs = func() []job.Job { return jobs }
+	active, failed := svc.Activity(sc)
+	if len(active) != 1 || active[0].Episode != 7 || len(failed) != 1 {
+		t.Fatalf("activity: %+v %v", active, failed)
+	}
+	if n := svc.ActiveCounts(list)[sc.Folder]; n != 1 {
+		t.Fatalf("active count %d", n)
+	}
+	// Judas's 8 failed: SubsPlease's 8 is taken instead, after the grace period.
+	mu.Lock()
+	releases = append(releases, item("[SubsPlease] Seitokai ni mo Ana wa Aru! - 08 (1080p) [DDDD].mkv", "8889", 200))
+	mu.Unlock()
+	if started, _ := svc.Check(ctx, sc.Folder); len(started) != 0 {
+		t.Fatalf("should wait for Judas first: %v", started)
+	}
+	now = now.Add(25 * time.Hour)
+	if started, err := svc.Check(ctx, sc.Folder); err != nil || len(started) != 1 || !strings.Contains(started[0], "- 08") {
+		t.Fatalf("after the failure: %v %v", started, err)
+	}
 	// The hand-made rule leaves Judas releases of the show to it now.
 	if svc.Claims("[Judas] Seitokai ni mo Ana wa Aru! - S01E09 [1080p]") != "Seitokai ni mo Ana wa Aru" {
 		t.Fatal("followed show should claim its group's releases")

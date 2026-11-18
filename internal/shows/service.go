@@ -55,8 +55,10 @@ type Service struct {
 	HTTP    *http.Client
 	Cfg     *config.Config
 	Engine  Submitter
-	Log     *log.Logger
-	Now     func() time.Time
+	// Jobs lists the pipeline's jobs, to show episodes being processed.
+	Jobs func() []job.Job
+	Log  *log.Logger
+	Now  func() time.Time
 	// Grace is how long a later group's release waits for the first choice.
 	Grace time.Duration
 	// Every is how often each followed show is checked.
@@ -366,6 +368,93 @@ func (s *Service) search(ctx context.Context, sh Show) ([]Release, error) {
 	return out, nil
 }
 
+// Active is an episode a pipeline job is working on.
+type Active struct {
+	Season  int    `json:"season"` // 0: the release names no season
+	Episode int    `json:"episode"`
+	State   string `json:"state"`
+	Name    string `json:"name"`
+}
+
+func jobKey(sh Show, j job.Job) (key, bool) {
+	if j.Category != sh.Category {
+		return key{}, false
+	}
+	name := j.Name
+	if !videoExt[strings.ToLower(filepath.Ext(name))] {
+		name += ".mkv"
+	}
+	r, ok := library.Parse(name)
+	if !ok || !matchesShow(sh, r) {
+		return key{}, false
+	}
+	return keyOf(r.Season, r.Marked, r.Episode), true
+}
+
+func activeState(st job.State) bool {
+	return st != job.Imported && st != job.Cleaned && st != job.Failed
+}
+
+// Activity lists the show's episodes that jobs are working on, and the
+// episodes whose only jobs failed.
+func (s *Service) Activity(sh Show) (active []Active, failed map[key]bool) {
+	failed = map[key]bool{}
+	if s.Jobs == nil {
+		return nil, failed
+	}
+	busy := map[key]bool{}
+	for _, j := range s.Jobs() {
+		k, ok := jobKey(sh, j)
+		if !ok {
+			continue
+		}
+		if activeState(j.State) {
+			busy[k] = true
+			active = append(active, Active{Season: k.season, Episode: k.episode, State: string(j.State), Name: j.Name})
+		} else if j.State == job.Failed {
+			failed[k] = true
+		}
+	}
+	for k := range busy {
+		delete(failed, k)
+	}
+	return active, failed
+}
+
+// ActiveCounts says, per show folder, how many episodes jobs are working on.
+func (s *Service) ActiveCounts(list []Show) map[string]int {
+	out := map[string]int{}
+	if s.Jobs == nil {
+		return out
+	}
+	byTitle := map[string]Show{}
+	for _, sh := range list {
+		for _, n := range names(sh) {
+			byTitle[sh.Category+"\x00"+squash(n)] = sh
+		}
+	}
+	for _, j := range s.Jobs() {
+		if !activeState(j.State) {
+			continue
+		}
+		name := j.Name
+		if !videoExt[strings.ToLower(filepath.Ext(name))] {
+			name += ".mkv"
+		}
+		r, ok := library.Parse(name)
+		if !ok {
+			continue
+		}
+		for _, t := range append([]string{r.Title}, r.Aliases...) {
+			if sh, ok := byTitle[j.Category+"\x00"+squash(t)]; ok {
+				out[sh.Folder]++
+				break
+			}
+		}
+	}
+	return out
+}
+
 // Check looks for new episodes of a followed show and grabs what Pick picks.
 func (s *Service) Check(ctx context.Context, folder string) ([]string, error) {
 	s.busy.Lock()
@@ -392,6 +481,23 @@ func (s *Service) Check(ctx context.Context, folder string) ([]string, error) {
 	seen, err := s.Store.SeenFor(folder)
 	if err != nil {
 		return nil, err
+	}
+	// A grabbed episode whose download failed, and that is not in the folder,
+	// is open again; the release that failed is not tried again.
+	if _, failed := s.Activity(sh); len(failed) > 0 {
+		changed := false
+		for _, r := range seen {
+			k := keyOf(r.Season, r.Marked, r.Episode)
+			if !r.Grabbed.IsZero() && failed[k] && !Has(files, r.Season, r.Marked && r.Season > 1, r.Episode) {
+				_ = s.Store.MarkFailed(folder, r.Title)
+				changed = true
+			}
+		}
+		if changed {
+			if seen, err = s.Store.SeenFor(folder); err != nil {
+				return nil, err
+			}
+		}
 	}
 	var started []string
 	for _, p := range Pick(sh.Settings, files, seen, s.Now(), s.Grace) {
