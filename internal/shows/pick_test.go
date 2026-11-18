@@ -83,3 +83,16 @@ func TestParseNyaa(t *testing.T) {
 		t.Fatalf("size %d", r[1].Size)
 	}
 }
+
+func TestCleanQuery(t *testing.T) {
+	for in, want := range map[string]string{
+		"Arknights - Reimei Zensou":  "Arknights Reimei Zensou",
+		"Re:Zero -Starting Life-":    "Re:Zero -Starting Life-",
+		"Show -- Part 2 - 07":        "Show Part 2 07",
+		"Bleach -Sennen Kessen-hen-": "Bleach -Sennen Kessen-hen-",
+	} {
+		if got := CleanQuery(in); got != want {
+			t.Errorf("%q: got %q want %q", in, got, want)
+		}
+	}
+}
