@@ -2,6 +2,7 @@ package web
 
 import (
 	"errors"
+	"github.com/z354prance/undermynd/internal/metadata"
 
 	"context"
 	"github.com/z354prance/undermynd/internal/requests"
@@ -109,7 +110,7 @@ func (s *Server) requestSearch(w http.ResponseWriter, r *http.Request) {
 			jsonErr(w, http.StatusBadGateway, "the search did not work; try again shortly")
 			return
 		}
-		writeJSON(w, map[string]any{"results": res})
+		writeJSON(w, map[string]any{"results": withPosters(res)})
 		return
 	}
 	c := s.seerrPublic()
@@ -130,12 +131,16 @@ func (s *Server) requestCreate(w http.ResponseWriter, r *http.Request) {
 		MediaID    int64  `json:"media_id"`
 		MediaType  string `json:"media_type"`
 		AllSeasons bool   `json:"all_seasons"`
-		Name       string `json:"name"` // optional: who is asking (native requests)
+		Seasons    []int  `json:"seasons"` // native requests: the seasons wanted
+		Name       string `json:"name"`    // optional: who is asking (native requests)
 	}
 	if !readJSON(w, r, &in) {
 		return
 	}
-	if in.MediaID <= 0 || (in.MediaType != "movie" && in.MediaType != "tv") || (in.MediaType == "tv" && !in.AllSeasons) {
+	if len(in.Seasons) > 100 {
+		in.Seasons = in.Seasons[:100]
+	}
+	if in.MediaID <= 0 || (in.MediaType != "movie" && in.MediaType != "tv") || (in.MediaType == "tv" && !in.AllSeasons && (len(in.Seasons) == 0 || !s.nativeMode())) {
 		jsonErr(w, http.StatusBadRequest, "select a movie or confirm all seasons of a TV show")
 		return
 	}
@@ -151,7 +156,7 @@ func (s *Server) requestCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 		defer cancel()
-		req, err := s.Requests.Create(ctx, in.MediaType, in.MediaID, in.Name)
+		req, err := s.Requests.Create(ctx, in.MediaType, in.MediaID, in.Name, in.Seasons...)
 		if errors.Is(err, requests.ErrAlready) {
 			jsonErr(w, http.StatusConflict, "already requested or in the library")
 			return
@@ -322,7 +327,7 @@ func (s *Server) requestDiscover(w http.ResponseWriter, r *http.Request) {
 			jsonErr(w, http.StatusBadGateway, "suggestions are not available right now")
 			return
 		}
-		writeJSON(w, map[string]any{"results": res})
+		writeJSON(w, map[string]any{"results": withPosters(res)})
 		return
 	}
 	c := s.seerrPublic()
@@ -352,4 +357,44 @@ func (s *Server) requestDiscover(w http.ResponseWriter, r *http.Request) {
 	discoverCache.data[kind], discoverCache.at[kind] = res, time.Now()
 	discoverCache.Unlock()
 	writeJSON(w, map[string]any{"results": res})
+}
+
+type posterResult struct {
+	seerr.SearchResult
+	Poster string `json:"poster,omitempty"`
+}
+
+// withPosters adds this server's poster link to each result.
+func withPosters(res []seerr.SearchResult) []posterResult {
+	out := make([]posterResult, len(res))
+	for i, x := range res {
+		out[i] = posterResult{x, imgURL(metadata.Image(x.PosterPath, "w342"))}
+	}
+	return out
+}
+
+// requestTitle is a title's page in the request panel (native requests).
+func (s *Server) requestTitle(w http.ResponseWriter, r *http.Request) {
+	if !s.nativeMode() || !s.native() {
+		jsonErr(w, http.StatusServiceUnavailable, "title pages need requests kept by HyveMynd")
+		return
+	}
+	kind := r.URL.Query().Get("type")
+	id, _ := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+	if id <= 0 || (kind != "movie" && kind != "tv") {
+		jsonErr(w, http.StatusBadRequest, "type movie or tv, and an id")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	t, err := s.Requests.Title(ctx, kind, id)
+	if err != nil {
+		jsonErr(w, http.StatusBadGateway, "that title is not available right now")
+		return
+	}
+	t.Poster, t.Backdrop = imgURL(t.Poster), imgURL(t.Backdrop)
+	for i := range t.Cast {
+		t.Cast[i].Photo = imgURL(t.Cast[i].Photo)
+	}
+	writeJSON(w, t)
 }
