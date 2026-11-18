@@ -188,3 +188,42 @@ func TestFollowAndGrab(t *testing.T) {
 		t.Fatal("folder not made")
 	}
 }
+
+func TestRootsSkipArrCategoriesAndMissingFolders(t *testing.T) {
+	secret.SetKeyForTest(make([]byte, 32))
+	dir := t.TempDir()
+	lib := filepath.Join(dir, "anime")
+	_ = os.MkdirAll(filepath.Join(lib, "Frieren"), 0o755)
+	cfg, err := config.Load(config.Env{ConfigDir: filepath.Join(dir, "c"), DataDir: filepath.Join(dir, "d"), TickInterval: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := cfg.Get()
+	c.Categories = []config.Category{{Name: "anime", Kind: "rss", LibraryDir: lib},
+		{Name: "tv", Kind: "sonarr", LibraryDir: "/media/TV"},
+		{Name: "old", Kind: "rss", LibraryDir: filepath.Join(dir, "gone")}}
+	if err := cfg.Set(c); err != nil {
+		t.Fatal(err)
+	}
+	h, err := db.Open(filepath.Join(dir, "u.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+	if err := db.Migrate(h); err != nil {
+		t.Fatal(err)
+	}
+	s := &shows.Service{Store: &shows.Store{DB: h, Now: time.Now}, Cfg: cfg, Log: log.New(io.Discard, "", 0), Now: time.Now}
+	for _, r := range s.Roots() {
+		if r.Category == "tv" {
+			t.Fatal("an arr category's folder is scanned")
+		}
+	}
+	list, err := s.List()
+	if err != nil || len(list) != 1 || list[0].Name != "Frieren" {
+		t.Fatalf("list %v %+v", err, list)
+	}
+	if _, _, err := s.TidyList(); err != nil {
+		t.Fatal(err)
+	}
+}

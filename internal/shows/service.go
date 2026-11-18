@@ -73,8 +73,8 @@ type Service struct {
 func (s *Service) Roots() []Root {
 	var out []Root
 	for _, c := range s.Cfg.Get().Categories {
-		if c.LibraryDir != "" {
-			out = append(out, Root{Dir: c.LibraryDir, Category: c.Name})
+		if d := c.OwnLibrary(); d != "" {
+			out = append(out, Root{Dir: d, Category: c.Name})
 		}
 	}
 	return out
@@ -149,10 +149,15 @@ func (s *Service) List() ([]Show, error) {
 	}
 	rules := s.Cfg.Get().Rules
 	var out []Show
+	var firstErr error
 	for _, root := range s.Roots() {
 		names, err := library.Folders(root.Dir)
 		if err != nil {
-			return nil, fmt.Errorf("library folder %s: %w", root.Dir, err)
+			// One unreadable folder does not hide the others' shows.
+			if firstErr == nil {
+				firstErr = fmt.Errorf("library folder %s: %w", root.Dir, err)
+			}
+			continue
 		}
 		for _, n := range names {
 			folder := filepath.Join(root.Dir, n)
@@ -168,6 +173,9 @@ func (s *Service) List() ([]Show, error) {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })
+	if len(out) == 0 && firstErr != nil {
+		return nil, firstErr
+	}
 	return out, nil
 }
 
