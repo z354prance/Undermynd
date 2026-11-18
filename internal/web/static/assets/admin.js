@@ -64,12 +64,12 @@
       {id:'overview',label:'Overview',icon:'s_over',pages:[['overview','Overview']]},
       {id:'downloads',label:'Downloads',icon:'s_dl',pages:[['jobs','On the way'],['rss','Feeds'],['reencode','Re-encode']]},
       {id:'requests',label:'Requests',icon:'s_req',pages:[['requests','Media'],['access','Accounts']]},
-      {id:'library',label:'Library',icon:'s_lib',pages:[['library','Library']]},
+      {id:'library',label:'Library',icon:'s_lib',pages:[['library','TV'],['anime','Anime']]},
       {id:'settings',label:'Settings',icon:'s_sys',pages:[['arrs','Arrs'],['clients','Download clients'],['transcode','Tdarr'],['public','Public page'],['playback','Media server'],['system','Server'],['log','Log']]}];
     function first(p){return p[2]?p[2][0][0]:p[0]}
     var cur=null,curPage=null;NAV.forEach(function(sec){sec.pages.forEach(function(p){if(p[0]===tab||(p[2]&&p[2].some(function(q){return q[0]===tab}))){cur=sec;curPage=p}})});
     if(!cur){cur=NAV[0];curPage=cur.pages[0];tab='overview'}
-    function go(t){stopLive();tab=t;detailId=null;app()}
+    function go(t){stopLive();tab=t;detailId=null;if(t==='anime'){aView.page='list'}app()}
     var shell=el('div','hv'),side=el('nav','hv-rail');side.setAttribute('aria-label','Sections');
     var brand=el('a','hv-brand');brand.href='/admin';brand.title='HyveMynd';var bi=el('img');bi.src='/assets/logo.svg';bi.alt='HyveMynd';brand.appendChild(bi);side.appendChild(brand);
     actCount=null;
@@ -86,7 +86,7 @@
     if(curPage[2]){var tb=el('div','hv-tabs');tb.setAttribute('role','tablist');curPage[2].forEach(function(q){var b=el('button',q[0]===tab?'on':'',q[1]);b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-selected',q[0]===tab?'true':'false');b.onclick=function(){go(q[0])};tabBtns[q[0]]=b;tb.appendChild(b)});mainCol.appendChild(tb)}
     var bodyWrap=el('div','hv-body');mainCol.appendChild(bodyWrap);
     var main=el('main','main'),body=el('div');main.appendChild(body);bodyWrap.appendChild(main);shell.appendChild(side);shell.appendChild(mainCol);root.appendChild(shell);
-    if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else if(tab==='requests')requestsView(body);else if(tab==='library')libraryView(body);else if(tab==='reencode')reencodeView(body);else if(tab==='log')logView(body);else if(tab==='access')accessView(body);else settingsView(body);
+    if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else if(tab==='requests')requestsView(body);else if(tab==='library')libraryView(body);else if(tab==='reencode')reencodeView(body);else if(tab==='log')logView(body);else if(tab==='access')accessView(body);else if(tab==='anime')animeView(body);else settingsView(body);
   }
   function fail(e){if(e.status===401){start()}else{var d=el('div','err',e.message);root.appendChild(d)}}
   function ago(t){var s=Math.max(0,(Date.now()-new Date(t))/1000);if(s<90)return Math.round(s)+'s';if(s<5400)return Math.round(s/60)+'m';if(s<172800)return Math.round(s/3600)+'h';return Math.round(s/86400)+'d'}
@@ -270,6 +270,194 @@
       if(!list.length)cards.appendChild(el('div','hv-empty','Nothing is waiting for approval.'));
       list.forEach(function(r){cards.appendChild(card(r))})})}
     draw();timer=setInterval(draw,15000)}
+  // Anime (C3, C4): the show folders of the feed libraries, followed shows,
+  // nyaa search and gap filling, in the arrs' style.
+  var aView={page:'list',folder:null,filter:'all',q:''};
+  function aBtn(icon,label,fn,cls){var b=el('button','a-tb'+(cls?' '+cls:''));b.type='button';b.appendChild(svg(icon));b.appendChild(el('span','',label));b.onclick=function(){fn(b)};return b}
+  function aIcon(icon,label,fn){var b=el('button','a-iconbtn');b.type='button';b.setAttribute('aria-label',label);b.title=label;b.appendChild(svg(icon));b.onclick=function(e){e.stopPropagation();fn(b)};return b}
+  function aLbl(text,cls){return el('span','a-lbl'+(cls?' '+cls:''),text)}
+  function aSize(b){if(!b)return '';var u=['B','KB','MB','GB','TB'],i=0;while(b>=1024&&i<4){b/=1024;i++}return b.toFixed(i>2?1:0)+' '+u[i]}
+  // The season bar from the public dashboard: one pixel per episode number from
+  // the first to the newest of each season, green on disk, dim for a gap.
+  function aBar(sh){var s=sh.summary,w=el('div','a-pxw');var b=el('span','hv-sbar');var have=0,tot=0;
+    (s.seasons||[]).forEach(function(ss){if(!ss.season&&ss.season!==0)return;var from=(ss.season===1&&ss.first>1&&ss.first<=30)?1:ss.first,gap={};(ss.gaps||[]).forEach(function(g){gap[g]=1});
+      var g=el('span','s');g.title=(ss.season?'Season '+ss.season+': ':'')+ss.count+' on disk'+(ss.gaps&&ss.gaps.length?', missing '+ss.gaps.join(', '):'');
+      // Long runs (One Piece) fold into blocks so the bar stays readable: a
+      // block is green when every number in it is on disk.
+      var span=ss.last-from+1,k=Math.max(1,Math.ceil(span/150));
+      for(var n=from;n<=ss.last;n+=k){var p=el('i'),full=true;for(var m=n;m<n+k&&m<=ss.last;m++)if(gap[m])full=false;if(full)p.className='h';g.appendChild(p)}
+      if(k>1)g.title+=' (each pixel is '+k+' episodes)';b.appendChild(g)});
+    b.setAttribute('role','img');b.setAttribute('aria-label',s.files+' episodes on disk, '+s.gaps+' missing');w.appendChild(b);w.appendChild(el('span','hv-cnt',s.files+(s.gaps?' / '+(s.files+s.gaps):'')));return w}
+  function aStatus(sh){var a=sh.anilist;if(!a)return '';var m={RELEASING:'Airing',FINISHED:'Ended',NOT_YET_RELEASED:'Not aired yet',CANCELLED:'Cancelled',HIATUS:'On hiatus'}[a.status]||a.status;
+    if(a.status==='RELEASING'&&a.nextAt){var d=Math.round((a.nextAt*1000-Date.now())/86400000);m+=' · ep '+a.nextEpisode+(d<=0?' today':d===1?' tomorrow':' in '+d+'d')}if(a.episodes)m+=' · '+a.episodes+' eps';return m}
+  function aGroups(gs){var w=el('span','a-grp');(gs||[]).forEach(function(g,i){if(i)w.appendChild(el('span','a-arrow','›'));w.appendChild(aLbl(g))});return w}
+  function aToolbar(items){var t=el('div','a-toolbar');t.setAttribute('role','toolbar');items.forEach(function(x){if(x==='|')t.appendChild(el('div','a-sep'));else if(x==='>')t.appendChild(el('div','a-grow'));else t.appendChild(x)});return t}
+  function aMsg(){return el('div','a-msg')}
+  function setMsg(m,text,bad){m.className='a-msg'+(bad?' bad':' ok');m.textContent=text}
+  function animeView(body){var w=el('div','arr');body.appendChild(w);
+    if(aView.page==='show')return aShowPage(w,aView.folder);if(aView.page==='add')return aAddPage(w);if(aView.page==='naming')return aNamingPage(w);aListPage(w)}
+  function aListPage(w){
+    var msg=aMsg(),host=el('div','a-content');
+    w.appendChild(aToolbar([aBtn('refresh','Rescan folders',function(b){b.disabled=true;api('POST','/shows/rescan',{}).then(function(){setTimeout(app,600)}).catch(function(e){b.disabled=false;setMsg(msg,e.message,true)})}),'|',
+      aBtn('plus','Add New',function(){aView.page='add';app()}),aBtn('edit','Naming',function(){aView.page='naming';app()}),'>',
+      aBtn('filter',aView.filter==='following'?'Following':'All shows',function(){aView.filter=aView.filter==='following'?'all':'following';app()},aView.filter==='following'?'on':'')]));
+    w.appendChild(host);host.appendChild(msg);
+    var q=el('input','a-input');q.type='search';q.placeholder='Filter shows';q.value=aView.q;q.setAttribute('aria-label','filter shows');host.appendChild(q);
+    var box=el('div','a-tw');host.appendChild(box);var note=el('div','a-dim a-small');host.appendChild(note);
+    api('GET','/shows').then(function(d){
+      if(!d.roots.length){box.appendChild(el('div','a-empty','No library folder is set. Give your anime category a library folder under Arrs & categories.'));return}
+      function draw(){var list=d.shows.filter(function(s){return (aView.filter!=='following'||s.followed)&&(!aView.q||s.name.toLowerCase().indexOf(aView.q.toLowerCase())>=0||(s.titles||[]).join(' ').toLowerCase().indexOf(aView.q.toLowerCase())>=0)});
+        box.replaceChildren();var t=el('table','a-t a-shows'),hr=el('tr');['','Show','Groups (in order)','Quality','Episodes on disk','Gaps','Latest','Status',''].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tb=el('tbody');
+        list.slice(0,400).forEach(function(s){var tr=el('tr');var c0=el('td');c0.appendChild(aFollow(s,function(){app()}));tr.appendChild(c0);
+          var c1=el('td');var a=el('button','a-title',s.name);a.type='button';a.onclick=function(){aView.page='show';aView.folder=s.folder;app()};c1.appendChild(a);
+          var sub=el('div','a-dim a-small',(s.titles&&s.titles.length?'also '+s.titles.join(', '):''));if(s.handMade&&!s.followed)sub.textContent=(sub.textContent?sub.textContent+' · ':'')+'hand-made feed: '+s.handMade;c1.appendChild(sub);tr.appendChild(c1);
+          var c2=el('td');if(s.followed)c2.appendChild(aGroups(s.groups));tr.appendChild(c2);
+          var c3=el('td');if(s.followed)c3.appendChild(aLbl(s.quality));tr.appendChild(c3);
+          var c4=el('td');c4.appendChild(s.unscanned?el('span','a-dim a-small','not read yet'):aBar(s));tr.appendChild(c4);
+          var c5=el('td');c5.appendChild(s.summary.gaps?aLbl(s.summary.gaps+' gap'+(s.summary.gaps>1?'s':''),'orange'):el('span','a-dim','—'));var on=(d.active||{})[s.folder];if(on){var pl=aLbl(on+' on the way','purple');pl.style.marginLeft='6px';c5.appendChild(pl)}tr.appendChild(c5);
+          tr.appendChild(el('td','a-dim',s.summary.latest?((s.summary.season>1?'S'+s.summary.season+' · ':'')+s.summary.latest):'—'));
+          var c7=el('td');if(s.followed)c7.appendChild(aLbl('Following','teal'));var st=aStatus(s);if(st)c7.appendChild(el('div','a-dim a-small',st));tr.appendChild(c7);
+          var c8=el('td','a-acts');c8.appendChild(aIcon('search','interactive search: '+s.name,function(){aSearchModal(s,0)}));c8.appendChild(aIcon('edit','edit '+s.name,function(){aEditModal(s,function(){app()})}));tr.appendChild(c8);
+          tb.appendChild(tr)});
+        t.appendChild(tb);box.appendChild(t);
+        var fol=d.shows.filter(function(s){return s.followed}).length,gaps=d.shows.reduce(function(n,s){return n+s.summary.gaps},0);
+        note.textContent=d.shows.length+' folders · '+fol+' followed · '+gaps+' gaps · showing '+Math.min(list.length,400)+'. The bar has a pixel per episode number from 1 to the newest: green on disk, dim missing. Status comes from AniList once a show has been opened or followed.'}
+      q.oninput=function(){aView.q=q.value;draw()};draw();
+      if(d.scan&&d.scan.running){setMsg(msg,'Reading folders… '+d.scan.done+' of '+(d.scan.total||'?')+'. The list fills in as it goes.');clearInterval(timer);timer=setInterval(function(){if(tab!=='anime'||aView.page!=='list'){clearInterval(timer);return}api('GET','/shows').then(function(x){d.shows=x.shows;d.active=x.active;draw();if(x.scan.running)setMsg(msg,'Reading folders… '+x.scan.done+' of '+(x.scan.total||'?')+'.');else{clearInterval(timer);msg.textContent=''}}).catch(function(){})},3000)}
+    }).catch(function(e){if(e.status===401)fail(e);else setMsg(msg,e.message,true)})}
+  function aFollow(s,after){var on=!!s.followed;var b=el('button','a-mon'+(on?'':' off'));b.type='button';b.setAttribute('aria-label',(on?'following: ':'not following: ')+s.name);b.title=on?'Following: click to stop':'Not following: click to follow';b.appendChild(svg(on?'book':'bookoff'));
+    b.onclick=function(e){e.stopPropagation();b.disabled=true;api('PUT','/shows/one',{folder:s.folder,followed:!on,groups:s.groups,quality:s.quality||'1080p',titles:s.titles,fromEpisode:on?s.fromEpisode:0,anilistId:s.anilistId||0,fillGaps:s.followed?!!s.fillGaps:true}).then(after).catch(function(err){b.disabled=false;alert(err.message)})};return b}
+  function aShowPage(w,folder){
+    var msg=aMsg();var host=el('div');w.appendChild(host);
+    api('GET','/shows/one?folder='+encodeURIComponent(folder)).then(function(d){var s=d.show;
+      function act(b,path,body,done){b.disabled=true;setMsg(msg,'working…');api('POST','/shows/'+path,body).then(function(r){b.disabled=false;done(r)}).catch(function(e){b.disabled=false;setMsg(msg,e.message,true)})}
+      host.appendChild(aToolbar([aBtn('back','Library',function(){aView.page='list';app()}),'|',aBtn('refresh','Rescan folder',function(){app()}),aBtn('edit','Tidy names',function(){aTidyModal(folder,s.name,function(){app()})}),
+        aBtn('rss','Check now',function(b){if(!s.followed){setMsg(msg,'Follow the show first.',true);return}act(b,'check',{folder:folder},function(r){setMsg(msg,r.started.length?'Started: '+r.started.join(', '):'Nothing new to grab.');if(r.started.length)setTimeout(app,1500)})}),
+        aBtn('search','Search gaps',function(b){if(!s.summary.gaps){setMsg(msg,'No gaps in this folder.');return}act(b,'gaps',{folder:folder},function(r){setMsg(msg,r.started.length?'Started: '+r.started.join(', '):'nyaa has nothing for the gaps in your group order and quality. Try interactive search.')})}),
+        aBtn('user','Interactive search',function(){aSearchModal(s,0)}),'|',aBtn('edit','Edit',function(){aEditModal(s,function(){app()},d.defaultGroups)}),
+        aBtn('cal','AniList',function(b){act(b,'anilist',{folder:folder},function(){app()})}),'>']));
+      var hd=el('div','a-hdr');var h1=el('h1');h1.appendChild(aFollow(s,function(){app()}));h1.appendChild(el('span','',s.name));hd.appendChild(h1);
+      var chips=el('div','a-chips');function chip(icon,text){var c=el('span','a-chip');if(icon)c.appendChild(svg(icon));c.appendChild(el('span','',text));chips.appendChild(c);return c}
+      chip('folder',s.folder);chip('drive',aSize(s.summary.size));
+      if(s.followed){chip(null,s.quality);var g=chip(null,'');g.replaceChildren(aGroups(s.groups));chip('rss',s.checked&&s.checked[0]!=='0'?'checked '+ago(s.checked)+' ago'+(s.checkError?' · '+s.checkError:''):'not checked yet');chips.appendChild(aLbl('Following','teal'))}
+      else chips.appendChild(aLbl('Not following'));
+      hd.appendChild(chips);
+      if(s.anilist){var al=el('div','a-dim');var link=el('a','',(s.anilist.english||s.anilist.romaji)+' on AniList');link.href=s.anilist.url;link.target='_blank';link.rel='noopener';al.appendChild(link);al.appendChild(document.createTextNode(' · '+aStatus(s)+(s.anilist.season?' · '+s.anilist.season.toLowerCase()+' '+s.anilist.year:'')));hd.appendChild(al)}
+      else hd.appendChild(el('div','a-dim','AniList has no match for the folder name. Set the AniList id in Edit to show its status.'));
+      if(s.titles&&s.titles.length)hd.appendChild(el('div','a-dim','Also matched as: '+s.titles.join(', ')));
+      if(s.followed)hd.appendChild(el('div','a-dim a-small','New episodes above '+(s.fromEpisode||0)+' are grabbed by themselves, from '+s.groups[0]+' first'+(s.groups.length>1?'; a later group only when an earlier one skips an episode':'')+'. '+(s.fillGaps?'Gaps are searched for once a day'+(s.gapsChecked&&s.gapsChecked[0]!=='0'?' (last '+ago(s.gapsChecked)+' ago)':'')+'.':'Gaps are only searched for by hand.')));
+      host.appendChild(hd);var c=el('div','a-content');host.appendChild(c);c.appendChild(msg);
+      var by={};d.episodes.forEach(function(e){(by[e.season]=by[e.season]||[]).push(e)});
+      Object.keys(by).map(Number).sort(function(a,b){return b-a}).forEach(function(sn){var list=by[sn].sort(function(a,b){return b.episode-a.episode});
+        var sec=el('section','a-season');var sh=el('div','a-season-h');sh.appendChild(el('h2','',sn===0?'Specials':(Object.keys(by).length>1||sn>1?'Season '+sn:'Episodes')));
+        var have=list.filter(function(e){return e.state==='have'||(e.state==='processing'&&e.size)}).length,gaps=list.filter(function(e){return e.state==='gap'}).length,proc=list.filter(function(e){return e.state==='processing'}).length;sh.appendChild(el('span','a-dim',have+' on disk'+(gaps?' · '+gaps+' missing':'')+(proc?' · '+proc+' on the way':'')));sec.appendChild(sh);
+        var t=el('table','a-t'),hr=el('tr');['','#','File','Quality','Size',''].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tb=el('tbody');
+        list.forEach(function(e){var tr=el('tr',e.state==='gap'?'a-miss':e.state==='processing'?'a-proc':'');var st=el('span','a-status '+e.state);st.setAttribute('aria-hidden','true');var c0=el('td');c0.appendChild(st);tr.appendChild(c0);tr.appendChild(el('td','',String(e.episode)));
+          var f=el('td');if(e.state==='processing'){f.appendChild(el('span','a-proct',jobWord(e.job)));if(e.file)f.appendChild(el('div','a-mono a-dim',e.file))}else if(e.file)f.appendChild(el('span','a-mono',e.file));else f.appendChild(el('span','a-warnt','missing: a gap in the folder'));tr.appendChild(f);
+          var q=el('td');if(e.res)q.appendChild(aLbl(e.res));tr.appendChild(q);tr.appendChild(el('td','a-dim',aSize(e.size)));
+          var a=el('td','a-acts');a.appendChild(aIcon('user','interactive search for episode '+e.episode,function(){aSearchModal(s,e.episode)}));tr.appendChild(a);tb.appendChild(tr)});
+        t.appendChild(tb);var tw=el('div','a-tw');tw.appendChild(t);sec.appendChild(tw);c.appendChild(sec)});
+      if(!d.episodes.length)c.appendChild(el('div','a-empty','No episodes in this folder yet.'));
+      if(d.seen.length){var sec=el('section','a-season');var sh2=el('div','a-season-h');sh2.appendChild(el('h2','','Releases seen'));sh2.appendChild(el('span','a-dim','what nyaa offered for this show, newest first'));sec.appendChild(sh2);
+        var t2=el('table','a-t'),hr2=el('tr');['Seen','Title','Group','Quality','Size',''].forEach(function(h){hr2.appendChild(el('th','',h))});var th2=el('thead');th2.appendChild(hr2);t2.appendChild(th2);var tb2=el('tbody');
+        d.seen.forEach(function(x){var tr=el('tr');tr.appendChild(el('td','a-dim',ago(x.seen)+' ago'));tr.appendChild(el('td','a-mono',x.title));var g=el('td');if(x.group)g.appendChild(aLbl(x.group));tr.appendChild(g);var q=el('td');if(x.res)q.appendChild(aLbl(x.res));tr.appendChild(q);tr.appendChild(el('td','a-dim',aSize(x.size)));var gr=el('td');if(x.grabbed&&x.grabbed[0]!=='0')gr.appendChild(aLbl('grabbed','green'));tr.appendChild(gr);tb2.appendChild(tr)});
+        t2.appendChild(tb2);var tw2=el('div','a-tw');tw2.appendChild(t2);sec.appendChild(tw2);c.appendChild(sec)}
+    }).catch(function(e){if(e.status===401)fail(e);else{host.appendChild(msg);setMsg(msg,e.message,true)}})}
+  function jobWord(st){return ({received:'grabbed, starting',submitted:'grabbed, starting',downloading:'downloading',pulling:'copying from the download client',downloaded:'downloaded',queued_transcode:'waiting to transcode',transcoding:'transcoding',verifying:'checking',ready:'placing in the folder'})[st]||('processing ('+st+')')}
+  function aModal(title,width){var ov=el('div','arr a-overlay');var m=el('div','a-modal');m.setAttribute('role','dialog');m.setAttribute('aria-label',title);if(width)m.style.maxWidth=width;
+    var h=el('div','a-modal-h');h.appendChild(el('span','',title));var x=aIcon('x','close',function(){ov.remove()});h.appendChild(x);m.appendChild(h);var b=el('div','a-modal-b');m.appendChild(b);var f=el('div','a-modal-f');m.appendChild(f);ov.appendChild(m);
+    ov.onclick=function(e){if(e.target===ov)ov.remove()};document.body.appendChild(ov);return {ov:ov,body:b,foot:f,close:function(){ov.remove()}}}
+  function aSearchModal(s,ep){var md=aModal('Interactive search · '+s.name+(ep?' · episode '+ep:''));
+    var bar=el('div','a-row');var q=el('input','a-input');q.type='search';q.placeholder=s.name;q.setAttribute('aria-label','search nyaa');var go=el('button','a-btn primary','Search');go.type='button';bar.appendChild(q);bar.appendChild(go);md.body.appendChild(bar);
+    md.body.appendChild(el('div','a-dim a-small','Searches nyaa (English-translated anime) for the show'+(ep?'; releases numbered '+ep+' come first, but a later season may number it differently':'')+'. A warning says why a release would not be picked by itself; you can still grab it.'));
+    var res=el('div','a-tw');md.body.appendChild(res);var msg=aMsg();md.body.appendChild(msg);var close=el('button','a-btn','Close');close.type='button';close.onclick=md.close;md.foot.appendChild(close);
+    function run(){res.replaceChildren(el('div','a-dim','Searching…'));api('GET','/shows/search?folder='+encodeURIComponent(s.folder)+'&q='+encodeURIComponent(q.value)+'&episode='+ep).then(function(list){res.replaceChildren();
+        if(!list.length){res.appendChild(el('div','a-empty','nyaa has nothing for "'+(q.value||s.name)+'". Try a shorter or different title, e.g. the English one.'));return}
+        var t=el('table','a-t'),hr=el('tr');['Age','Title','Group','Quality','Size','Peers','',''].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tb=el('tbody');
+        list.forEach(function(r){var tr=el('tr');tr.appendChild(el('td','a-dim',r.published&&r.published[0]!=='0'?ago(r.published):''));tr.appendChild(el('td','a-mono',r.title));var g=el('td');if(r.group)g.appendChild(aLbl(r.group));tr.appendChild(g);var qq=el('td');if(r.res)qq.appendChild(aLbl(r.res,s.quality&&s.quality!=='any'&&r.res!==s.quality?'orange':''));tr.appendChild(qq);
+          tr.appendChild(el('td','a-dim',aSize(r.size)));tr.appendChild(el('td','a-dim',String(r.seeders)));var wc=el('td');if(r.warning){var wi=el('span','a-rej');wi.title=r.warning;wi.appendChild(svg('warn',r.warning));wc.appendChild(wi)}tr.appendChild(wc);
+          var dc=el('td');var b=el('button','a-dl');b.type='button';b.setAttribute('aria-label','grab '+r.title);b.title=r.warning?'Grab anyway: '+r.warning:'Grab';b.appendChild(svg('dl'));
+          b.onclick=function(){b.disabled=true;api('POST','/shows/grab',{folder:s.folder,title:r.title}).then(function(){b.replaceChildren(svg('dl'));b.classList.add('done');setMsg(msg,'Started '+r.title+'. It goes through the usual downloads and lands in the folder.')}).catch(function(e){b.disabled=false;setMsg(msg,e.message,true)})};dc.appendChild(b);tr.appendChild(dc);tb.appendChild(tr)});
+        t.appendChild(tb);res.appendChild(t)}).catch(function(e){res.replaceChildren();setMsg(msg,e.message,true)})}
+    go.onclick=run;q.onkeydown=function(e){if(e.key==='Enter')run()};run()}
+  function aOrder(list){var box=el('div','a-order');var items=list.slice();
+    function draw(){box.replaceChildren();items.forEach(function(g,i){var it=el('div','a-it');it.appendChild(el('b','',g));if(i===0)it.appendChild(el('span','a-dim a-small','first choice'));
+      var up=aIcon('up','move '+g+' up',function(){if(i>0){items.splice(i-1,0,items.splice(i,1)[0]);draw()}});var dn=aIcon('down','move '+g+' down',function(){if(i<items.length-1){items.splice(i+1,0,items.splice(i,1)[0]);draw()}});var rm=aIcon('x','remove '+g,function(){items.splice(i,1);draw()});
+      it.appendChild(up);it.appendChild(dn);it.appendChild(rm);box.appendChild(it)});
+      var add=el('div','a-row');var inp=el('input','a-input');inp.placeholder='add a group, e.g. Judas';inp.setAttribute('aria-label','add a group');var ab=el('button','a-btn','Add');ab.type='button';ab.onclick=function(){var v=inp.value.trim();if(v&&items.map(function(x){return x.toLowerCase()}).indexOf(v.toLowerCase())<0){items.push(v);draw()}};inp.onkeydown=function(e){if(e.key==='Enter'){e.preventDefault();ab.onclick()}};add.appendChild(inp);add.appendChild(ab);box.appendChild(add)}
+    draw();return {el:box,value:function(){return items.slice()}}}
+  function aForm(){var f=el('div','a-form');return {el:f,row:function(label,ctl,help,id){var l=el('label','a-k',label);if(id)l.htmlFor=id;f.appendChild(l);var c=el('div');c.appendChild(ctl);if(help)c.appendChild(el('div','a-help',help));f.appendChild(c)}}}
+  function aEditModal(s,after,defaults){var md=aModal('Edit · '+s.name,'860px');var f=aForm();md.body.appendChild(f.el);
+    var fol=el('label','a-check');var cb=el('input');cb.type='checkbox';cb.checked=!!s.followed;fol.appendChild(cb);fol.appendChild(el('span','','Grab new episodes by themselves'));f.row('Following',fol);
+    var gl=el('label','a-check');var gc=el('input');gc.type='checkbox';gc.checked=s.followed?!!s.fillGaps:true;gl.appendChild(gc);gl.appendChild(el('span','','Also fill gaps (episodes missing between the ones in the folder), once a day'));f.row('Gaps',gl);
+    var order=aOrder(s.groups&&s.groups.length?s.groups:(defaults||['SubsPlease']));f.row('Groups, in order',order.el,'The first group that releases an episode gets it. A later group is used only when an earlier one skipped that episode (it released a later one), or after a day.');
+    var q=el('select','a-input');q.id='aq';['1080p','720p','480p','2160p','any'].forEach(function(v){var o=new Option(v==='any'?'any resolution':v,v);o.selected=(s.quality||'1080p')===v;q.appendChild(o)});f.row('Quality',q,null,'aq');
+    var ti=el('textarea','a-input a-area');ti.id='at';ti.value=(s.titles||[]).join('\n');f.row('Other titles',ti,'One per line. Releases under any of these titles belong to this folder, for following and for the importer. The folder name always counts.','at');
+    var fe=el('input','a-input');fe.id='af';fe.type='number';fe.min='0';fe.value=String(s.fromEpisode||0);f.row('Grab episodes above',fe,'Following starts from the newest episode on disk. Lower it to grab older ones too; gaps are separate (Search gaps).','af');
+    var ai=el('input','a-input');ai.id='aa';ai.type='number';ai.min='0';ai.value=String(s.anilistId||0);f.row('AniList id',ai,'Only for the status shown (airing, episodes, next episode). 0 finds it by the folder name. The number is in the AniList address.','aa');
+    var msg=aMsg();md.body.appendChild(msg);var cancel=el('button','a-btn','Cancel');cancel.type='button';cancel.onclick=md.close;var save=el('button','a-btn primary','Save');save.type='button';
+    save.onclick=function(){save.disabled=true;api('PUT','/shows/one',{folder:s.folder,followed:cb.checked,groups:order.value(),quality:q.value,titles:ti.value.split(/\n|,/),fromEpisode:Number(fe.value)||0,anilistId:Number(ai.value)||0,fillGaps:gc.checked}).then(function(){md.close();after()}).catch(function(e){save.disabled=false;setMsg(msg,e.message,true)})};
+    md.foot.appendChild(cancel);md.foot.appendChild(save)}
+  // Naming: folders whose files do not share one name form. New downloads are
+  // named after their folder already; these are the older files.
+  function aStyleSample(name,st){var ep=st.marked?'S01E'+('0'+4).slice(-Math.max(st.pad,2)):('000'+4).slice(-st.pad);return name+' - '+ep+(st.res?' (1080p)':st.tags?' [Group 1080p]':'')+'.mkv'}
+  function aNamingPage(w){
+    var msg=aMsg();var host=el('div','a-content');
+    w.appendChild(aToolbar([aBtn('back','Library',function(){aView.page='list';app()}),'|',aBtn('refresh','Check again',function(){app()})]));
+    w.appendChild(host);host.appendChild(el('p','a-small','New downloads are named after the show folder they land in, in the way that folder already names its files. Below are folders whose older files do not fit: rename them after a preview, replace files whose names give no episode number, and pick one copy where an episode is kept twice. Nothing changes until you press Rename.'));host.appendChild(msg);
+    setMsg(msg,'Reading every show folder…');
+    api('GET','/shows/naming').then(function(d){msg.textContent='';var list=d.folders||[];
+      if(!list.length){host.appendChild(el('div','a-empty','Every show folder fits its own naming.'));return}
+      var t=el('table','a-t'),hr=el('tr');['Show','To rename','No episode number','Kept twice',''].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);var tb=el('tbody');t.appendChild(tb);
+      list.forEach(function(f){var tr=el('tr');var c=el('td');var a=el('button','a-title',f.name);a.type='button';a.onclick=function(){aView.page='show';aView.folder=f.folder;app()};c.appendChild(a);tr.appendChild(c);
+        tr.appendChild(el('td','',f.renames?String(f.renames):'–'));var u=el('td');if(f.unreadable)u.appendChild(aLbl(f.unreadable+' to replace','warn'));else u.textContent='–';tr.appendChild(u);
+        var dd=el('td');if(f.duplicates)dd.appendChild(aLbl(f.duplicates+' twice','warn'));else dd.textContent='–';tr.appendChild(dd);
+        var ac=el('td');var b=el('button','a-btn','Review');b.type='button';b.onclick=function(){aTidyModal(f.folder,f.name,function(){app()})};ac.appendChild(b);tr.appendChild(ac);tb.appendChild(tr)});
+      host.appendChild(t);host.appendChild(el('p','a-small',list.length+' folder'+(list.length===1?'':'s')+' to look at.'))}).catch(function(e){setMsg(msg,e.message,true)})}
+  function aTidyModal(folder,name,after){var md=aModal('Tidy names · '+name,'900px');var m=aMsg();md.body.appendChild(m);setMsg(m,'Reading the folder…');
+    api('GET','/shows/tidy?folder='+encodeURIComponent(folder)).then(function(p){m.textContent='';
+      md.body.appendChild(el('p','a-small','This folder names its episodes like: '));md.body.appendChild(el('pre','a-mono',aStyleSample(name,p.style)));
+      var picks=[];
+      if(p.renames.length){md.body.appendChild(el('h4','a-h',p.renames.length+' to rename'));var t=el('table','a-t'),tb=el('tbody');
+        var all=el('input');all.type='checkbox';all.checked=true;all.setAttribute('aria-label','all renames');var hr=el('tr');var c0=el('th');c0.appendChild(all);hr.appendChild(c0);['Now','Becomes'].forEach(function(h){hr.appendChild(el('th','',h))});var th=el('thead');th.appendChild(hr);t.appendChild(th);
+        p.renames.forEach(function(r){var tr=el('tr');var cb=el('input');cb.type='checkbox';cb.checked=true;cb.setAttribute('aria-label','rename '+r.from);picks.push([cb,r]);var c=el('td');c.appendChild(cb);tr.appendChild(c);tr.appendChild(el('td','a-mono',r.from));tr.appendChild(el('td','a-mono',r.to));tb.appendChild(tr)});
+        all.onchange=function(){picks.forEach(function(x){x[0].checked=all.checked})};t.appendChild(tb);md.body.appendChild(t)}
+      if(p.unreadable.length){md.body.appendChild(el('h4','a-h',p.unreadable.length+' with no episode number'));md.body.appendChild(el('p','a-small','The importer cannot tell which episode these are. Replace them with a release that names its episode, then delete the old file.'));
+        var ul=el('div','a-list');p.unreadable.forEach(function(f){var r=el('div','a-row');r.appendChild(el('span','a-mono',f));var b=el('button','a-btn','Search nyaa');b.type='button';b.onclick=function(){aSearchModal({folder:folder,name:name},0)};r.appendChild(b);ul.appendChild(r)});md.body.appendChild(ul)}
+      if(p.duplicates.length){md.body.appendChild(el('h4','a-h',p.duplicates.length+' kept twice'));md.body.appendChild(el('p','a-small','The same episode is in the folder more than once. Keep one copy and delete the others yourself.'));
+        var dl=el('div','a-list');p.duplicates.forEach(function(g){var r=el('div','a-dup');g.forEach(function(f){r.appendChild(el('div','a-mono',f))});dl.appendChild(r)});md.body.appendChild(dl)}
+      if(!p.renames.length&&!p.unreadable.length&&!p.duplicates.length)md.body.appendChild(el('div','a-empty','Every file here fits the folder\'s naming.'));
+      if(p.renames.length){md.foot.appendChild(el('span','a-small','Emby and Jellyfin may see renamed files as new: their watched state can reset.'));
+        var go=el('button','a-btn primary','Rename');go.type='button';go.onclick=function(){var chosen=picks.filter(function(x){return x[0].checked}).map(function(x){return x[1]});if(!chosen.length){setMsg(m,'Nothing is ticked.',true);return}
+          go.disabled=true;api('POST','/shows/tidy',{folder:folder,renames:chosen}).then(function(r){setMsg(m,'Renamed '+r.renamed+(r.skipped&&r.skipped.length?'; skipped: '+r.skipped.join('; '):'.'),r.skipped&&r.skipped.length);md.body.scrollTop=0;go.remove();if(after)after()}).catch(function(e){go.disabled=false;setMsg(m,e.message,true)})};md.foot.appendChild(go)}
+    }).catch(function(e){setMsg(m,e.message,true)})}
+  function aAddPage(w){
+    w.appendChild(aToolbar([aBtn('back','Library',function(){aView.page='list';app()}),'>']));var c=el('div','a-content');w.appendChild(c);
+    var bar=el('label','a-search big');bar.appendChild(svg('search'));var q=el('input');q.type='search';q.placeholder='Search for a show by any title';q.setAttribute('aria-label','search for a show');bar.appendChild(q);c.appendChild(bar);
+    c.appendChild(el('div','a-dim a-small','Searches what nyaa has released, by any title. A show is its folder: nothing is looked up to place files.'));
+    var res=el('div','a-cards');c.appendChild(res);var msg=aMsg();c.appendChild(msg);
+    function run(){if(!q.value.trim())return;res.replaceChildren(el('div','a-dim','Searching…'));api('GET','/shows/discover?q='+encodeURIComponent(q.value)).then(function(d){res.replaceChildren();
+        if(!d.results.length){res.appendChild(el('div','a-empty','Nothing found on nyaa.'));return}
+        d.results.forEach(function(x){var card=el('div','a-card');var body=el('div','a-card-b');body.appendChild(el('h3','',x.title));
+          body.appendChild(el('div','a-dim',x.releases+' release'+(x.releases>1?'s':'')+' · newest episode '+x.latest+(x.newest?' · '+ago(x.newest)+' ago':'')));
+          var ch=el('div','a-chips');x.groups.forEach(function(g){ch.appendChild(aLbl(g))});x.res.forEach(function(r){ch.appendChild(aLbl(r))});body.appendChild(ch);card.appendChild(body);
+          if(x.folder){body.appendChild(el('div','a-small a-ok','Already in the library: '+x.folder));var o=el('button','a-btn','Open');o.type='button';o.onclick=function(){aView.page='show';aView.folder=x.folder;app()};card.appendChild(o)}
+          else{var a=el('button','a-btn primary','Add');a.type='button';a.onclick=function(){addForm(x,d.roots,card)};card.appendChild(a)}
+          res.appendChild(card)})}).catch(function(e){res.replaceChildren();setMsg(msg,e.message,true)})}
+    q.onkeydown=function(e){if(e.key==='Enter')run()};q.focus();
+    function addForm(x,roots,after){var old=c.querySelector('.a-addform');if(old)old.remove();var box=el('div','a-modal a-addform');var h=el('div','a-modal-h');h.appendChild(el('span','','Add · '+x.title));box.appendChild(h);var b=el('div','a-modal-b');box.appendChild(b);var f=aForm();b.appendChild(f.el);
+      var rs=el('select','a-input');rs.id='ar';roots.forEach(function(r){rs.appendChild(new Option(r.dir+' ('+r.category+')',r.dir))});if(roots.length>1)f.row('Library',rs,null,'ar');
+      var nm=el('input','a-input');nm.id='an';nm.value=x.title;f.row('Folder name',nm,'A new folder in the library, or the name of one you already have.','an');
+      var gs=x.groups.slice().sort(function(a,b){return (b==='SubsPlease')-(a==='SubsPlease')});var order=aOrder(gs.length?gs:['SubsPlease']);f.row('Groups, in order',order.el,'Remove the groups you do not want.');
+      var qs=el('select','a-input');qs.id='aqq';['1080p','720p','480p','any'].forEach(function(v){qs.appendChild(new Option(v==='any'?'any resolution':v,v))});f.row('Quality',qs,null,'aqq');
+      var start=el('select','a-input');start.id='as';start.appendChild(new Option('every episode released so far ('+x.latest+')','all'));start.appendChild(new Option('new episodes only','new'));f.row('Start with',start,null,'as');
+      var m=aMsg();b.appendChild(m);var ft=el('div','a-modal-f');var cn=el('button','a-btn','Cancel');cn.type='button';cn.onclick=function(){box.remove()};var ok=el('button','a-btn primary','Add and follow');ok.type='button';
+      ok.onclick=function(){ok.disabled=true;setMsg(m,'Adding and checking nyaa…');api('POST','/shows/add',{root:rs.value,name:nm.value,groups:order.value(),quality:qs.value,titles:nm.value.trim()===x.title?[]:[x.title],fromStart:start.value==='all',fromEpisode:start.value==='all'?0:x.latest,fillGaps:true}).then(function(r){
+        setMsg(m,(r.warning?r.warning+' ':'')+(r.started.length?'Started '+r.started.length+' download'+(r.started.length>1?'s':'')+'.':'Following; nothing to grab yet.'));setTimeout(function(){aView.page='show';aView.folder=r.show.folder;app()},1200)}).catch(function(e){ok.disabled=false;setMsg(m,e.message,true)})};
+      ft.appendChild(cn);ft.appendChild(ok);box.appendChild(ft);after.after(box);nm.focus()}
+  }
+  // ---- Indexers (roadmap D1): arr-style, backend first; design pass later ----
+  var iView={q:'',type:'search',cat:''};
   // Library: what the arrs hold, read from them. Each series has the season
   // bar from the public dashboard (one pixel per episode, imported green).
   var libQ='';
@@ -408,7 +596,8 @@
       f.arrUrl=row(g,'arr address',{value:c.arrUrl,ph:'http://10.0.0.5:8989',help:'so HyveMynd can confirm the import'});
       f.arrApiKey=row(g,'arr API key',{type:'password',ph:c.hasArrApiKey?'set — leave blank to keep':'',help:'in the arr: Settings → General'});
       f.transcode=row(g,'transcode with Tdarr',{type:'checkbox',value:c.transcode,help:'off for music'});
-      f.libraryDir=row(g,'library folder',{value:c.libraryDir,ph:'/media/Anime',help:'only for “no arr” categories: finished episodes are matched to a show folder here and renamed'});
+      f.libraryDir=row(g,'library folder',{value:c.libraryDir,ph:'/media/Anime',help:'only for “no arr” categories: finished episodes are matched to a show folder here'});
+      f.keepNames=row(g,'keep release names',{type:'checkbox',value:c.keepNames,help:'off (the default): a placed episode is named after its show folder, the way that folder names its files'});
       var pw=el('div','fld');pw.appendChild(el('label','','if the transcode fails'));var pf=el('select');[['fail','fail the grab (the arr blocklists and searches again)'],['passthrough','keep the original file']].forEach(function(x){var o=el('option','',x[1]);o.value=x[0];if((c.onTranscodeFail||'fail')===x[0])o.selected=true;pf.appendChild(o)});pw.appendChild(pf);g.appendChild(pw);f.onFail=pf;
       card.appendChild(g);var tt=el('button','','test arr connection');var tmsg=el('span','msg');tmsg.style.marginLeft='12px';
       tt.onclick=function(){tmsg.className='msg';tmsg.textContent='testing…';api('POST','/arrs/test',{name:f.name.value,origName:f.orig,kind:f.kind.value,url:f.arrUrl.value,apiKey:f.arrApiKey.value}).then(function(r){tmsg.className='msg ok';tmsg.textContent='connected: '+r.app+' '+r.version}).catch(function(e){tmsg.className='msg err';tmsg.textContent=e.message})};
@@ -420,7 +609,7 @@
     }
     S.categories.forEach(add);
     var a=el('button','','+ add category');a.onclick=function(){add({kind:'radarr',transcode:true})};body.appendChild(a);
-    saveBar(body,function(m){save(function(b){b.categories=[].map.call(cats.children,function(c){var f=c._f;return {name:f.name.value,origName:f.orig,kind:f.kind.value,libraryDir:f.libraryDir.value,arrUrl:f.arrUrl.value,arrApiKey:f.arrApiKey.value,transcode:f.transcode.checked,onTranscodeFail:f.onFail.value}})},m)})
+    saveBar(body,function(m){save(function(b){b.categories=[].map.call(cats.children,function(c){var f=c._f;return {name:f.name.value,origName:f.orig,kind:f.kind.value,libraryDir:f.libraryDir.value,arrUrl:f.arrUrl.value,arrApiKey:f.arrApiKey.value,transcode:f.transcode.checked,onTranscodeFail:f.onFail.value,keepNames:f.keepNames.checked}})},m)})
   }
 
   function clientsPane(body){

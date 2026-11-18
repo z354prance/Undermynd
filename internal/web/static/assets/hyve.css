@@ -247,3 +247,14 @@ body.ui .hv-body button::first-letter{text-transform:uppercase}
 body.ui:not(.wide) .term{max-width:none;margin:0;border:0;border-radius:0;background:none;box-shadow:none;min-height:100vh}
 body.ui:not(.wide) .body{padding:0}
 body.ui .hv-sbar .s i.u{background:#fff}
+/* anime list: the pixel season bar in the table */
+body.ui .a-pxw{display:flex;align-items:center;gap:8px;max-width:240px}
+body.ui .a-pxw .hv-sbar{max-width:170px}
+body.ui .a-pxw .hv-cnt{min-width:0;text-align:left}
+@media (max-width:760px){
+  body.ui .arr .a-shows th:nth-child(3),body.ui .arr .a-shows td:nth-child(3),
+  body.ui .arr .a-shows th:nth-child(4),body.ui .arr .a-shows td:nth-child(4),
+  body.ui .arr .a-shows th:nth-child(7),body.ui .arr .a-shows td:nth-child(7),
+  body.ui .arr .a-shows th:nth-child(8),body.ui .arr .a-shows td:nth-child(8){display:none}
+  body.ui .arr .a-pxw .hv-sbar{max-width:84px}
+}

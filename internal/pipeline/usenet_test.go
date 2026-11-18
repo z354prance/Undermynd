@@ -535,7 +535,7 @@ func (u *urig) dropRelease(t *testing.T, tbID, release, file string) job.Job {
 	return got
 }
 
-// A release that matches a show folder is renamed like the library and moved in.
+// A release that matches a show folder is named after the folder and moved in.
 func TestLibraryPlacesAMatchingEpisode(t *testing.T) {
 	u, lib := libraryRig(t)
 	rel := "[SubsPlease] Show Name S2 - 07 (1080p) [ABCD1234]"
@@ -543,7 +543,7 @@ func TestLibraryPlacesAMatchingEpisode(t *testing.T) {
 	if got.State != job.Cleaned {
 		t.Fatalf("expected cleaned, got %s (%s)", got.State, got.Reason)
 	}
-	want := filepath.Join(lib, "Show Name", "Season 2", "Show Name S2 - 7 (1080p).mkv")
+	want := filepath.Join(lib, "Show Name", "Season 2", "Show Name - S02E07 (1080p).mkv")
 	if !exists(want) {
 		t.Fatalf("the episode should be placed at %s (%s)", want, got.Reason)
 	}
@@ -553,7 +553,7 @@ func TestLibraryPlacesAMatchingEpisode(t *testing.T) {
 }
 
 // A Judas-style name, with the English title in braces and [Uncensored] inside the
-// title, is placed in the show's folder and keeps its episode number.
+// title, is placed in the show's folder under the folder's own name.
 func TestLibraryPlacesABracedTitleRelease(t *testing.T) {
 	u, lib := libraryRig(t)
 	if err := os.MkdirAll(filepath.Join(lib, "Seitokai ni mo Ana wa Aru"), 0o755); err != nil {
@@ -561,7 +561,7 @@ func TestLibraryPlacesABracedTitleRelease(t *testing.T) {
 	}
 	rel := "[Judas] Seitokai ni mo Ana wa Aru! {Even the Student Council Has Its Holes} [Uncensored] - S01E07 [1080p][HEVC x265 10bit][Multi-Subs] (Weekly)"
 	got := u.dropRelease(t, "101", rel, rel+".mkv")
-	want := filepath.Join(lib, "Seitokai ni mo Ana wa Aru", "Season 1", "Seitokai ni mo Ana wa Aru! - S01E07.mkv")
+	want := filepath.Join(lib, "Seitokai ni mo Ana wa Aru", "Season 1", "Seitokai ni mo Ana wa Aru - S01E07 (1080p).mkv")
 	if !exists(want) {
 		t.Fatalf("the episode should be placed at %s (%s, %s)", want, got.State, got.Reason)
 	}
@@ -633,6 +633,24 @@ func TestSweepPlacesOlderFiles(t *testing.T) {
 	}
 	if exists(filepath.Join(root, "a")) {
 		t.Fatal("emptied folder should be removed")
+	}
+}
+
+// With keep names on, the release keeps its cleaned name (the Rename.ps1 way).
+func TestLibraryKeepNames(t *testing.T) {
+	u, lib := libraryRig(t)
+	c := u.cfg.Get()
+	for i := range c.Categories {
+		c.Categories[i].KeepNames = true
+	}
+	if err := u.cfg.Set(c); err != nil {
+		t.Fatal(err)
+	}
+	rel := "[SubsPlease] Show Name S2 - 07 (1080p) [ABCD1234]"
+	got := u.dropRelease(t, "101", rel, rel+".mkv")
+	want := filepath.Join(lib, "Show Name", "Season 2", "Show Name S2 - 7 (1080p).mkv")
+	if !exists(want) {
+		t.Fatalf("the episode should keep its name at %s (%s)", want, got.Reason)
 	}
 }
 
