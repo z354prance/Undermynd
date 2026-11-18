@@ -194,6 +194,13 @@ func (s *Service) Save(i Indexer) (Indexer, error) {
 	if err := validate(&i); err != nil {
 		return i, err
 	}
+	if list, err := s.List(); err == nil {
+		for _, o := range list {
+			if o.ID != i.ID && strings.EqualFold(o.Name, i.Name) {
+				return i, errors.New("an indexer with that name exists")
+			}
+		}
+	}
 	enabled := 0
 	if i.Enabled {
 		enabled = 1
