@@ -47,6 +47,9 @@ func (e *Engine) placeInLibrary(ctx context.Context, j job.Job, cat config.Categ
 		}
 		placed++
 		e.Log.Printf("job %s placed %s", short(j.ID), dst)
+		if e.AfterPlace != nil {
+			e.AfterPlace(dst)
+		}
 	}
 	if len(left) == 0 {
 		if err := e.cleanupExcept(ctx, j, false); err != nil {

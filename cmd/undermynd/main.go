@@ -22,6 +22,7 @@ import (
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/db"
 	"github.com/z354prance/undermynd/internal/logbuf"
+	"github.com/z354prance/undermynd/internal/mediaserver"
 	"github.com/z354prance/undermynd/internal/metadata"
 	"github.com/z354prance/undermynd/internal/pipeline"
 	"github.com/z354prance/undermynd/internal/progress"
@@ -179,6 +180,20 @@ func main() {
 		}
 		site.Metadata = newMetadata(dbh, cfg, logger)
 		go site.Metadata.Run(ctx, func() bool { return cfg.Get().Metadata.TMDBKey != "" })
+	}
+	eng.AfterPlace = func(path string) {
+		pb := cfg.Get().Playback
+		if !pb.RefreshAfterPlace || pb.EmbyURL == "" {
+			return
+		}
+		ms := mediaserver.Server{Kind: cfg.Get().Access.Provider, URL: pb.EmbyURL, Key: string(pb.EmbyKey)}
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := ms.Updated(ctx, mediaserver.MapPath(filepath.Dir(path), pb.PathFrom, pb.PathTo)); err != nil {
+				logger.Printf("media server: telling it about %s: %v", filepath.Base(path), err)
+			}
+		}()
 	}
 	rp := rss.New(cfg, eng, logger)
 	rp.State = blobs

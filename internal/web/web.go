@@ -598,13 +598,16 @@ type settingsView struct {
 		UserID    int64  `json:"userId"`
 	} `json:"requests"`
 	Playback struct {
-		TracearrURL     string `json:"tracearrUrl"`
-		TracearrKey     string `json:"tracearrKey,omitempty"` // write-only
-		HasTracearrKey  bool   `json:"hasTracearrKey"`
-		EmbyURL         string `json:"embyUrl"`
-		EmbyKey         string `json:"embyKey,omitempty"` // write-only
-		HasEmbyKey      bool   `json:"hasEmbyKey"`
-		HiddenLibraries string `json:"hiddenLibraries"`
+		TracearrURL       string `json:"tracearrUrl"`
+		TracearrKey       string `json:"tracearrKey,omitempty"` // write-only
+		HasTracearrKey    bool   `json:"hasTracearrKey"`
+		EmbyURL           string `json:"embyUrl"`
+		EmbyKey           string `json:"embyKey,omitempty"` // write-only
+		HasEmbyKey        bool   `json:"hasEmbyKey"`
+		HiddenLibraries   string `json:"hiddenLibraries"`
+		RefreshAfterPlace bool   `json:"refreshAfterPlace"`
+		PathFrom          string `json:"pathFrom"`
+		PathTo            string `json:"pathTo"`
 	} `json:"playback"`
 	NZBGet struct {
 		URL         string `json:"url"`
@@ -661,6 +664,7 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	v.Requests.Enabled, v.Requests.URL, v.Requests.HasAPIKey, v.Requests.UserID = c.Requests.Enabled, c.Requests.URL, c.Requests.APIKey != "", c.Requests.UserID
 	v.Playback.TracearrURL, v.Playback.HasTracearrKey = c.Playback.TracearrURL, c.Playback.TracearrKey != ""
 	v.Playback.EmbyURL, v.Playback.HasEmbyKey, v.Playback.HiddenLibraries = c.Playback.EmbyURL, c.Playback.EmbyKey != "", c.Playback.HiddenLibraries
+	v.Playback.RefreshAfterPlace, v.Playback.PathFrom, v.Playback.PathTo = c.Playback.RefreshAfterPlace, c.Playback.PathFrom, c.Playback.PathTo
 	v.NZBGet.URL, v.NZBGet.Username, v.NZBGet.HasPassword, v.NZBGet.DestRoot = c.NZBGet.URL, c.NZBGet.Username, c.NZBGet.Password != "", c.NZBGet.DestRoot
 	v.TorBox.HasToken, v.TorBox.CreatePerHour, v.TorBox.PullersAtOnce, v.TorBox.LinkGapSeconds = c.TorBox.Token != "", c.TorBox.CreatePerHour, c.TorBox.PullersAtOnce, c.TorBox.LinkGapSeconds
 	v.ClientUser, v.StallMinutes, v.ReconcileSeconds, v.FlagImportHours = c.ClientUser, c.StallMinutes, c.ReconcileSeconds, c.FlagImportHours
@@ -790,6 +794,8 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		next.Playback.EmbyKey = secret.String(strings.TrimSpace(in.Playback.EmbyKey))
 	}
 	next.Playback.HiddenLibraries = strings.TrimSpace(in.Playback.HiddenLibraries)
+	next.Playback.RefreshAfterPlace = in.Playback.RefreshAfterPlace
+	next.Playback.PathFrom, next.Playback.PathTo = strings.TrimSpace(in.Playback.PathFrom), strings.TrimSpace(in.Playback.PathTo)
 	next.Tdarr.URL, next.Tdarr.LibraryID = strings.TrimSpace(in.Tdarr.URL), strings.TrimSpace(in.Tdarr.LibraryID)
 	if in.Tdarr.APIKey != "" {
 		next.Tdarr.APIKey = secret.String(strings.TrimSpace(in.Tdarr.APIKey))
