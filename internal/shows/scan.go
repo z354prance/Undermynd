@@ -26,6 +26,7 @@ type DiskFile struct {
 	Season  int // from the name, else the season folder, else 1
 	Episode int
 	Res     string
+	Group   string
 }
 
 var videoExt = map[string]bool{".mkv": true, ".mp4": true, ".avi": true, ".m4v": true, ".ts": true, ".webm": true, ".wmv": true, ".mov": true}
@@ -73,7 +74,7 @@ func ScanFolder(dir string) ([]DiskFile, error) {
 			r, ok = looseParse(d.Name())
 		}
 		if ok {
-			f.OK, f.Title, f.Episode, f.Res = true, r.Title, r.Episode, r.Res
+			f.OK, f.Title, f.Episode, f.Res, f.Group = true, r.Title, r.Episode, r.Res, r.Group
 			f.Season = 1
 			if r.Marked {
 				f.Season = r.Season

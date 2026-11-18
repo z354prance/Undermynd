@@ -61,6 +61,10 @@ type Category struct {
 	// LibraryDir, for categories no arr handles, is a library of show folders the
 	// finished episodes are placed into, matched by title.
 	LibraryDir string `json:"libraryDir,omitempty"`
+	// KeepNames leaves placed files with their release names (cleaned the
+	// Rename.ps1 way). Off (the default): a placed file is named after its show
+	// folder, in the folder's own numbering style.
+	KeepNames bool `json:"keepNames,omitempty"`
 	// OnTranscodeFail is "fail" (default: the arr blocklists and searches again) or "passthrough" (hand back the original).
 	OnTranscodeFail string `json:"onTranscodeFail"`
 }

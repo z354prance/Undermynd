@@ -162,6 +162,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /admin/api/shows/{action}", s.guard(s.admin(s.showsAction)))
 	mux.HandleFunc("GET /admin/api/shows/search", s.admin(s.showsSearch))
 	mux.HandleFunc("GET /admin/api/shows/discover", s.admin(s.showsDiscover))
+	mux.HandleFunc("GET /admin/api/shows/tidy", s.admin(s.showsTidy))
+	mux.HandleFunc("POST /admin/api/shows/tidy", s.guard(s.admin(s.showsTidyApply)))
+	mux.HandleFunc("GET /admin/api/shows/naming", s.admin(s.showsNaming))
 	mux.HandleFunc("POST /admin/api/tdarr/test", s.guard(s.admin(s.tdarrTest)))
 	mux.HandleFunc("POST /admin/api/settings/client-password", s.guard(s.admin(s.newClientPassword)))
 	return secure(mux)
@@ -568,6 +571,7 @@ type categoryView struct {
 	Transcode    bool   `json:"transcode"`
 	OnFail       string `json:"onTranscodeFail"`
 	LibraryDir   string `json:"libraryDir"`
+	KeepNames    bool   `json:"keepNames"`
 	// OrigName is the name the category had when the page loaded, so a rename
 	// keeps the saved key instead of dropping it.
 	OrigName string `json:"origName,omitempty"`
@@ -651,7 +655,7 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	var v settingsView
 	for _, k := range c.Categories {
 		v.Categories = append(v.Categories, categoryView{Name: k.Name, Kind: k.Kind, ArrURL: k.ArrURL,
-			HasArrAPIKey: k.ArrAPIKey != "", Transcode: k.Transcode, OnFail: k.OnTranscodeFail, LibraryDir: k.LibraryDir})
+			HasArrAPIKey: k.ArrAPIKey != "", Transcode: k.Transcode, OnFail: k.OnTranscodeFail, LibraryDir: k.LibraryDir, KeepNames: k.KeepNames})
 	}
 	v.QBit.URL, v.QBit.Username, v.QBit.HasPassword, v.QBit.SaveDir = c.QBit.URL, c.QBit.Username, c.QBit.Password != "", c.QBit.SaveDir
 	v.Feeds, v.Rules, v.Watches = c.Feeds, c.Rules, c.Watches
@@ -695,7 +699,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		if name == "" {
 			continue
 		}
-		nc := config.Category{Name: name, Kind: c.Kind, ArrURL: strings.TrimSpace(c.ArrURL), Transcode: c.Transcode, OnTranscodeFail: c.OnFail}
+		nc := config.Category{Name: name, Kind: c.Kind, ArrURL: strings.TrimSpace(c.ArrURL), Transcode: c.Transcode, OnTranscodeFail: c.OnFail, KeepNames: c.KeepNames}
 		if lib := strings.TrimSpace(c.LibraryDir); lib != "" {
 			lib = filepath.Clean(lib)
 			if !filepath.IsAbs(lib) {

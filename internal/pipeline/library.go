@@ -36,7 +36,7 @@ func (e *Engine) placeInLibrary(ctx context.Context, j job.Job, cat config.Categ
 		if _, err := os.Stat(src); errors.Is(err, fs.ErrNotExist) {
 			continue // placed on an earlier pass
 		}
-		dst, why, err := placeOne(root, folders, src, e.otherTitles(root))
+		dst, why, err := placeOne(root, folders, src, e.otherTitles(root), cat.KeepNames)
 		if err != nil {
 			e.retry(j, err, 10, "place in library")
 			return
@@ -78,7 +78,7 @@ func (e *Engine) placeInLibrary(ctx context.Context, j job.Job, cat config.Categ
 
 // placeOne moves one file into the library. It returns the new path, or a reason
 // the file was left where it is (an error only when the move itself failed).
-func placeOne(root string, folders []string, src string, titles map[string][]string) (dst, why string, err error) {
+func placeOne(root string, folders []string, src string, titles map[string][]string, keepNames bool) (dst, why string, err error) {
 	base := filepath.Base(src)
 	rel, ok := library.Parse(base)
 	if !ok {
@@ -95,7 +95,14 @@ func placeOne(root string, folders []string, src string, titles map[string][]str
 		}
 		return "", msg, nil
 	}
-	dst = filepath.Join(library.SeasonDir(filepath.Join(root, folder), rel.Season), library.Clean(base))
+	showDir := filepath.Join(root, folder)
+	name := library.Clean(base)
+	if !keepNames {
+		// Named after the folder, the way its other files are named, so a
+		// release under another title still reads as this show.
+		name = library.FolderName(folder, library.FolderStyle(showDir), rel, filepath.Ext(base))
+	}
+	dst = filepath.Join(library.SeasonDir(showDir, rel.Season), name)
 	if _, serr := os.Stat(dst); serr == nil {
 		return "", fmt.Sprintf("%s already exists in %s", filepath.Base(dst), folder), nil
 	}
@@ -166,7 +173,7 @@ func (e *Engine) SweepLibrary(category string) (string, error) {
 	placed := 0
 	var left []string
 	for _, src := range files {
-		dst, why, err := placeOne(cat.LibraryDir, folders, src, e.otherTitles(cat.LibraryDir))
+		dst, why, err := placeOne(cat.LibraryDir, folders, src, e.otherTitles(cat.LibraryDir), cat.KeepNames)
 		if err != nil {
 			return "", err
 		}

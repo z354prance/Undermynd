@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -244,4 +245,54 @@ func (s *Server) showsDiscover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"results": res, "roots": s.Shows.Roots()})
+}
+
+// showsTidy is one folder's naming plan (?folder=).
+func (s *Server) showsTidy(w http.ResponseWriter, r *http.Request) {
+	if s.Shows == nil {
+		jsonErr(w, http.StatusServiceUnavailable, "the anime page is not ready")
+		return
+	}
+	p, err := s.Shows.Tidy(r.URL.Query().Get("folder"))
+	if err != nil {
+		jsonErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, p)
+}
+
+// showsTidyApply renames the chosen files of a folder's plan.
+func (s *Server) showsTidyApply(w http.ResponseWriter, r *http.Request) {
+	if s.Shows == nil {
+		jsonErr(w, http.StatusServiceUnavailable, "the anime page is not ready")
+		return
+	}
+	var in struct {
+		Folder  string         `json:"folder"`
+		Renames []shows.Rename `json:"renames"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	n, skipped, err := s.Shows.ApplyTidy(in.Folder, in.Renames)
+	if err != nil {
+		jsonErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, map[string]any{"renamed": n, "skipped": skipped})
+}
+
+// showsNaming lists the folders that do not fit their own naming.
+func (s *Server) showsNaming(w http.ResponseWriter, r *http.Request) {
+	if s.Shows == nil {
+		jsonErr(w, http.StatusServiceUnavailable, "the anime page is not ready")
+		return
+	}
+	list, at, err := s.Shows.TidyList()
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, map[string]any{"folders": list, "checked": at})
 }
