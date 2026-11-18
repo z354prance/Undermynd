@@ -108,7 +108,7 @@ func (s *Server) playbackJSON() []byte {
 		return out(nil, []string{"Now playing is unavailable from Tracearr."}, "Tracearr: "+err.Error())
 	}
 	total := len(sessions)
-	sessions = playback.Filter(ctx, playback.Emby{URL: p.EmbyURL, Key: string(p.EmbyKey)}, sessions, p.HiddenLibraries)
+	sessions = playback.Filter(ctx, playback.Emby{URL: p.EmbyURL, Key: string(p.EmbyKey), Kind: s.Cfg.Get().Access.Provider}, sessions, p.HiddenLibraries)
 	for i := range sessions {
 		sessions[i].PosterURL = signedPoster(sessions[i].PosterURL)
 	}
@@ -352,7 +352,7 @@ func (s *Server) playbackTest(w http.ResponseWriter, r *http.Request) {
 			jsonErr(w, http.StatusBadRequest, "the Emby address must start with http:// or https://")
 			return
 		}
-		name, err := playback.Emby{URL: u, Key: in.EmbyKey}.Check(ctx)
+		name, err := playback.Emby{URL: u, Key: in.EmbyKey, Kind: s.Cfg.Get().Access.Provider}.Check(ctx)
 		if err != nil {
 			jsonErr(w, http.StatusBadGateway, "Emby: "+err.Error())
 			return

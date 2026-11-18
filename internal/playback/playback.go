@@ -4,22 +4,23 @@ package playback
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/z354prance/undermynd/internal/mediaserver"
 	"github.com/z354prance/undermynd/internal/tracearr"
 )
 
 var idPattern = regexp.MustCompile(`^[a-zA-Z0-9-]+$`)
 
+// Emby is the media server (Emby or Jellyfin) whose libraries can be hidden.
 type Emby struct {
-	URL string
-	Key string
+	URL  string
+	Key  string
+	Kind string // "emby" (default) or "jellyfin"
 }
 
 type library struct {
@@ -27,34 +28,24 @@ type library struct {
 	ItemID string `json:"ItemId"`
 }
 
+func (e Emby) server() mediaserver.Server {
+	return mediaserver.Server{Kind: e.Kind, URL: e.URL, Key: e.Key}
+}
+
 func (e Emby) get(ctx context.Context, path string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(e.URL, "/")+path, nil)
-	if err != nil {
-		return errors.New("invalid media server URL")
+	if err := e.server().Do(ctx, http.MethodGet, path, nil, out); err != nil {
+		var st mediaserver.StatusError
+		if errors.As(err, &st) {
+			return errors.New("media server returned an error")
+		}
+		return err
 	}
-	req.Header.Set("X-Emby-Token", e.Key)
-	req.Header.Set("Accept", "application/json")
-	c := http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	res, err := c.Do(req)
-	if err != nil {
-		return errors.New("media server connection failed")
-	}
-	defer res.Body.Close()
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return errors.New("media server returned an error")
-	}
-	return json.NewDecoder(io.LimitReader(res.Body, 4<<20)).Decode(out)
+	return nil
 }
 
 // Check proves the address and key work.
 func (e Emby) Check(ctx context.Context) (name string, err error) {
-	var info struct {
-		ServerName string `json:"ServerName"`
-	}
-	if err := e.get(ctx, "/System/Info", &info); err != nil {
-		return "", err
-	}
-	return info.ServerName, nil
+	return e.server().Check(ctx)
 }
 
 // Filter drops Emby sessions that belong to an excluded library (comma-separated IDs).

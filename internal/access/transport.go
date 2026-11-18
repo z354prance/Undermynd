@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/z354prance/undermynd/internal/mediaserver"
 )
 
 type embyUser struct {
@@ -64,10 +66,7 @@ func embyAttempt(ctx context.Context, s Settings, method, path string, payload [
 	if err != nil {
 		return false, errors.New("invalid media server URL")
 	}
-	req.Header.Set("X-Emby-Token", s.EmbyKey)
-	if isJellyfin(s) {
-		req.Header.Set("Authorization", `MediaBrowser Token="`+s.EmbyKey+`"`)
-	}
+	mediaserver.Authorize(req, s.Provider, s.EmbyKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	client := http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
