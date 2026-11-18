@@ -31,6 +31,7 @@ import (
 	"github.com/z354prance/undermynd/internal/logbuf"
 	"github.com/z354prance/undermynd/internal/metadata"
 	"github.com/z354prance/undermynd/internal/movies"
+	"github.com/z354prance/undermynd/internal/musicbrainz"
 	"github.com/z354prance/undermynd/internal/pipeline"
 	"github.com/z354prance/undermynd/internal/progress"
 	"github.com/z354prance/undermynd/internal/requests"
@@ -85,6 +86,8 @@ type Server struct {
 	// Budget and Backlog pace automatic searches; nil without the database.
 	Budget  *scheduler.Budget
 	Backlog *scheduler.Backlog
+	// MusicBrainz reads artists and albums; nil without the database.
+	MusicBrainz *musicbrainz.Client
 	// Requests keeps requests in Undermynd (native mode); nil without the database.
 	Requests *requests.Service
 	RSS      interface {
@@ -192,6 +195,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/api/movies", s.admin(s.moviesList))
 	mux.HandleFunc("GET /admin/api/tv", s.admin(s.tvList))
 	mux.HandleFunc("GET /admin/api/wanted", s.admin(s.wanted))
+	mux.HandleFunc("GET /admin/api/musicbrainz/artists", s.admin(s.mbArtists))
+	mux.HandleFunc("GET /admin/api/musicbrainz/artists/{id}/albums", s.admin(s.mbAlbums))
 	mux.HandleFunc("GET /admin/api/scheduler", s.admin(s.schedulerView))
 	mux.HandleFunc("PUT /admin/api/scheduler", s.guard(s.admin(s.schedulerPut)))
 	mux.HandleFunc("POST /admin/api/scheduler/backlog", s.guard(s.admin(s.backlogNow)))

@@ -30,6 +30,7 @@ import (
 	"github.com/z354prance/undermynd/internal/mediaserver"
 	"github.com/z354prance/undermynd/internal/metadata"
 	"github.com/z354prance/undermynd/internal/movies"
+	"github.com/z354prance/undermynd/internal/musicbrainz"
 	"github.com/z354prance/undermynd/internal/pipeline"
 	"github.com/z354prance/undermynd/internal/progress"
 	"github.com/z354prance/undermynd/internal/qbitapi"
@@ -275,6 +276,7 @@ func main() {
 		go site.Trash.Run(ctx)
 		site.Backlog = &scheduler.Backlog{DB: dbh, Cfg: cfg, Budget: site.Budget, Arr: site.Shadow.Arr, Log: logger, Now: time.Now}
 		go site.Backlog.Run(ctx)
+		site.MusicBrainz = &musicbrainz.Client{DB: dbh, HTTP: &http.Client{Timeout: 30 * time.Second}}
 		if site.Shows != nil {
 			site.Shows.Budget = site.Budget
 		}
