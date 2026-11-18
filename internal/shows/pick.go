@@ -103,7 +103,7 @@ func Pick(st Settings, files []DiskFile, seen []Seen, now time.Time, grace time.
 		}
 		best, bestRank := Seen{}, -1
 		for _, r := range list {
-			if Warning(st, files, newest, r) != "" {
+			if r.Failed || Warning(st, files, newest, r) != "" {
 				continue
 			}
 			rank := groupRank(st.Groups, r.Group)

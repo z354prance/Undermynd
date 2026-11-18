@@ -29,7 +29,7 @@ func (s *Server) showsList(w http.ResponseWriter, r *http.Request) {
 	if list == nil {
 		list = []shows.Show{}
 	}
-	writeJSON(w, map[string]any{"shows": list, "roots": s.Shows.Roots(), "scan": s.Shows.Scanning()})
+	writeJSON(w, map[string]any{"shows": list, "roots": s.Shows.Roots(), "scan": s.Shows.Scanning(), "active": s.Shows.ActiveCounts(list)})
 }
 
 type showEpisode struct {
@@ -39,7 +39,8 @@ type showEpisode struct {
 	Res     string `json:"res,omitempty"`
 	Group   string `json:"group,omitempty"`
 	Size    int64  `json:"size,omitempty"`
-	State   string `json:"state"` // have, gap, grabbed, upcoming
+	State   string `json:"state"`         // have, gap, processing
+	Job     string `json:"job,omitempty"` // the job's state while processing
 }
 
 func (s *Server) showsOne(w http.ResponseWriter, r *http.Request) {
@@ -61,41 +62,52 @@ func (s *Server) showsOne(w http.ResponseWriter, r *http.Request) {
 		cancel()
 	}
 	seen, _ := s.Shows.Store.SeenFor(folder)
-	grabbed := map[[2]int]shows.Seen{}
-	newest := map[int]int{}
-	for _, x := range seen {
-		season := 1
-		if x.Marked {
-			season = x.Season
+	active, _ := s.Shows.Activity(sh)
+	// working says what a job is doing for an episode, "" when nothing is.
+	working := func(season, episode int) string {
+		for _, a := range active {
+			if a.Episode == episode && (a.Season == 0 || a.Season == season) {
+				return a.State
+			}
 		}
-		if !x.Grabbed.IsZero() {
-			grabbed[[2]int{season, x.Episode}] = x
-		}
-		if x.Episode > newest[season] {
-			newest[season] = x.Episode
-		}
+		return ""
 	}
 	var eps []showEpisode
+	have := map[[2]int]bool{}
 	for _, f := range files {
 		if !f.OK {
 			continue
 		}
-		eps = append(eps, showEpisode{Season: f.Season, Episode: f.Episode, File: f.Rel, Res: f.Res, Size: f.Size, State: "have"})
+		have[[2]int{f.Season, f.Episode}] = true
+		e := showEpisode{Season: f.Season, Episode: f.Episode, File: f.Rel, Res: f.Res, Size: f.Size, State: "have"}
+		if w := working(f.Season, f.Episode); w != "" {
+			e.State, e.Job = "processing", w // a new copy is on its way
+		}
+		eps = append(eps, e)
 	}
 	for _, ss := range sh.Summary.Seasons {
 		for _, g := range ss.Gaps {
-			st := "gap"
-			if _, ok := grabbed[[2]int{ss.Season, g}]; ok {
-				st = "grabbed"
+			e := showEpisode{Season: ss.Season, Episode: g, State: "gap"}
+			if w := working(ss.Season, g); w != "" {
+				e.State, e.Job = "processing", w
 			}
-			eps = append(eps, showEpisode{Season: ss.Season, Episode: g, State: st})
+			have[[2]int{ss.Season, g}] = true
+			eps = append(eps, e)
 		}
 	}
-	// Episodes the feeds offered past the newest on disk: grabbed, or still to come.
-	last := sh.Summary.Latest
-	for k, x := range grabbed {
-		if k[1] > last && (k[0] == sh.Summary.Season || k[0] == 1) {
-			eps = append(eps, showEpisode{Season: max(k[0], sh.Summary.Season), Episode: k[1], Group: x.Group, Res: x.Res, State: "grabbed"})
+	// Episodes past the newest on disk that a job is working on.
+	newest := sh.Summary.Season
+	if newest == 0 {
+		newest = 1
+	}
+	for _, a := range active {
+		season := a.Season
+		if season == 0 {
+			season = newest
+		}
+		if !have[[2]int{season, a.Episode}] {
+			have[[2]int{season, a.Episode}] = true
+			eps = append(eps, showEpisode{Season: season, Episode: a.Episode, State: "processing", Job: a.State, File: a.Name})
 		}
 	}
 	if eps == nil {
