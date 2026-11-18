@@ -27,6 +27,7 @@ import (
 	"github.com/z354prance/undermynd/internal/logbuf"
 	"github.com/z354prance/undermynd/internal/mediaserver"
 	"github.com/z354prance/undermynd/internal/metadata"
+	"github.com/z354prance/undermynd/internal/movies"
 	"github.com/z354prance/undermynd/internal/pipeline"
 	"github.com/z354prance/undermynd/internal/progress"
 	"github.com/z354prance/undermynd/internal/qbitapi"
@@ -250,6 +251,13 @@ func main() {
 				return arr.New(c.Kind, c.ArrURL, string(c.ArrAPIKey))
 			}}
 		go site.Shadow.Run(ctx)
+		site.Movies = &movies.Service{DB: dbh, Catalog: catalog.New(dbh), Cfg: cfg, Profiles: site.Profiles, Indexers: site.Indexers, Jobs: st,
+			Move: pipeline.MoveFile, IsVideo: pipeline.IsVideo, Log: logger, Now: time.Now, Arr: site.Shadow.Arr}
+		eng.Native = site.Movies.ImportJob
+		if site.Requests != nil {
+			site.Requests.Movies = site.Movies
+		}
+		go site.Movies.Run(ctx)
 	}
 	go rp.Run(ctx)
 	go watch.New(cfg, eng, logger).Run(ctx)

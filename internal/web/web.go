@@ -29,6 +29,7 @@ import (
 	"github.com/z354prance/undermynd/internal/job"
 	"github.com/z354prance/undermynd/internal/logbuf"
 	"github.com/z354prance/undermynd/internal/metadata"
+	"github.com/z354prance/undermynd/internal/movies"
 	"github.com/z354prance/undermynd/internal/pipeline"
 	"github.com/z354prance/undermynd/internal/progress"
 	"github.com/z354prance/undermynd/internal/requests"
@@ -69,6 +70,8 @@ type Server struct {
 	Profiles *decision.Store
 	// Shadow compares the arrs' grabs with Undermynd's picks; nil without the database.
 	Shadow *shadow.Service
+	// Movies keeps native movie categories; nil without the database.
+	Movies *movies.Service
 	// Requests keeps requests in Undermynd (native mode); nil without the database.
 	Requests *requests.Service
 	RSS      interface {
@@ -170,6 +173,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/api/indexers", s.admin(s.indexersList))
 	mux.HandleFunc("GET /admin/api/parser", s.admin(s.parserTry))
 	mux.HandleFunc("GET /admin/api/profiles", s.admin(s.profilesList))
+	mux.HandleFunc("GET /admin/api/movies", s.admin(s.moviesList))
+	mux.HandleFunc("GET /admin/api/movies/lookup", s.admin(s.moviesLookup))
+	mux.HandleFunc("POST /admin/api/movies/add", s.guard(s.admin(s.moviesAdd)))
+	mux.HandleFunc("POST /admin/api/movies/import", s.guard(s.admin(s.moviesImport)))
+	mux.HandleFunc("PUT /admin/api/movies/settings", s.guard(s.admin(s.moviesSettings)))
+	mux.HandleFunc("POST /admin/api/movies/search-wanted", s.guard(s.admin(s.moviesSearchWanted)))
+	mux.HandleFunc("PUT /admin/api/movies/{id}", s.guard(s.admin(s.movieEdit)))
+	mux.HandleFunc("DELETE /admin/api/movies/{id}", s.guard(s.admin(s.movieDelete)))
+	mux.HandleFunc("POST /admin/api/movies/{id}/search", s.guard(s.admin(s.movieSearch)))
+	mux.HandleFunc("POST /admin/api/movies/{id}/grab", s.guard(s.admin(s.movieGrab)))
 	mux.HandleFunc("GET /admin/api/shadow", s.admin(s.shadowReport))
 	mux.HandleFunc("PUT /admin/api/shadow/settings", s.guard(s.admin(s.shadowSettings)))
 	mux.HandleFunc("POST /admin/api/shadow/check", s.guard(s.admin(s.shadowCheck)))

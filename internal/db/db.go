@@ -327,6 +327,30 @@ var migrations = []string{
 		note         TEXT NOT NULL DEFAULT ''
 	);
 	CREATE INDEX shadow_at ON shadow(at);`,
+	// 12: native movies (roadmap F4): which category and profile a movie
+	// belongs to, the file on disk, the download under way, and releases not
+	// to grab again.
+	`ALTER TABLE movies ADD COLUMN category TEXT NOT NULL DEFAULT '';
+	ALTER TABLE movies ADD COLUMN profile TEXT NOT NULL DEFAULT '';
+	ALTER TABLE movies ADD COLUMN runtime INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE movies ADD COLUMN file_path TEXT NOT NULL DEFAULT '';
+	ALTER TABLE movies ADD COLUMN file_quality TEXT NOT NULL DEFAULT '';
+	ALTER TABLE movies ADD COLUMN file_score INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE movies ADD COLUMN file_version INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE movies ADD COLUMN file_size INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE movies ADD COLUMN job_id TEXT NOT NULL DEFAULT '';
+	ALTER TABLE movies ADD COLUMN searched TEXT NOT NULL DEFAULT '';
+	ALTER TABLE movies ADD COLUMN note TEXT NOT NULL DEFAULT '';
+	CREATE INDEX movies_category ON movies(category);
+	CREATE TABLE blocklist (
+		id       INTEGER PRIMARY KEY,
+		movie_id INTEGER REFERENCES movies(id) ON DELETE CASCADE,
+		title    TEXT NOT NULL,
+		norm     TEXT NOT NULL,
+		reason   TEXT NOT NULL DEFAULT '',
+		at       TEXT NOT NULL
+	);
+	CREATE INDEX blocklist_movie ON blocklist(movie_id);`,
 }
 
 // Version is the schema version this build expects.
