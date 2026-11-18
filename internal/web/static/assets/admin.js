@@ -64,7 +64,7 @@
       {id:'overview',label:'Overview',icon:'s_over',pages:[['overview','Overview']]},
       {id:'downloads',label:'Downloads',icon:'s_dl',pages:[['jobs','On the way'],['rss','Feeds'],['reencode','Re-encode']]},
       {id:'requests',label:'Requests',icon:'s_req',pages:[['requests','Media'],['access','Accounts']]},
-      {id:'library',label:'Library',icon:'s_lib',pages:[['library','TV'],['anime','Anime']]},
+      {id:'library',label:'Library',icon:'s_lib',pages:[['missing','Missing'],['anime','Anime']]},
       {id:'settings',label:'Settings',icon:'s_sys',pages:[['arrs','Arrs'],['clients','Download clients'],['transcode','Tdarr'],['public','Public page'],['playback','Media server'],['system','Server'],['log','Log']]}];
     function first(p){return p[2]?p[2][0][0]:p[0]}
     var cur=null,curPage=null;NAV.forEach(function(sec){sec.pages.forEach(function(p){if(p[0]===tab||(p[2]&&p[2].some(function(q){return q[0]===tab}))){cur=sec;curPage=p}})});
@@ -86,7 +86,7 @@
     if(curPage[2]){var tb=el('div','hv-tabs');tb.setAttribute('role','tablist');curPage[2].forEach(function(q){var b=el('button',q[0]===tab?'on':'',q[1]);b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-selected',q[0]===tab?'true':'false');b.onclick=function(){go(q[0])};tabBtns[q[0]]=b;tb.appendChild(b)});mainCol.appendChild(tb)}
     var bodyWrap=el('div','hv-body');mainCol.appendChild(bodyWrap);
     var main=el('main','main'),body=el('div');main.appendChild(body);bodyWrap.appendChild(main);shell.appendChild(side);shell.appendChild(mainCol);root.appendChild(shell);
-    if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else if(tab==='requests')requestsView(body);else if(tab==='library')libraryView(body);else if(tab==='reencode')reencodeView(body);else if(tab==='log')logView(body);else if(tab==='access')accessView(body);else if(tab==='anime')animeView(body);else settingsView(body);
+    if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else if(tab==='requests')requestsView(body);else if(tab==='missing')missingView(body);else if(tab==='reencode')reencodeView(body);else if(tab==='log')logView(body);else if(tab==='access')accessView(body);else if(tab==='anime')animeView(body);else settingsView(body);
   }
   function fail(e){if(e.status===401){start()}else{var d=el('div','err',e.message);root.appendChild(d)}}
   function ago(t){var s=Math.max(0,(Date.now()-new Date(t))/1000);if(s<90)return Math.round(s)+'s';if(s<5400)return Math.round(s/60)+'m';if(s<172800)return Math.round(s/3600)+'h';return Math.round(s/86400)+'d'}
@@ -458,36 +458,37 @@
   }
   // ---- Indexers (roadmap D1): arr-style, backend first; design pass later ----
   var iView={q:'',type:'search',cat:''};
-  // Library: what the arrs hold, read from them. Each series has the season
-  // bar from the public dashboard (one pixel per episode, imported green).
-  var libQ='';
-  function seasonBar(list){var b=el('span','hv-sbar');b.setAttribute('role','img');var imp=0,tot=0;
-    list.forEach(function(x){imp+=x.imported;tot+=x.total;var g=el('span','s');g.title='Season '+x.season+': '+x.imported+' / '+x.total;var px=x.pixels||'';for(var i=0;i<x.total;i++){var p=el('i'),c=px?px.charAt(i):(i<x.imported?'h':'.');if(c==='h')p.className='h';else if(c==='u')p.className='u';g.appendChild(p)}b.appendChild(g)});
-    b.setAttribute('aria-label',imp+' of '+tot+' episodes in the library');return b}
-  function libraryView(body){
+  // Missing: what each arr reports as wanted and not on disk, one section per
+  // arr category, as posters (album covers for music) taken from the arr.
+  var missQ='',missAll={};
+  var ARRNAME={sonarr:['Sonarr','var(--tv)'],radarr:['Radarr','var(--movie)'],lidarr:['Lidarr','var(--music)']};
+  function missingView(body){
     var top=el('div','hv-pagehead');body.appendChild(top);var host=el('div','hv-col');body.appendChild(host);
-    api('GET','/library').then(function(d){
-      var errs=d.errors||[];
-      var seasons=d.seasons||[],shows={};seasons.forEach(function(x){(shows[x.showId]=shows[x.showId]||{name:x.Show||x.show,list:[]}).list.push(x)});
-      var ids=Object.keys(shows).sort(function(a,b){return shows[a].name.localeCompare(shows[b].name)});
-      top.appendChild(el('h2','',ids.length+(ids.length===1?' series':' series')));top.appendChild(el('span','hv-sp'));
-      var q=el('input');q.type='search';q.placeholder='Filter series';q.setAttribute('aria-label','filter series');q.value=libQ;top.appendChild(q);
-      top.appendChild(el('span','hv-note','From Sonarr, refreshed in the background.'));
-      if(errs.length){var eb=hvBox('Problems reading the arrs');var el2=el('div','hv-list');errs.slice(0,10).forEach(function(e){var r=el('div','hv-item slim');r.appendChild(hvPill('Error','var(--bad)'));var t=el('div','hv-it');t.appendChild(el('span','',e));r.appendChild(t);el2.appendChild(r)});eb.appendChild(el2);host.appendChild(eb)}
-      var sb=hvBox('Series');var list=el('div','hv-list');sb.appendChild(list);host.appendChild(sb);
-      function draw(){list.replaceChildren();var shown=ids.filter(function(id){return !libQ||shows[id].name.toLowerCase().indexOf(libQ.toLowerCase())>=0});
-        if(!ids.length){list.appendChild(el('div','hv-empty','No series are being tracked. Add a Sonarr category under Settings › Arrs.'));return}
-        if(!shown.length){list.appendChild(el('div','hv-empty','Nothing matches.'));return}
-        shown.forEach(function(id){var sh=shows[id],imp=0,tot=0;sh.list.sort(function(a,b){return a.season-b.season});sh.list.forEach(function(x){imp+=x.imported;tot+=x.total});
-          var row=el('div','hv-item slim hv-lib');var t=el('div','hv-it');t.appendChild(el('b','',sh.name));t.appendChild(el('span','',sh.list.length+(sh.list.length===1?' season':' seasons')));row.appendChild(t);
-          row.appendChild(seasonBar(sh.list));row.appendChild(el('span','hv-cnt',imp+' / '+tot));
-          row.appendChild(tot&&imp>=tot?hvPill('Complete','var(--ok)'):hvPill((tot-imp)+' missing','var(--warn)'));list.appendChild(row)})}
-      q.oninput=function(){libQ=q.value;draw()};draw();
-      var miss=d.missing||[];var mbx=hvBox('Missing');var ml=el('div','hv-list');mbx.appendChild(ml);host.appendChild(mbx);
-      if(!miss.length)ml.appendChild(el('div','hv-empty','Nothing is missing.'));
-      miss.slice(0,100).forEach(function(m){var r=el('div','hv-item slim');var t=el('div','hv-it');t.appendChild(el('b','',m.title));t.appendChild(el('span','',[m.detail].filter(Boolean).join(' · ')));r.appendChild(t);
-        if(m.kind)r.appendChild(hvPill(cap(m.kind),m.kind==='episode'||m.kind==='series'?'var(--tv)':m.kind==='movie'?'var(--movie)':m.kind==='album'?'var(--music)':'var(--dim)'));if(m.category)r.appendChild(el('span','hv-age',m.category));ml.appendChild(r)});
-      if(miss.length>100)ml.appendChild(el('div','hv-empty','and '+(miss.length-100)+' more'));
+    api('GET','/missing').then(function(d){
+      var arrs=d.arrs||[],total=arrs.reduce(function(n,a){return n+a.count},0);
+      top.appendChild(el('h2','',total+' missing'));top.appendChild(el('span','hv-sp'));
+      var q=el('input');q.type='search';q.placeholder='Filter';q.setAttribute('aria-label','filter missing');q.value=missQ;top.appendChild(q);
+      top.appendChild(el('span','hv-note',d.updatedAt&&d.updatedAt[0]!=='0'?'From the arrs · checked '+ago(d.updatedAt)+' ago':'From the arrs'));
+      var errs=d.errors||[];if(errs.length){var eb=hvBox('Problems reading the arrs');var l=el('div','hv-list');errs.slice(0,10).forEach(function(e){var r=el('div','hv-item slim');r.appendChild(hvPill('Error','var(--bad)'));var t=el('div','hv-it');t.appendChild(el('span','',e));r.appendChild(t);l.appendChild(r)});eb.appendChild(l);host.appendChild(eb)}
+      if(!arrs.length){host.appendChild(el('div','hv-empty','No Sonarr, Radarr or Lidarr categories yet. Add them under Settings › Arrs.'));return}
+      var secs=[];
+      arrs.forEach(function(a){var an=ARRNAME[a.kind]||[a.kind,'var(--dim)'];var box=el('section','hv-box hv-miss');box.style.setProperty('--lc',an[1]);
+        var h=el('div','hv-miss-h');h.appendChild(hvPill(an[0],an[1],true));h.appendChild(el('h3','',a.category));var cnt=el('span','hv-note');h.appendChild(cnt);h.appendChild(el('span','hv-sp'));
+        if(a.url){var o=el('a','hv-open','Open '+an[0]);o.href=a.url+(a.kind==='lidarr'?'/wanted/missing':'/wanted/missing');o.target='_blank';o.rel='noopener';h.appendChild(o)}
+        box.appendChild(h);var grid=el('div','hv-pgrid'+(a.kind==='lidarr'?' sq':''));box.appendChild(grid);var more=el('button','hv-btn sm hv-more');more.type='button';box.appendChild(more);host.appendChild(box);secs.push({a:a,grid:grid,cnt:cnt,more:more,box:box})});
+      function card(g,kind){var c=el(g.link?'a':'div','hv-pc');if(g.link){c.href=g.link;c.target='_blank';c.rel='noopener';c.title='Open in the arr'}
+        var p=hvPoster(g.poster,g.title);if(kind==='lidarr')p.classList.add('sq');c.appendChild(p);
+        if(g.kind==='episode'){var b=el('span','hv-badge',String(g.items.length));b.title=g.items.length+' episode'+(g.items.length===1?'':'s')+' missing';p.appendChild(b)}
+        c.appendChild(el('b','',g.title));
+        var sub=g.kind==='episode'?g.items.slice(0,3).map(function(x){return x.detail}).join(', ')+(g.items.length>3?' +'+(g.items.length-3):''):(g.sub||'');
+        var sp=el('span','',sub);if(g.kind==='episode'&&g.items.length>3)sp.title=g.items.map(function(x){return x.detail}).join(', ');c.appendChild(sp);return c}
+      function draw(){var ql=missQ.toLowerCase();secs.forEach(function(x){var gs=x.a.groups.filter(function(g){return !ql||(g.title+' '+(g.sub||'')).toLowerCase().indexOf(ql)>=0});
+        x.grid.replaceChildren();var lim=missAll[x.a.category]||ql?gs.length:24;
+        gs.slice(0,lim).forEach(function(g){x.grid.appendChild(card(g,x.a.kind))});
+        x.cnt.textContent=x.a.kind==='sonarr'?x.a.count+' episodes in '+x.a.groups.length+' series':x.a.kind==='lidarr'?x.a.count+' albums':x.a.count+' movies';
+        if(!gs.length)x.grid.appendChild(el('div','hv-empty',ql?'Nothing matches.':'Nothing missing.'));
+        x.more.hidden=gs.length<=lim;x.more.textContent='Show all '+gs.length;x.more.onclick=function(){missAll[x.a.category]=true;draw()}})}
+      q.oninput=function(){missQ=q.value;draw()};draw();
     }).catch(fail)}
   // Overview (pinned v2 admin): health pills, Needs you, Pipeline now, Just finished, Who runs what.
   var STAGE6=[['found','Found','var(--st-found)'],['download','Download','var(--st-down)'],['transfer','Transfer','var(--st-transfer)'],['convert','Convert','var(--st-convert)'],['ready','Ready','var(--st-ready)']];

@@ -258,3 +258,19 @@ body.ui .a-pxw .hv-cnt{min-width:0;text-align:left}
   body.ui .arr .a-shows th:nth-child(8),body.ui .arr .a-shows td:nth-child(8){display:none}
   body.ui .arr .a-pxw .hv-sbar{max-width:84px}
 }
+/* missing: one section per arr, poster grid from the arr's artwork */
+body.ui .hv-miss{box-shadow:inset 0 3px 0 var(--lc)}
+body.ui .hv-miss-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 14px}
+body.ui .hv-miss-h h3{margin:0}
+body.ui .hv-open{font:700 13px var(--ui);color:#c4b5fd;text-decoration:none}
+body.ui .hv-open:hover{text-decoration:underline}
+body.ui .hv-pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:16px 14px}
+body.ui .hv-pgrid.sq{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+body.ui .hv-pc{display:flex;flex-direction:column;gap:3px;min-width:0;color:var(--text);text-decoration:none}
+body.ui a.hv-pc:hover .hv-poster{outline:2px solid #8b6cf0;outline-offset:2px}
+body.ui .hv-pc>b{font:700 14px/1.25 var(--ui);margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.ui .hv-pc>span{font:12px var(--mono);color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.ui .hv-poster.sq{aspect-ratio:1/1}
+body.ui .hv-badge{position:absolute;top:7px;right:7px;min-width:24px;height:24px;padding:0 7px;border-radius:12px;background:var(--warn);color:#151617;font:600 12px/24px var(--mono);text-align:center;box-sizing:border-box}
+body.ui .hv-more{margin-top:14px}
+@media (max-width:760px){body.ui .hv-pgrid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:12px 10px}body.ui .hv-pgrid.sq{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}}
