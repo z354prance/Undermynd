@@ -33,6 +33,7 @@ import (
 	"github.com/z354prance/undermynd/internal/movies"
 	"github.com/z354prance/undermynd/internal/music"
 	"github.com/z354prance/undermynd/internal/musicbrainz"
+	"github.com/z354prance/undermynd/internal/notify"
 	"github.com/z354prance/undermynd/internal/pipeline"
 	"github.com/z354prance/undermynd/internal/progress"
 	"github.com/z354prance/undermynd/internal/requests"
@@ -43,6 +44,7 @@ import (
 	"github.com/z354prance/undermynd/internal/shows"
 	"github.com/z354prance/undermynd/internal/storage"
 	"github.com/z354prance/undermynd/internal/store"
+	"github.com/z354prance/undermynd/internal/tokens"
 	"github.com/z354prance/undermynd/internal/trash"
 	"github.com/z354prance/undermynd/internal/tv"
 )
@@ -91,6 +93,9 @@ type Server struct {
 	MusicBrainz *musicbrainz.Client
 	// Music keeps native music categories; nil without the database.
 	Music *music.Service
+	// Tokens are API tokens; Notify sends notifications. nil without the database.
+	Tokens *tokens.Store
+	Notify *notify.Notifier
 	// Requests keeps requests in Undermynd (native mode); nil without the database.
 	Requests *requests.Service
 	RSS      interface {
@@ -198,6 +203,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/api/movies", s.admin(s.moviesList))
 	mux.HandleFunc("GET /admin/api/tv", s.admin(s.tvList))
 	mux.HandleFunc("GET /admin/api/wanted", s.admin(s.wanted))
+	mux.HandleFunc("GET /admin/api/tokens", s.browserOnly(s.tokensList))
+	mux.HandleFunc("POST /admin/api/tokens", s.guard(s.browserOnly(s.tokensCreate)))
+	mux.HandleFunc("DELETE /admin/api/tokens/{id}", s.guard(s.browserOnly(s.tokensDelete)))
+	mux.HandleFunc("GET /admin/api/notifications", s.admin(s.notificationsList))
+	mux.HandleFunc("PUT /admin/api/notifications", s.guard(s.admin(s.notificationsPut)))
+	mux.HandleFunc("POST /admin/api/notifications/test", s.guard(s.admin(s.notificationsTest)))
 	mux.HandleFunc("GET /admin/api/musicbrainz/artists", s.admin(s.mbArtists))
 	mux.HandleFunc("GET /admin/api/music", s.admin(s.musicList))
 	mux.HandleFunc("POST /admin/api/music/add", s.guard(s.admin(s.musicAdd)))
@@ -332,8 +343,27 @@ func (s *Server) host(r *http.Request) string {
 
 // guard protects state-changing routes: a required custom header (which a
 // cross-site form cannot send) and a same-origin check.
+// token reports whether the request carries a valid API token, as an
+// X-Api-Key header or a Bearer token.
+func (s *Server) token(r *http.Request) bool {
+	if s.Tokens == nil {
+		return false
+	}
+	v := r.Header.Get("X-Api-Key")
+	if v == "" {
+		if a := r.Header.Get("Authorization"); strings.HasPrefix(a, "Bearer ") {
+			v = strings.TrimPrefix(a, "Bearer ")
+		}
+	}
+	return v != "" && s.Tokens.Valid(strings.TrimSpace(v))
+}
+
 func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Cookie") == "" && s.token(r) {
+			next(w, r) // a script with a valid token: no browser, no cross-site risk
+			return
+		}
 		if r.Header.Get(requestHeader) != "1" {
 			jsonErr(w, http.StatusForbidden, "missing request header")
 			return
@@ -352,8 +382,23 @@ func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
 // admin requires a valid session before any handler runs.
 func (s *Server) admin(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Cookie") == "" && s.token(r) {
+			next(w, r)
+			return
+		}
 		c, err := r.Cookie(cookieName)
 		if err != nil || !s.Auth.Valid(c.Value) {
+			jsonErr(w, http.StatusUnauthorized, "sign in required")
+			return
+		}
+		next(w, r)
+	}
+}
+
+// browserOnly requires a signed-in browser: tokens cannot manage tokens.
+func (s *Server) browserOnly(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.signedIn(r) {
 			jsonErr(w, http.StatusUnauthorized, "sign in required")
 			return
 		}

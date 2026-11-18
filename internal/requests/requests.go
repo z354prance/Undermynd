@@ -51,6 +51,8 @@ type Service struct {
 	Movies *movies.Service
 	// TV keeps native TV categories (roadmap F5).
 	TV *tv.Service
+	// OnRequest, when set, is told about every new request (notifications).
+	OnRequest func(Request)
 
 	mu      sync.Mutex
 	lib     map[string]libCache // by arr kind
@@ -300,6 +302,9 @@ func (s *Service) Create(ctx context.Context, mediaType string, tmdbID int64, re
 	}
 	r.ID, _ = res.LastInsertId()
 	s.Log.Printf("requests: %s %q requested%s", r.Kind, r.Title, map[bool]string{true: " by " + r.Requester, false: ""}[r.Requester != ""])
+	if s.OnRequest != nil {
+		s.OnRequest(r)
+	}
 	if s.Cfg.Get().Requests.AutoApprove {
 		if err := s.Decide(ctx, r.ID, "approve", ""); err != nil {
 			s.Log.Printf("requests: auto-approving %q: %v", r.Title, err)
