@@ -1,10 +1,20 @@
-# Roadmap: folding the arr stack into Undermynd (v27, Nov 17, 2026)
+# Roadmap: folding the arr stack into Undermynd (v43, Nov 18, 2026)
 
 Goal: one app that does what Radarr, Sonarr, Lidarr, Prowlarr, Seerr, Houndarr and Recyclarr do today, so nothing else has to run or be configured. It will be renamed HyveMynd at the end.
 
 How to use this doc: the **milestones table** is the plan. Each milestone is one or a few pull requests, has a clear exit test, and lists what it depends on. Decisions and gates explain why the order is what it is. This file is kept in the repo (`docs/ROADMAP.md`) and in the Undermynd project (`design/roadmap-arr-consolidation.md`) with the same content. Supporting project docs: `design/metadata-sources.md`, `design/anime-pipeline.md`; in the repo: `docs/RENAME.md`.
 
-v13 restructured the plan into milestones. v14 to v17 answered every gate that blocks the start. v18 recorded Stage A progress. v19 recorded B1 merged and added B0 (Go upgrade). v20 closed A1. v21 closed B1 and B0. v22 recorded B2 merged. v23 recorded the B3 spike results. v24 recorded B4 (metadata layer) merged. v25 recorded C1 built. v26 recorded the C1 fixes and C2 built. v27 records that anime stays on the simple importer: C1 and C2 withdrawn, C3 and C4 reworked to work from the folders.
+v13 restructured the plan into milestones. v14 to v17 answered every gate that blocks the start. v18 recorded Stage A progress. v19 recorded B1 merged and added B0 (Go upgrade). v20 closed A1. v21 closed B1 and B0. v22 recorded B2 merged. v23 recorded the B3 spike results. v24 recorded B4 (metadata layer) merged. v25 recorded C1 built. v26 recorded the C1 fixes and C2 built. v27 recorded that anime stays on the simple importer. v28 recorded C3 built. v29 recorded C4 built. v30 recorded E1 and F1 built. v31 recorded F2 built. v32 recorded F3 built. v33 recorded F4 built. v34 recorded F5 built. v35 recorded F6 built: Stage F is complete in code. v36 recorded G-1 built. v37 recorded G-2 built: Stage G is complete in code. v38 recorded H1 built. v39 recorded H2 built: Stage H is complete in code. v40 recorded I1 built. v41 records I2 built in code: the backend roadmap is complete; the design pass is next. v42 records design parts 1 to 4 merged.
+
+## Rolled back (v43, Nov 18, 2026)
+
+The user decided to keep HyveMynd beside the arr stack instead of replacing it: the takeover features did not work the way they expected. The redesign stays.
+
+- **Kept:** everything up to and including the removal of the anime catalog (PR #22); the media-server interface (B5); the rename to HyveMynd (I2); the redesign: graphite look and icon-rail admin (design part 1), the public dashboard with its fixes (part 4), and the Seerr-style Request media dropdown, now backed by Seerr (part 3: Discover rows, poster search, title page with cast, trailer and a season picker; requests go to Seerr with the chosen seasons).
+- **Removed, kept on the branch `archive/arr-takeover`** (main at `0b4c385`, PRs #23 to #51): anime follow and gap filling (C3, C4), indexers and the Torznab proxy (D1, D2), requests kept by HyveMynd (E1), the release parser, profiles, shadow mode, native movies and TV, wanted and calendar (F1 to F6), TRaSH sync and the scheduler (G-1, G-2), MusicBrainz and native music (H1, H2), API tokens and notifications (I1), the poster library pages (design part 2) and the unfinished admin pages (part 5).
+- **Admin:** Overview; Library (Disk); Activity (On the way, Requests); Sources (Feeds); System (Connections, Public site, Re-encode, Settings, Log).
+- **Database:** the schema keeps every migration up to 18, so a database that already ran the takeover build opens unchanged; the tables only the archived features used stay empty or unused. Settings fields those features added are ignored.
+- **To revisit:** check out `archive/arr-takeover`; the rest of this document describes that work as it was.
 
 ---
 
@@ -17,12 +27,12 @@ v13 restructured the plan into milestones. v14 to v17 answered every gate that b
 | Metadata (G3, confirmed by B3) | TMDB is primary for structure (seasons, episodes, air dates) and alternate titles. The anime-offline-database supplements alternate titles (it filled a gap TMDB had) but is stale (last release 2026-07-04), so it is optional and cached. The Kometa Anime-IDs list maps AniDB to TVDB; TMDB's `/find` turns TVDB into TMDB. New shows not in any list: TMDB title search, confirmed once by the user. Where release seasons and TMDB seasons disagree, a per-series episode order (TMDB default, a TMDB episode group, or a season offset). Details in the project's `design/metadata-sources.md`. |
 | Storage | SQLite with a pure-Go driver (`modernc.org/sqlite`, no cgo, static binary and scratch image kept) at `/config/undermynd.db`. Shipped in B1. `/config` is on the cache pool (confirmed). |
 | What stays as files | `settings.json`, `admin.json`, `sessions.json`, `secret.key` stay as files: small, hand-editable, and sign-in recovery must not depend on the database. Everything else that is state (jobs, RSS seen items, tracked shows, access requests, requests, and all new catalog data) moves to SQLite. `storage-scan.json` is a cache and can stay. |
-| Dependencies | The SQLite driver is the only new dependency unless a later decision adds one. |
+| Dependencies | The SQLite driver, and (since F2) `github.com/dlclark/regexp2`, a pure-Go regex engine with .NET rules: custom formats from the arrs and the TRaSH Guides use lookarounds, which Go's own regex cannot read. No others unless a later decision adds one. |
 | Media server | Emby first, Jellyfin through the same small interface. Plex out of scope. Used for libraries, the existing access flow and optional refresh, not for signing in to make requests. |
 | Library refresh | Optional, off by default. Emby finds new files on its own today. |
 | Anime | First-class and native (no Sonarr), and **stays on the simple folder-name importer** (user decision, Nov 17): anime numbering does not line up with TMDB well enough to manage it by a catalog, which is why the user never let Sonarr handle it. Anime features work from the folders themselves: folder name, the episode numbers on disk, group preference. Mostly SubsPlease; per-show exceptions such as Trix and Judas. nyaa through per-release RSS feeds. 1080p global default. |
 | Library numbering (G1) | The anime library is mixed (absolute and seasons) and stays as it is. New episodes follow the folder they land in, as today. No conversion tool. |
-| Transcoding of AV1 sources | AV1 sources go through the same Tdarr flow and Undermynd already handles the result. Skipping Tdarr for them is only an optional speed-up (C5). |
+| Transcoding of AV1 sources | AV1 sources go through the same Tdarr flow and Undermynd already handles the result. Tdarr is never skipped: it does more than transcoding (user, Nov 17). |
 | Arr import confirmation | Confirmed working against the real Sonarr and Radarr (user, Nov 16). |
 | Rollout model | Strangler. Each category says who owns it: an arr (today's behaviour) or native. A category switches only after a shadow or trial period. The fake qBittorrent and SABnzbd APIs stay as a compatibility mode. |
 | Merging | Each milestone is a pull request; CI (gofmt, vet, race tests, container build) must pass before merge. Merging to `main` publishes the container image. Milestones that change stored data (B1 onwards) are run on the server before the next one builds on them. |
@@ -100,50 +110,50 @@ The anime path stays the simple importer: a release goes to the folder its title
 |---|---|---|---|---|
 | C1 | Catalog import of the anime library | | | **Withdrawn Nov 17.** Built (PRs #13 to #21) and run on the real library (868 of 948 folders imported), but lining up anime folders with TMDB took too much hand work for a library whose naming varies. Removed in PR #22; migration 5 clears what it recorded. Kept from it: the release group and resolution in the parser, the looser reading of older file names (`S01E01-Title`, `Episode 7`), thousands separators in title comparison |
 | C2 | Catalog-based placement | | | **Withdrawn Nov 17** with C1 (it needs the catalog). Never switched on: it ran only as a dry run beside the simple importer |
-| C3 | Generated feeds: per show folder, choose to follow it, an ordered group preference (SubsPlease first, Trix or Judas for exceptions), 1080p default; Undermynd builds the nyaa search feed from the folder name and its newest episode number on disk, through the existing RSS poller | M | none | Two of the user's hand-made feeds replaced with generated ones for a week with no misses |
-| C4 | Gap filling from the folder: holes in a folder's own numbering (1 to 3, 5, 6: 4 is missing) are searched for alone, from the next group when one skipped; never re-download a number already on disk | M | C3 | Student Council holes filled automatically |
-| C5 | Optional speed-up: skip the Tdarr round trip when the source already matches the target codec | S | none | A Trix AV1 release is placed without a Tdarr run |
+| C3 | Followed shows, arr-style (Anime page): every show folder listed with episodes on disk, gaps and AniList status (display only); follow a show with an ordered group preference and a quality; Undermynd checks nyaa for followed shows itself and grabs new episodes (a later group only when the first choice skipped one, or after a day); hand-made RSS rules leave a followed show's releases to it; other titles per folder, which the simple importer also accepts; interactive search with grab and warnings; search gaps by hand; Add New makes the folder and follows it | M | none | **Built** (`internal/shows`, migration 6). Real-run check: follow two shows that have hand-made feeds and watch a week of episodes arrive |
+| C4 | Gap filling from the folder, by itself: once a day each followed show (with "fill gaps" on, the default) looks for the numbers missing between the episodes in its folder, from what its own search found and then by searching up to four missing episodes one by one; the first group of the order that has one at the chosen quality gets it (old gaps do not wait for a better group); never an episode on disk, already grabbed, or whose release failed | M | C3 | **Built** (migration 8). Real-run check: Student Council's holes filled by themselves |
+| C5 | Skip the Tdarr round trip for AV1 sources | | | **Dropped Nov 17** (user): Tdarr does more than transcoding, so every file keeps going through it |
 
 Notes: C3 and C4 search nyaa through RSS search URLs, so they do not wait for D1; D1 later absorbs it. The catalog and metadata layer (B2, B4) stay for movies, TV and requests, where TMDB lines up well. The season conversion tool (old C6) is dropped.
 
 ### Stage D: Indexers (Prowlarr parity)
 | ID | Milestone | Size | Depends on | Exit test |
 |---|---|---|---|---|
-| D1 | Indexer module: Torznab, Newznab and a nyaa adapter; test, health, backoff, rate and grab limits, priority; unified search; interactive search screen. Anime search moves onto it | L | B1, design | Every indexer the user has in Prowlarr works; anime searches go through it |
-| D2 | Torznab/Newznab proxy for the arrs | M | D1 | Arrs point at Undermynd instead of Prowlarr for two weeks; Prowlarr off |
+| D1 | Indexer module: Torznab, Newznab and a nyaa adapter; test, health, backoff, rate and grab limits, priority; unified search; interactive search screen. Anime search moves onto it | L | B1, design | Every indexer the user has in Prowlarr works; anime searches go through it. **Built (backend, minimal page)**: Torznab and Newznab indexers with test, health and backoff, daily limits, priority, one search across all, grab into the pipeline, import from Prowlarr (direct where Prowlarr shows the key, through Prowlarr otherwise). Prowlarr's own tracker definitions are still reached through Prowlarr: reaching them directly is the remaining step before Prowlarr can be turned off. Anime keeps nyaa through the Anime page |
+| D2 | Torznab/Newznab proxy for the arrs | M | D1 | Arrs point at Undermynd instead of Prowlarr for two weeks; Prowlarr off. **Built**: on the download-client address and key, `/indexers/<n>` passes a search to one indexer (its key stays in Undermynd), `/indexers/all-torrent` and `/indexers/all-usenet` search them all at once |
 
 ### Stage E: Requests (Seerr parity, no sign-in)
 | ID | Milestone | Size | Depends on | Exit test |
 |---|---|---|---|---|
-| E1 | Native request flow: public search and discover from the metadata layer (no sign-in, rate-limited per address as today, optional requester name); every request lands in an approval queue on the admin dashboard with approve and decline (with a reason); "already in the library" and "already requested" detection; an "auto-approve everything" setting, off by default; request status shown on the public status page through the pipeline stages; admin notified of new requests. Approved anime requests go to the native library; approved movie and TV requests still go to Radarr and Sonarr through their API (TMDB to TVDB mapping) until Stage F. The current Seerr-backed box stays available behind a setting until this is trusted | L | B4, B2, design | Seerr off for two weeks with requests and approvals working as before |
+| E1 | Native request flow: public search and discover from the metadata layer (no sign-in, rate-limited per address as today, optional requester name); every request lands in an approval queue on the admin dashboard with approve and decline (with a reason); "already in the library" and "already requested" detection; an "auto-approve everything" setting, off by default; request status shown on the public status page through the pipeline stages; admin notified of new requests. Approved anime requests go to the native library; approved movie and TV requests still go to Radarr and Sonarr through their API (TMDB to TVDB mapping) until Stage F. The current Seerr-backed box stays available behind a setting until this is trusted | L | B4, B2, design | Seerr off for two weeks with requests and approvals working as before. **Built** (setting "kept by: Undermynd" under Public site; Seerr stays the default until switched): TMDB search and trending with availability from Radarr/Sonarr, requests in the `requests` table, approval queue unchanged, approve adds to Radarr/Sonarr (first root folder and profile) or follows anime on the Anime page when nyaa has exactly one match, decline with a reason, auto-approve setting, approved requests marked available when they arrive |
 
 ### Stage F: Movies and TV engine (Radarr and Sonarr parity)
 | ID | Milestone | Size | Depends on | Exit test |
 |---|---|---|---|---|
-| F1 | Full release parser: quality, source, group, language, editions, multi-episode, season packs. Corpus built from the arrs' own history (thousands of real titles with what the arr decided), plus the arrs' parse endpoint as a reference while they still run (verify the endpoint) | L | A1 | Agrees with the arrs on the corpus above an agreed rate; every disagreement reviewed |
-| F2 | Profiles, custom formats and decision engine with rejection reasons | L | F1, D1 | Unit tests on scoring |
-| F3 | Shadow mode: for every arr grab, Undermynd works out what it would have picked and logs the comparison (gate G4) | M | F2 | Agreement report over two weeks; disagreements explained |
-| F4 | Movies native: import Radarr's library state, monitor, grab straight into the pipeline, importer with naming and dry-run; approved movie requests go straight to the native library | L | F3, G4 | Movie category switched to native; Radarr off for two weeks |
-| F5 | TV native: same, plus season packs, daily shows, upgrades | XL | F4 | TV category native; Sonarr off for two weeks |
-| F6 | Calendar, wanted, cutoff unmet, history, manual search and manual import screens | M | F4, design | Reachable from admin |
+| F1 | Full release parser: quality, source, group, language, editions, multi-episode, season packs. Corpus built from the arrs' own history (thousands of real titles with what the arr decided), plus the arrs' parse endpoint as a reference while they still run (verify the endpoint) | L | A1 | Agrees with the arrs on the corpus above an agreed rate; every disagreement reviewed. **Built** (`internal/parser`): title, year, seasons, multi-episode, season and multi-season packs, daily, anime absolute and v2, quality by the arrs' own names, proper/repack/real, codec, 10-bit, HDR, audio and channels, editions, languages, streaming service, group, hash; 70 corpus names plus a fuzz test. The corpus check against the user's arrs is a button on the Indexers page ("Compare with the arr's history": up to 1,000 grabs, agreement rate and every difference) — real-run check: run it on the TV and movie categories and review the differences |
+| F2 | Profiles, custom formats and decision engine with rejection reasons | L | F1, D1 | Unit tests on scoring. **Built** (`internal/decision`, migration 10, Profiles page): quality profiles with groups, cutoff, upgrades and score thresholds; custom formats with the arrs' condition kinds and rules (.NET patterns); quality sizes; every turned-down release says why; ranking in the arrs' order; import of profiles, formats and sizes from Sonarr or Radarr; "Try a profile" decides on a real indexer search or pasted names. Real-run check: import from both arrs, try a few titles, and compare the pick with what the arr would take |
+| F3 | Shadow mode: for every arr grab, Undermynd works out what it would have picked and logs the comparison (gate G4) | M | F2 | Agreement report over two weeks; disagreements explained. **Built** (`internal/shadow`, migration 11; Profiles page → Shadow mode, off by default): every 10 minutes, each new Sonarr or Radarr grab is searched on Undermynd's indexers and decided with the profile of the same name; verdicts same, as good, Undermynd better, arr better, would refuse the arr's pick, nothing found, not compared; capped at 20 searches an hour by default. Real-run check: import profiles, turn it on, and read the report after two weeks |
+| F4 | Movies native: import Radarr's library state, monitor, grab straight into the pipeline, importer with naming and dry-run; approved movie requests go straight to the native library | L | F3, G4 | Movie category switched to native; Radarr off for two weeks. **Built** (`internal/movies`, migration 12, Movies page): per-category "native" switch with the movie library folder; import of Radarr's library (monitored, profile by name, file and quality, paths moved to the library folder); every 15 minutes, missing movies (again after 12 h) and cutoff-unmet ones (after a day) are searched within an hourly budget and the best accepted release grabbed into the pipeline; failed downloads blocklisted; finished downloads imported under the naming settings, a replaced file set aside in `.undermynd-replaced` (never deleted), or only described in a dry run; interactive search with verdicts; add by TMDB; approved movie requests for a native category go straight to it. Real-run check: import, switch on with dry run, then live; Radarr's monitoring off for the category |
+| F5 | TV native: same, plus season packs, daily shows, upgrades | XL | F4 | TV category native; Sonarr off for two weeks. **Built** (`internal/tv`, migration 13, TV page): per-category native switch; import of Sonarr's library (series, episodes in Sonarr's numbering, monitoring, profile, files; anime series left to the Anime page); new episodes and air dates from TMDB daily (known numbers kept); every 15 minutes recent releases on the indexers are matched to wanted episodes (Sonarr's RSS sync), and wanted episodes are searched within an hourly budget, a finished season as one season search; daily shows by air date; upgrades to the cutoff; failed downloads blocklisted; season packs and multi-episode files imported to every episode they hold under the naming settings, replaced files set aside, dry run; series page with seasons, episode monitoring and interactive search; add by TMDB; approved TV requests for a native category go straight to it. Real-run check: import, dry run, then live; Sonarr's monitoring off for the category |
+| F6 | Calendar, wanted, cutoff unmet, history, manual search and manual import screens | M | F4, design | Reachable from admin. **Built** (Wanted page; `internal/history`, migration 14): missing and cutoff-unmet movies and episodes with a search button each; calendar of native episodes from a week ago to three weeks ahead; history of grabs, imports, failures, dry runs and replaced files; manual import of video files from the data, complete or library folders, each matched to its movie or episodes. Design pass still to come |
 
 ### Stage G: Profiles and scheduling
 | ID | Milestone | Size | Depends on | Exit test |
 |---|---|---|---|---|
-| G-1 | TRaSH Guides importer (Recyclarr parity): preview diff, local overrides, scheduled refresh; profiles may carry a transcode target | M | F2 | A guide profile imported and used for a real grab |
-| G-2 | Scheduler (Houndarr parity): small batches, per-item cooldown, release grace window, global indexer budget; anime gap filling moves onto it | M | D1, F4 | Backlog search runs a week within the indexer budget |
+| G-1 | TRaSH Guides importer (Recyclarr parity): preview diff, local overrides, scheduled refresh; profiles may carry a transcode target | M | F2 | A guide profile imported and used for a real grab. **Built** (`internal/trash`; Profiles page → TRaSH Guides): reads the guides repository (one zip download, kept an hour), lists its Radarr and Sonarr profiles and quality sizes, previews what applying would change, applies the chosen profiles with the formats they score and their scores (score sets included), keeps scores changed locally at the next sync, and syncs daily when asked. No transcode target in profiles: Tdarr handles every file (decision of Nov 17). Real-run check: apply a guide profile and see it used for a grab |
+| G-2 | Scheduler (Houndarr parity): small batches, per-item cooldown, release grace window, global indexer budget; anime gap filling moves onto it | M | D1, F4 | Backlog search runs a week within the indexer budget. **Built** (`internal/scheduler`, migration 15; Wanted page → Scheduler): one hourly budget (30 by default) shared by native movie and TV searches, recent-release checks, anime gap-filling searches and the arr backlog; a grace window after an episode airs (2 h); the arr backlog search (off by default) asks Sonarr and Radarr categories that are not native for a few missing, then cutoff-unmet items each hour (5), each resting 7 or 14 days. Real-run check: turn the backlog on for a week and watch the budget hold |
 
 ### Stage H: Music (Lidarr parity)
 | ID | Milestone | Size | Depends on | Exit test |
 |---|---|---|---|---|
-| H1 | MusicBrainz metadata with a 1 request/second limiter and cache | M | B4 | Artist and album lists load |
-| H2 | Music library, release matching, tagging, import | XL | H1, D1, G-1 | Lidarr off for two weeks |
+| H1 | MusicBrainz metadata with a 1 request/second limiter and cache | M | B4 | Artist and album lists load. **Built** (`internal/musicbrainz`): artist search and lookup, albums/EPs/singles, editions with track lists (usual edition first), Cover Art Archive covers; one request a second with retry on 503, responses cached in the database; admin API `/admin/api/musicbrainz/...`. The Music page comes with H2 |
+| H2 | Music library, release matching, tagging, import | XL | H1, D1, G-1 | Lidarr off for two weeks. **Built** (`internal/music`, migration 16, Music page): per-category native switch; import of Lidarr's artists and albums with files, folder and quality; add an artist from MusicBrainz (studio albums monitored, EPs, singles and live albums not); new albums from MusicBrainz weekly; wanted albums (missing, partial, below the cutoff) searched within the shared budget; releases judged by artist, album, year, quality (FLAC 24bit to MP3-192, wanted list and cutoff in settings), seeders, discographies and the blocklist; finished albums moved to `<Artist>/<Album (Year)>/` with disc folders and covers, the old album set aside; dry run. **Decision:** files keep the tags their release carries; Undermynd does not rewrite tags (Emby reads them as they are). Real-run check: import from Lidarr, dry run, then live; Lidarr's monitoring off |
 
 ### Stage I: Finish
 | ID | Milestone | Size | Depends on | Exit test |
 |---|---|---|---|---|
-| I1 | API tokens, webhooks, notifications | M | E1 | |
-| I2 | Rename to HyveMynd, following `docs/RENAME.md` | S | everything else | Old image and variables still work during transition |
+| I1 | API tokens, webhooks, notifications | M | E1. **Built** (`internal/tokens`, `internal/notify`, migration 17; Connect page): API tokens (shown once, kept as hashes, revocable, last use shown) accepted as `X-Api-Key` or Bearer on every admin API except token management; notifications to Discord, ntfy or a JSON webhook for grabs, imports, failed downloads, new requests, replaced files and dry runs, with a test button and up to three tries |
+| I2 | Rename to HyveMynd, following `docs/RENAME.md` | S | everything else | Old image and variables still work during transition. **Built in code** (see `docs/RENAME.md`): display name HyveMynd, both images published, `HYVEMYND_*` variables with `UNDERMYND_*` still working, new Unraid template. Left for the owner: the `v1.0-undermynd` tag and the GitHub repo rename (the build session cannot do either); then the Go module path. Final logo with the design pass |
 
 ## 6. Order and dependencies
 
@@ -151,7 +161,6 @@ Notes: C3 and C4 search nyaa through RSS search URLs, so they do not wait for D1
 A1 A2 A3 A4 (done; A1 waits on the user's Sweep check)
 A2 -> B1 -> B2 -> B4           (C1, C2 withdrawn)
 C3 -> C4                         anime, from the folders
-C5 (optional, any time)
 B2 + B4 -> E1 -> [Seerr off]
 B1 -> D1 -> D2 -> [Prowlarr off]
 A1 -> F1 -> F2 -> F3 -> F4 -> F5 -> [Radarr, Sonarr off]
@@ -164,7 +173,17 @@ Recommended sequence for one builder: C3 → C4 → B5 → D1 → E1 → D2 → 
 
 ## 7. Design track
 
-The redesign doc says Settings, Library and Requests/Access are not designed yet. Each UI milestone needs its screen first, in the existing htop style:
+The design pass follows the pinned designs: `design/pinned-v2-hyvemynd-dashboard.md`, `-admin.md`, `-phone.md`, and `design/pinned-v3-posters-and-requests.md` (library posters and Seerr-style requests).
+
+| Part | What | Status |
+|---|---|---|
+| 1 | Theme (graphite, Barlow, IBM Plex Mono, self-hosted), icon rail with five sections, logo and favicon | **Merged** (#45) |
+| 2 | Library as poster grids with the name below; movie, show, artist and album pages; art through the `/img` proxy | **Merged** (#46) |
+| 3 | Request media, Seerr-style in the dropdown: Discover rows, poster search, title page with cast, trailer and season picker | **Merged** (#47) |
+| 4 | Public dashboard: Now Playing, On the way with segmented circles, Recently added, storage ring, Donate, Need access; old page at `/classic` | **Merged** (#47) |
+| 5 | Remaining admin pages: Overview health and Needs you, Requests cards, Calendar week grid, Settings cards, Categories under Connections, Notifications and API under Settings, sign-in card, phone layouts | Next |
+
+The earlier plan below listed screens each UI milestone needed; parts 1 to 5 cover them.
 
 | Screen | Needed by |
 |---|---|
@@ -216,12 +235,28 @@ The redesign doc says Settings, Library and Requests/Access are not designed yet
 
 ## 11. Change log
 
+- v43: rolled back to beside-the-arrs; the takeover features are kept on `archive/arr-takeover`. The redesign stays, with requests through Seerr.
+- v42: design parts 1 to 4 merged.
 - v13: milestones with sizes, dependencies and exit tests; store tests before SQLite; which state moves to SQLite; backups in B1; anime search through nyaa RSS search URLs; per-category owner switch and shadow mode; corpus from the arrs' own history; dropped importers for other people's setups; design track and gates.
 - v14: G1 answered: per-series numbering mode, both numberings stored, optional season conversion tool (C6).
 - v15: Tdarr/AV1 answered (C5 optional).
 - v16: requests need no sign-in; every request waits for admin approval. Stage E is one milestone. A4 done.
 - v17: G3 answered: TMDB plus anime-offline-database plus ID mapping.
 - v18: A1 merged (PR #2), A2 done (PR #3, Clone bug fixed), A3 done (README status, this file added to `docs/`). Merge rule recorded.
+- v41: I2 built in code (rename). Backend complete; design pass next, from the pinned v2 designs (`design/pinned-v2-hyvemynd-*.md`).
+- v40: I1 built: API tokens and notifications.
+- v39: H2 built: native music; tags are not rewritten.
+- v38: H1 built: MusicBrainz client.
+- v37: G-2 built: shared search budget, grace window, arr backlog search.
+- v36: G-1 built: TRaSH Guides sync.
+- v35: F6 built: Wanted page (missing, cutoff unmet, calendar, history, manual import).
+- v34: F5 built: native TV categories.
+- v33: F4 built: native movie categories.
+- v32: F3 built: shadow mode beside the arrs, with a report on the Profiles page.
+- v31: F2 built: profiles, custom formats, decision engine; regexp2 added as a dependency for .NET patterns.
+- v30: E1 built (requests kept by Undermynd, Seerr still the default until switched). F1 built (full release parser, with a comparison against the arrs' grab history). Also since v29: B5 (media-server interface), D1 (indexers) and D2 (Torznab/Newznab proxy for the arrs) merged.
+- v29: C5 dropped (Tdarr is never skipped). C4 built: followed shows fill their gaps once a day. Since v28 also: folder scans kept between restarts (migration 7), episodes being processed shown in purple, failed downloads reopen the episode, nyaa queries without leading hyphens.
+- v28: C3 built: the Anime page (arr-style), followed shows checked on nyaa, group order with fallback, other titles for the importer, AniList status shown.
 - v27: anime stays on the simple folder-name importer (user decision). C1 and C2 withdrawn and removed (PR #22, migration 5 clears their records); C3 and C4 now work from the folders; C6 dropped.
 - v26: C1 real scan of 948 folders: fixes for unchecked folders counted as waiting, older file names (`S01E01-Title`), readings ranked by files with their own episode, exact-title matches for shows the lists lack, thousands separators, list ties settled by title, extra episodes past a season's end. C2 built, starting in a dry run.
 - v25: B4 real-run check passed. C1 built: folder import with a confirm queue, per-show numbering and episode order picked by how well each fits the files, half-hourly folder check, Library anime tab and show page. Group per episode shows for files Undermynd places from now on (C2); files already in the library have names without the group.

@@ -94,7 +94,7 @@ func (s *Server) requestSearch(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, map[string]any{"results": res})
+	writeJSON(w, map[string]any{"results": withPosters(res)})
 }
 
 func (s *Server) requestCreate(w http.ResponseWriter, r *http.Request) {
@@ -102,12 +102,13 @@ func (s *Server) requestCreate(w http.ResponseWriter, r *http.Request) {
 		MediaID    int64  `json:"media_id"`
 		MediaType  string `json:"media_type"`
 		AllSeasons bool   `json:"all_seasons"`
+		Seasons    []int  `json:"seasons"`
 	}
 	if !readJSON(w, r, &in) {
 		return
 	}
-	if in.MediaID <= 0 || (in.MediaType != "movie" && in.MediaType != "tv") || (in.MediaType == "tv" && !in.AllSeasons) {
-		jsonErr(w, http.StatusBadRequest, "select a movie or confirm all seasons of a TV show")
+	if in.MediaID <= 0 || (in.MediaType != "movie" && in.MediaType != "tv") || (in.MediaType == "tv" && !in.AllSeasons && len(in.Seasons) == 0) || len(in.Seasons) > 100 {
+		jsonErr(w, http.StatusBadRequest, "select a movie, or the seasons of a TV show")
 		return
 	}
 	c := s.seerrPublic()
@@ -122,7 +123,19 @@ func (s *Server) requestCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	id, err := c.Request(ctx, in.MediaID, in.MediaType)
+	var seasons []int
+	if in.MediaType == "tv" && !in.AllSeasons {
+		for _, n := range in.Seasons {
+			if n > 0 && n < 1000 {
+				seasons = append(seasons, n)
+			}
+		}
+		if len(seasons) == 0 {
+			jsonErr(w, http.StatusBadRequest, "pick at least one season")
+			return
+		}
+	}
+	id, err := c.Request(ctx, in.MediaID, in.MediaType, seasons...)
 	if err != nil {
 		jsonErr(w, http.StatusBadGateway, err.Error())
 		return
@@ -236,7 +249,7 @@ func (s *Server) requestDiscover(w http.ResponseWriter, r *http.Request) {
 	}
 	if d, ok := discoverCache.data[kind]; ok && time.Since(discoverCache.at[kind]) < 10*time.Minute {
 		discoverCache.Unlock()
-		writeJSON(w, map[string]any{"results": d})
+		writeJSON(w, map[string]any{"results": withPosters(d)})
 		return
 	}
 	discoverCache.Unlock()
@@ -250,5 +263,61 @@ func (s *Server) requestDiscover(w http.ResponseWriter, r *http.Request) {
 	discoverCache.Lock()
 	discoverCache.data[kind], discoverCache.at[kind] = res, time.Now()
 	discoverCache.Unlock()
-	writeJSON(w, map[string]any{"results": res})
+	writeJSON(w, map[string]any{"results": withPosters(res)})
+}
+
+const tmdbImage = "https://image.tmdb.org/t/p/"
+
+// posterResult is a search or discover result with its poster as an address
+// on this server (/img), so the page loads images only from here.
+type posterResult struct {
+	seerr.SearchResult
+	Poster string `json:"poster,omitempty"`
+}
+
+func withPosters(list []seerr.SearchResult) []posterResult {
+	out := make([]posterResult, 0, len(list))
+	for _, x := range list {
+		p := posterResult{SearchResult: x}
+		if x.PosterPath != "" {
+			p.Poster = imgURL(tmdbImage + "w342" + x.PosterPath)
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// requestTitle is the request page of one title (?type=movie|tv&id=): details,
+// cast, trailer and, for a series, where each season stands in Seerr.
+func (s *Server) requestTitle(w http.ResponseWriter, r *http.Request) {
+	kind := r.URL.Query().Get("type")
+	id, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+	if err != nil || id <= 0 || (kind != "movie" && kind != "tv") {
+		jsonErr(w, http.StatusBadRequest, "invalid title")
+		return
+	}
+	c := s.seerrPublic()
+	if c == nil {
+		jsonErr(w, http.StatusServiceUnavailable, "media requests are not enabled")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	t, err := c.Title(ctx, kind, id)
+	if err != nil {
+		jsonErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	if t.Poster != "" {
+		t.Poster = imgURL(tmdbImage + "w342" + t.Poster)
+	}
+	if t.Backdrop != "" {
+		t.Backdrop = imgURL(tmdbImage + "w1280" + t.Backdrop)
+	}
+	for i := range t.Cast {
+		if t.Cast[i].Photo != "" {
+			t.Cast[i].Photo = imgURL(tmdbImage + "w185" + t.Cast[i].Photo)
+		}
+	}
+	writeJSON(w, t)
 }
