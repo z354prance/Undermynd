@@ -239,6 +239,7 @@ The earlier plan below listed screens each UI milestone needed; parts 1 to 5 cov
 
 ## 11. Change log
 
+- v46: Library › Missing: per-arr poster grid of what the arrs report missing, artwork from the arr.
 - v45: anime follow, nyaa search and gap filling back; placed files named after their folder; Naming page.
 - v44: design part 5 for the rolled-back admin: new menu, restyled pages, sign-in card, phone layout. No Anime tab in Request media.
 - v43: rolled back to beside-the-arrs; the takeover features are kept on `archive/arr-takeover`. The redesign stays, with requests through Seerr.
