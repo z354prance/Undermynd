@@ -94,12 +94,16 @@
         var b = el("button", "det", "Details"); b.type = "button"; b.onclick = function () { playDetails(x); }; t.appendChild(b);
         c.appendChild(t);
         var frac = x.duration_ms ? Math.min(1, (x.progress_ms || 0) / x.duration_ms) : 0;
-        var pc = svgEl("svg", { viewBox: "0 0 44 44", width: 44, height: 44, class: "pc", role: "img", "aria-label": Math.round(frac * 100) + "% · " + (x.is_transcode ? "transcoding" : "direct play") });
-        var tt = svgEl("title", {}); tt.textContent = Math.round(frac * 100) + "% · " + (x.is_transcode ? "transcoding" : "direct play"); pc.appendChild(tt);
-        var R = 18, CC = 2 * Math.PI * R;
-        pc.appendChild(svgEl("circle", { cx: 22, cy: 22, r: R, fill: "none", stroke: "#3a3d40", "stroke-width": 3 }));
-        var arc = svgEl("circle", { cx: 22, cy: 22, r: R, fill: "none", stroke: mediaColor(kind), "stroke-width": 3, "stroke-dasharray": (CC * frac) + " " + CC, transform: "rotate(-90 22 22)", "stroke-linecap": "round" }); pc.appendChild(arc);
-        var gi = svgEl("g", { transform: "translate(13 13) scale(.75)", fill: "none", stroke: x.is_transcode ? "#ff8a4c" : "#3fb950", "stroke-width": 2.4, "stroke-linecap": "round", "stroke-linejoin": "round" }); gi.innerHTML = x.is_transcode ? ICON.swap : ICON.straight; pc.appendChild(gi);
+        // The pinned dashboard's ring: track, progress in the media colour, a
+        // white playhead dot that pulses at the end of the arc, and the play
+        // mode in the middle (green straight arrow, orange two-way arrows).
+        var pc = svgEl("svg", { viewBox: "0 0 60 60", width: 48, height: 48, class: "pc", role: "img", "aria-label": Math.round(frac * 100) + "% watched, " + (x.is_transcode ? "transcoding" : "direct play") });
+        var tt = svgEl("title", {}); tt.textContent = Math.round(frac * 100) + "% watched, " + (x.is_transcode ? "transcoding" : "direct play"); pc.appendChild(tt);
+        var R = 22, CC = 2 * Math.PI * R;
+        pc.appendChild(svgEl("circle", { cx: 30, cy: 30, r: R, fill: "none", stroke: "#3a3d41", "stroke-width": 6 }));
+        pc.appendChild(svgEl("circle", { cx: 30, cy: 30, r: R, fill: "none", stroke: mediaColor(kind), "stroke-width": 6, "stroke-dasharray": (CC * frac).toFixed(1) + " " + CC.toFixed(1), transform: "rotate(-90 30 30)" }));
+        var ang = frac * 2 * Math.PI, dot = svgEl("circle", { cx: (30 + R * Math.sin(ang)).toFixed(2), cy: (30 - R * Math.cos(ang)).toFixed(2), r: 3, class: "dot" }); phase(dot, 1800); pc.appendChild(dot);
+        var gi = svgEl("g", { transform: "translate(30 30) scale(.86) translate(-12 -12)", fill: "none", stroke: x.is_transcode ? "#f0a35e" : "#3fb97a", "stroke-width": 2.3, "stroke-linecap": "round", "stroke-linejoin": "round" }); gi.innerHTML = x.is_transcode ? ICON.swap : ICON.straight; pc.appendChild(gi);
         c.appendChild(pc); box.appendChild(c);
       });
     }).catch(function () { var box = $("playing"); box.replaceChildren(el("p", "empty", "Now playing is unavailable.")); });
