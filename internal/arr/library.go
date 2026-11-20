@@ -36,27 +36,44 @@ type StatusError struct {
 func (e *StatusError) Error() string { return fmt.Sprintf("%s answered HTTP %d", e.Kind, e.Code) }
 
 // Grab is what the arr's history knows about a download: which series and episode.
-type Grab struct{ SeriesID, EpisodeID int64 }
+type Grab struct {
+	SeriesID, EpisodeID int64
+	// Grabbed is when the arr grabbed the release (zero if unknown).
+	Grabbed time.Time
+}
 
 // Grabs lists the series and episodes a download ID was grabbed for.
 func (c *Client) Grabs(ctx context.Context, downloadID string) ([]Grab, error) {
 	q := url.Values{"page": {"1"}, "pageSize": {"100"}, "downloadId": {downloadID}}
 	var r struct {
 		Records []struct {
-			SeriesID  int64 `json:"seriesId"`
-			EpisodeID int64 `json:"episodeId"`
+			SeriesID  int64  `json:"seriesId"`
+			EpisodeID int64  `json:"episodeId"`
+			EventType string `json:"eventType"`
+			Date      string `json:"date"`
 		} `json:"records"`
 	}
 	if err := c.get(ctx, "/history?"+q.Encode(), &r); err != nil {
 		return nil, err
 	}
-	seen := map[Grab]bool{}
+	type key struct{ s, e int64 }
+	idx := map[key]int{}
 	var out []Grab
 	for _, x := range r.Records {
-		g := Grab{x.SeriesID, x.EpisodeID}
-		if g.SeriesID != 0 && !seen[g] {
-			seen[g] = true
-			out = append(out, g)
+		if x.SeriesID == 0 {
+			continue
+		}
+		k := key{x.SeriesID, x.EpisodeID}
+		i, ok := idx[k]
+		if !ok {
+			out = append(out, Grab{SeriesID: x.SeriesID, EpisodeID: x.EpisodeID})
+			i = len(out) - 1
+			idx[k] = i
+		}
+		if strings.EqualFold(x.EventType, "grabbed") {
+			if t := parseTime(x.Date); t != nil && (out[i].Grabbed.IsZero() || t.Before(out[i].Grabbed)) {
+				out[i].Grabbed = *t
+			}
 		}
 	}
 	return out, nil
@@ -82,11 +99,24 @@ type Episode struct {
 	Monitored  bool   `json:"monitored"`
 	HasFile    bool   `json:"hasFile"`
 	AirDateUTC string `json:"airDateUtc"`
+	File       *struct {
+		DateAdded string `json:"dateAdded"`
+	} `json:"episodeFile,omitempty"`
+}
+
+// FileAdded is when the episode's current file was added (zero if unknown).
+func (e Episode) FileAdded() time.Time {
+	if e.File != nil {
+		if t := parseTime(e.File.DateAdded); t != nil {
+			return *t
+		}
+	}
+	return time.Time{}
 }
 
 func (c *Client) Episodes(ctx context.Context, seriesID int64) ([]Episode, error) {
 	var eps []Episode
-	err := c.get(ctx, fmt.Sprintf("/episode?seriesId=%d", seriesID), &eps)
+	err := c.get(ctx, fmt.Sprintf("/episode?seriesId=%d&includeEpisodeFile=true", seriesID), &eps)
 	return eps, err
 }
 
