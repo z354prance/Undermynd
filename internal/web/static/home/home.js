@@ -18,7 +18,7 @@
   var ICON = {
     check: '<path d="M5 12l5 5 9-10"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>', down: '<path d="M12 4v12M6 10l6 6 6-6"/>',
     plus: '<path d="M12 5v14M5 12h14"/>', play: '<path d="M7 4l13 8-13 8z"/>', up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
-    straight: '<path d="M5 12h12M13 7l5 5-5 5"/>', swap: '<path d="M4 9h14M14 5l4 4-4 4M20 15H6M10 11l-4 4 4 4"/>'
+    x: '<path d="M6 6l12 12M18 6L6 18"/>', straight: '<path d="M5 12h12M13 7l5 5-5 5"/>', swap: '<path d="M4 9h14M14 5l4 4-4 4M20 15H6M10 11l-4 4 4 4"/>'
   };
   function icon(name, size, color) { var s = svgEl("svg", { viewBox: "0 0 24 24", width: size || 16, height: size || 16, fill: "none", stroke: color || "currentColor", "stroke-width": "2.2", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" }); s.innerHTML = ICON[name]; return s; }
 
@@ -321,6 +321,9 @@
   }
   function render() {
     panel.replaceChildren();
+    // Close button, kept in the top corner while the panel scrolls.
+    var x = el("button", "rp-x"); x.type = "button"; x.setAttribute("aria-label", "Close"); x.appendChild(icon("x", 18, "currentColor"));
+    x.onclick = function (e) { e.stopPropagation(); close(); input.blur(); }; panel.appendChild(x);
     if (!reqOn) { panel.appendChild(el("p", "rp-msg", "Media requests are not open on this server.")); return; }
     if (view.detail) return detail();
     var q = input.value.trim();
@@ -350,10 +353,10 @@
     }).catch(function (e) { grid.replaceChildren(el("p", "rp-msg", e.message)); });
   }
   function detail() {
-    var dv = view.detail; panel.appendChild(el("p", "rp-msg", "Loading…"));
-    api("/api/v1/media-request/title?type=" + dv.type + "&id=" + dv.id).then(function (t) { panel.replaceChildren(); titlePage(t); }).catch(function () { panel.replaceChildren(); simplePage(dv.fallback, dv.type); });
+    var dv = view.detail, x = panel.firstChild; panel.appendChild(el("p", "rp-msg", "Loading…"));
+    api("/api/v1/media-request/title?type=" + dv.type + "&id=" + dv.id).then(function (t) { if (view.detail !== dv) return; panel.replaceChildren(x); titlePage(t); }).catch(function () { if (view.detail !== dv) return; panel.replaceChildren(x); simplePage(dv.fallback, dv.type); });
   }
-  function backBtn() { var b = el("button", "td-backbtn", "← Back"); b.type = "button"; b.onclick = function () { view.detail = null; render(); }; return b; }
+  function backBtn() { var b = el("button", "td-backbtn", "← Back"); b.type = "button"; b.onclick = function (e) { e.stopPropagation(); view.detail = null; render(); panel.scrollTop = 0; }; return b; }
   function pill(text, color, fill) { var p = el("span", "pill" + (fill ? " fill" : ""), text); p.style.color = color; if (fill) p.style.background = color; return p; }
   function titlePage(t) {
     var top = el("div", "td-back"); if (t.backdrop) { var bg = el("div", "td-bg"); bg.style.backgroundImage = 'url("' + t.backdrop + '")'; top.appendChild(bg); } top.appendChild(el("div", "td-shade")); top.appendChild(backBtn());
