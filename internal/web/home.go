@@ -83,6 +83,12 @@ func (s *Server) onway(w http.ResponseWriter, r *http.Request) {
 		if j.State == job.Cleaned || j.Source == "reencode" {
 			continue
 		}
+		// Imported items show briefly as confirmation, then leave: what
+		// arrived is under Recently added, and server-side cleanup that is
+		// still retrying is not something the public page should wait on.
+		if j.State == job.Imported && time.Since(importedAt(j)) > 5*time.Minute {
+			continue
+		}
 		st, ok := stageOf[j.State]
 		if j.State == job.Failed {
 			st, ok = [2]string{"download", "failed"}, true
@@ -225,4 +231,14 @@ func movieTitle(name string) (string, string) {
 		}
 	}
 	return strings.Join(strings.Fields(strings.NewReplacer(".", " ", "_", " ").Replace(n)), " "), ""
+}
+
+// importedAt is when a job reached Imported (its last update if unknown).
+func importedAt(j job.Job) time.Time {
+	for i := len(j.History) - 1; i >= 0; i-- {
+		if j.History[i].To == job.Imported {
+			return j.History[i].At
+		}
+	}
+	return j.Updated
 }

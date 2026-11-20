@@ -453,7 +453,7 @@ func (s *Server) jobRows() []jobRow {
 	out := []jobRow{}
 	for _, j := range s.Store.List() {
 		out = append(out, jobRow{ID: j.ID, Name: j.Name, Source: j.Source, Category: j.Category, State: j.State, Group: job.Group(j.State),
-			Reason: j.Reason, Flag: j.Flag, Attn: j.State == job.Failed || j.Flag != "", Progress: job.Overall(j), Backend: j.Backend,
+			Reason: j.Reason, Flag: j.Flag, Attn: j.State == job.Failed || j.Flag != "" || cleanupStuck(j), Progress: job.Overall(j), Backend: j.Backend,
 			Node: j.TranscodeNode, Worker: j.TranscodeWorker, Created: j.Created, Changed: j.StateChanged, FailedAt: job.FailedStage(j)})
 	}
 	return out
@@ -993,4 +993,11 @@ func jsonErr(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+// cleanupStuck says whether an imported job's cleanup (deleting the leftover
+// copies and the download client's item) has kept failing for a while; its
+// reason says why.
+func cleanupStuck(j job.Job) bool {
+	return j.State == job.Imported && strings.HasPrefix(j.Reason, "cleanup:") && time.Since(importedAt(j)) > 15*time.Minute
 }
