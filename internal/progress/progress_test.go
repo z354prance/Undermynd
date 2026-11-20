@@ -64,7 +64,7 @@ func rig(t *testing.T, eps string) (*progress.Tracker, *store.Store) {
 			if r.URL.Query().Get("downloadId") != "abc" {
 				t.Errorf("history asked for %q", r.URL.Query().Get("downloadId"))
 			}
-			fmt.Fprint(w, `{"records":[{"seriesId":24,"episodeId":2},{"seriesId":24,"episodeId":2}]}`)
+			fmt.Fprint(w, `{"records":[{"seriesId":24,"episodeId":2,"eventType":"grabbed","date":"2026-11-01T00:00:00Z"},{"seriesId":24,"episodeId":2}]}`)
 		case "/api/v3/series/24":
 			fmt.Fprint(w, `{"title":"24","runtime":0}`)
 		case "/api/v3/episode":
@@ -154,5 +154,21 @@ func TestSeasonPixelsFollowEpisodeOrder(t *testing.T) {
 	progress.SeasonPixels(c, eps, queued, active, now, 30)
 	if got := c[1]; got.Pixels != "hu.w" || got.Total != 4 || got.Imported != 2 {
 		t.Fatalf("season 1 = %+v, want pixels hu.w, 2 of 4", got)
+	}
+}
+
+// Upgrade means the arr already had the episode's file when it grabbed the
+// release; a second grab of a then-missing episode is not one, even after the
+// first copy is imported.
+func TestUpgradeOnlyWhenFilePredatesGrab(t *testing.T) {
+	for _, c := range []struct {
+		added string
+		want  bool
+	}{{"2026-10-01T00:00:00Z", true}, {"2026-11-02T00:00:00Z", false}} {
+		tr, _ := rig(t, `[{"id":1,"seasonNumber":1,"monitored":true,"hasFile":true},{"id":2,"seasonNumber":1,"monitored":true,"hasFile":true,"episodeFile":{"dateAdded":"`+c.added+`"}}]`)
+		tr.Refresh(context.Background())
+		if got := len(tr.Snapshot().Upgrades) == 1; got != c.want {
+			t.Errorf("file added %s: upgrade %v, want %v", c.added, got, c.want)
+		}
 	}
 }

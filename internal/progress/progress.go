@@ -195,7 +195,7 @@ func (t *Tracker) Refresh(ctx context.Context) {
 
 	// 2. Season counts for every tracked series.
 	seasons := []Season{}
-	hasFile := map[int64]bool{}
+	fileAdded := map[int64]time.Time{} // episodes with a file: when it was added (zero if unknown)
 	for key, tr := range t.tracked {
 		cat, ok := s.Category(tr.Category)
 		if !ok || !usable(cat) {
@@ -223,7 +223,9 @@ func (t *Tracker) Refresh(ctx context.Context) {
 			q = map[int64]bool{0: true} // tracked earlier; keep it active until complete
 		}
 		for _, e := range eps {
-			hasFile[e.ID] = e.HasFile
+			if e.HasFile {
+				fileAdded[e.ID] = e.FileAdded()
+			}
 		}
 		counts := CountSeasons(eps, q, now, runtime)
 		SeasonPixels(counts, eps, q, active, now, runtime)
@@ -250,10 +252,18 @@ func (t *Tracker) Refresh(ctx context.Context) {
 			seasons = append(seasons, n)
 		}
 	}
+	// An upgrade replaces a file the arr already had when it grabbed the
+	// release. A second grab of an episode that was still missing (two
+	// releases grabbed close together) is not one, even once the first
+	// has been imported.
 	var upgrades []string
 	for id := range activeJobs {
 		for _, g := range t.grabs[id] {
-			if g.EpisodeID != 0 && hasFile[g.EpisodeID] {
+			added, has := fileAdded[g.EpisodeID]
+			if g.EpisodeID == 0 || !has {
+				continue
+			}
+			if added.IsZero() || g.Grabbed.IsZero() || added.Before(g.Grabbed) {
 				upgrades = append(upgrades, id)
 				break
 			}
