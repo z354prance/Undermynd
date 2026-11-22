@@ -441,3 +441,49 @@ type histIDs struct {
 func (h histIDs) ShowIDs(_ context.Context, id string) (int64, int64, string, error) {
 	return h.ids[id], 0, id, nil
 }
+
+// Shows go one at a time: the second waits until every season of the first
+// has been searched.
+func TestShowsOneAtATime(t *testing.T) {
+	secret.SetKeyForTest(make([]byte, 32))
+	dir := t.TempDir()
+	cfg, err := config.Load(config.Env{ConfigDir: filepath.Join(dir, "c"), DataDir: filepath.Join(dir, "d"), TickInterval: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := cfg.Get()
+	st.Playback.TracearrURL, st.Playback.TracearrKey = "http://t", "k"
+	st.Categories = []config.Category{{Name: "tv", Kind: "sonarr", ArrURL: "http://s"}}
+	st.Attention = config.Attention{On: true, TVProfile: "Upgrade", PerDay: 10}
+	if err := cfg.Set(st); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC)
+	eps := func(show string, n int) []tracearr.Play {
+		var out []tracearr.Play
+		for e := 1; e <= 3; e++ {
+			e := e
+			out = append(out, play("ann", now.Add(-time.Duration(n*10+e)*time.Minute), func(p *tracearr.Play) { p.ShowMediaID, p.Season, p.Episode = show, 1, e }))
+		}
+		return out
+	}
+	h := &fakeHist{eps: append(eps("show-a", 2), eps("show-b", 1)...)}
+	hist := histIDs{h, map[string]int64{"show-a": 1, "show-b": 2}}
+	son := &fakeArr{items: map[int64]arr.Item{1: withSeasons(arr.Item{ID: 11, Title: "A", ProfileID: 1}, 1, 2), 2: withSeasons(arr.Item{ID: 12, Title: "B", ProfileID: 1}, 1)}}
+	s := &Service{Cfg: cfg, Log: log.New(io.Discard, "", 0), Now: func() time.Time { return now },
+		History: func(config.Playback) History { return hist }, Arr: func(config.Category) Arr { return son }}
+	s.Check(context.Background())
+	if got := join(son.calls); got != "profile season1 season2" {
+		t.Fatalf("first show only: %q", got)
+	}
+	if q := s.Snapshot().Queue; len(q) != 1 || q[0].TVDB != 2 {
+		t.Fatalf("B should wait: %+v", q)
+	}
+	// A has no more seasons: the next pass marks it done and starts B.
+	son.items[1] = withProfile(son.items[1], 9)
+	now = now.Add(3 * time.Hour)
+	s.Check(context.Background())
+	if got := join(son.calls); got != "profile season1 season2 profile season1" {
+		t.Fatalf("B after A: %q", got)
+	}
+}

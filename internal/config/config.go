@@ -155,7 +155,7 @@ type Attention struct {
 	On           bool   `json:"on"`
 	TVProfile    string `json:"tvProfile"`    // Sonarr profile name
 	MovieProfile string `json:"movieProfile"` // Radarr profile name
-	PerDay       int    `json:"perDay"`       // most show switches in 24 hours (Sonarr)
+	PerDay       int    `json:"perDay"`       // unused since shows go one at a time (kept for old settings)
 	MoviePerDay  int    `json:"moviePerDay"`  // most movie switches and adds in 24 hours (Radarr)
 }
 
