@@ -10,6 +10,7 @@ import (
 
 	"github.com/z354prance/undermynd/internal/arr"
 	"github.com/z354prance/undermynd/internal/config"
+	"github.com/z354prance/undermynd/internal/mediaserver"
 	"github.com/z354prance/undermynd/internal/secret"
 	"github.com/z354prance/undermynd/internal/tracearr"
 )
@@ -339,4 +340,77 @@ func TestAnimeLeftAloneAndMovedBack(t *testing.T) {
 	if !s.st.Skip["show:tv:6"] {
 		t.Fatal("an undone show should not be moved again")
 	}
+}
+
+type fakeMedia struct {
+	libs  []mediaserver.Library
+	paths map[string]string
+}
+
+func (f fakeMedia) Libraries(context.Context) ([]mediaserver.Library, error) { return f.libs, nil }
+func (f fakeMedia) ItemPath(_ context.Context, id string) (string, error)    { return f.paths[id], nil }
+
+// A show in a mixed Shows library whose files are in the anime folder is
+// left alone and leaves the queue; a show already on the upgrade profile
+// never waits in the queue.
+func TestQueueScreenedForAnimeAndProfile(t *testing.T) {
+	secret.SetKeyForTest(make([]byte, 32))
+	dir := t.TempDir()
+	cfg, err := config.Load(config.Env{ConfigDir: filepath.Join(dir, "c"), DataDir: filepath.Join(dir, "d"), TickInterval: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := cfg.Get()
+	st.Playback.TracearrURL, st.Playback.TracearrKey = "http://t", "k"
+	st.Playback.PathFrom, st.Playback.PathTo = "/media", "/mnt/user/media"
+	st.Categories = []config.Category{{Name: "tv", Kind: "sonarr", ArrURL: "http://s"}, {Name: "anime", Kind: "rss", LibraryDir: "/media/Anime"}}
+	st.Attention = config.Attention{On: true, TVProfile: "Upgrade", PerDay: 1}
+	if err := cfg.Set(st); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 21, 20, 0, 0, 0, time.UTC)
+	eps := func(show, item string, n int) []tracearr.Play {
+		var out []tracearr.Play
+		for e := 1; e <= 3; e++ {
+			e := e
+			out = append(out, play("ann", now.Add(-time.Duration(n*10+e)*time.Minute), func(p *tracearr.Play) {
+				p.ShowMediaID, p.Season, p.Episode, p.LibraryID, p.RatingKey = show, 1, e, "lib-shows", item
+			}))
+		}
+		return out
+	}
+	var plays []tracearr.Play
+	plays = append(plays, eps("show-a", "it-a", 1)...) // ordinary, waits for tomorrow
+	plays = append(plays, eps("show-b", "it-b", 2)...) // ordinary, already on the profile
+	plays = append(plays, eps("show-c", "it-c", 3)...) // anime by its folder
+	plays = append(plays, eps("show-d", "it-d", 4)...) // ordinary, earliest: moved first
+	h := &fakeHist{eps: plays}
+	ids := map[string]int64{"show-a": 1, "show-b": 2, "show-c": 3, "show-d": 4}
+	hist := histIDs{h, ids}
+	son := &fakeArr{items: map[int64]arr.Item{1: {ID: 11, Title: "A", ProfileID: 1}, 2: {ID: 12, Title: "B", ProfileID: 9}, 3: {ID: 13, Title: "Rich Girl", ProfileID: 1, Path: "/tv/Rich Girl"}, 4: {ID: 14, Title: "D", ProfileID: 1}}}
+	med := fakeMedia{libs: []mediaserver.Library{{ID: "lib-shows", Name: "Shows", Paths: []string{"/mnt/user/media/TV", "/mnt/user/media/TV2"}}},
+		paths: map[string]string{"it-c": "/mnt/user/media/Anime/Rich Girl Caretaker/S01E01.mkv", "it-a": "/mnt/user/media/TV/A/S01E01.mkv"}}
+	s := &Service{Cfg: cfg, Log: log.New(io.Discard, "", 0), Now: func() time.Time { return now },
+		History: func(config.Playback) History { return hist }, Arr: func(config.Category) Arr { return son },
+		Media: func(config.Settings) Media { return med }}
+	s.Check(context.Background())
+	if got := join(son.calls); got != "profile season1 season2" {
+		t.Fatalf("calls %q", got)
+	}
+	q := s.Snapshot().Queue
+	// D qualified earliest so went first; A waits; B (already on the
+	// profile) and C (anime by its folder) never wait.
+	if len(q) != 1 || q[0].TVDB != 1 {
+		t.Fatalf("queue should hold only A: %+v", q)
+	}
+}
+
+// histIDs maps each show's Tracearr id to a TVDB id.
+type histIDs struct {
+	*fakeHist
+	ids map[string]int64
+}
+
+func (h histIDs) ShowIDs(_ context.Context, id string) (int64, int64, string, error) {
+	return h.ids[id], 0, id, nil
 }
