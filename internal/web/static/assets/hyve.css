@@ -295,3 +295,5 @@ body.ui .a-sscnt{flex:none;font:13px var(--mono);color:var(--text)}
 body.ui .a-sscnt em{font-style:normal;color:#d9a23a}
 @media (max-width:760px){body.ui .a-ssw{min-width:150px}}
 body.ui .hv-it .hv-bad{color:var(--bad,#f0686c)}
+body.ui .hv-it .hv-warn-t{color:var(--warn,#e9b800)}
+body.ui .hv-acts{display:flex;gap:8px;flex:none;flex-wrap:wrap}

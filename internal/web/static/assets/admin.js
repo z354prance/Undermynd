@@ -525,9 +525,13 @@
       if(!(st.actions||[]).length)l.appendChild(el('div','hv-empty','Nothing moved yet.'));
       (st.actions||[]).forEach(function(x){var r=el('div','hv-item');r.appendChild(hvPill(x.kind==='movie'?'Movie':'Show',x.kind==='movie'?'var(--movie)':'var(--tv)',true));
         var t=el('div','hv-it');t.appendChild(el('b','',x.title));
-        var sub=x.reason+' · moved to '+x.profile;if(x.seasons&&x.seasons.length)sub+=' · searched season '+x.seasons.join(' and ');if(x.handoff)sub+=' · rest handed to Sonarr';else if(x.kind==='show'&&x.seasons&&x.seasons.length)sub+=' · rest goes to Sonarr when those finish';
+        var sub=x.reason+(x.added?' · added to Radarr ('+x.added+') on ':' · moved to ')+x.profile;if(x.seasons&&x.seasons.length)sub+=' · searched season '+x.seasons.join(' and ');if(x.handoff)sub+=' · rest handed to Sonarr';else if(x.kind==='show'&&x.seasons&&x.seasons.length)sub+=' · rest goes to Sonarr when those finish';
         t.appendChild(el('span','',sub));if(x.error)t.appendChild(el('span','hv-bad',x.error));r.appendChild(t);r.appendChild(el('span','hv-note',ago(x.at)+' ago'));l.appendChild(r)});
       box.appendChild(l);
+      var dd=st.decide||[];if(dd.length){var db=hvBox('Needs your decision');db.appendChild(el('p','hv-note','Watched a lot, but not in Radarr, and HyveMynd was not sure enough to add it. Add puts it on the upgrade profile, tied to its folder if Radarr has one, and searches.'));var dl=el('div','hv-list');
+        dd.forEach(function(x){var r=el('div','hv-item');r.appendChild(hvPill('Movie','var(--movie)',true));var t=el('div','hv-it');t.appendChild(el('b','',x.title+(x.year?' ('+x.year+')':'')));t.appendChild(el('span','',x.reason));t.appendChild(el('span','hv-warn-t',x.why));r.appendChild(t);
+          var bs=el('div','hv-acts');[['Add to Radarr',true],['Dismiss',false]].forEach(function(o){bs.appendChild(hvBtn(o[0],o[1]?'plus':'x',function(b){b.disabled=true;api('POST','/attention/decide',{tmdb:x.tmdb,add:o[1]}).then(function(){upgradesView(body)}).catch(function(e){b.disabled=false;alertMsg(e.message)})},o[1]))});r.appendChild(bs);dl.appendChild(r)});
+        db.appendChild(dl);body.appendChild(db)}
       var q=st.queue||[];if(q.length){var qb=hvBox('Waiting for their turn');qb.appendChild(el('p','hv-note','Over the daily limit: done oldest first on the next days, even after the watching is older than the window that counted it.'));var ql=el('div','hv-list');
         q.forEach(function(x,i){var r=el('div','hv-item slim');r.appendChild(hvPill(String(i+1),'var(--dim)'));var t=el('div','hv-it');t.appendChild(el('b','',x.title));t.appendChild(el('span','',(x.kind==='movie'?'Movie':'Show')+' · '+x.reason));r.appendChild(t);r.appendChild(el('span','hv-note','waiting '+ago(x.since)));ql.appendChild(r)});
         qb.appendChild(ql);body.appendChild(qb)}

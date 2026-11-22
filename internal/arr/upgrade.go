@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -27,6 +28,13 @@ func (c *Client) send(ctx context.Context, method, path string, body, out any) e
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		// The arrs explain refusals as a list of {errorMessage}.
+		var msgs []struct {
+			ErrorMessage string `json:"errorMessage"`
+		}
+		if json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&msgs) == nil && len(msgs) > 0 && msgs[0].ErrorMessage != "" {
+			return fmt.Errorf("%s: %s", c.Kind, msgs[0].ErrorMessage)
+		}
 		return &StatusError{Code: resp.StatusCode, Kind: c.Kind}
 	}
 	if out == nil {
@@ -136,4 +144,73 @@ func (c *Client) QueuedFor(ctx context.Context, seriesID int64) (int, error) {
 		}
 	}
 	return n, nil
+}
+
+// MovieLookup is Radarr's own record of a movie it does not have yet.
+type MovieLookup struct {
+	Title         string `json:"title"`
+	OriginalTitle string `json:"originalTitle"`
+	Year          int    `json:"year"`
+	TMDB          int64  `json:"tmdbId"`
+	Folder        string `json:"folder"` // the folder name Radarr would give it
+	raw           map[string]any
+}
+
+// LookupMovie asks Radarr about a movie by its TMDB id.
+func (c *Client) LookupMovie(ctx context.Context, tmdb int64) (MovieLookup, error) {
+	var raw json.RawMessage
+	if err := c.get(ctx, fmt.Sprintf("/movie/lookup/tmdb?tmdbId=%d", tmdb), &raw); err != nil {
+		return MovieLookup{}, err
+	}
+	var one map[string]any
+	if err := json.Unmarshal(raw, &one); err != nil {
+		var list []map[string]any
+		if err := json.Unmarshal(raw, &list); err != nil || len(list) == 0 {
+			return MovieLookup{}, fmt.Errorf("Radarr could not find TMDB %d", tmdb)
+		}
+		one = list[0]
+	}
+	var m MovieLookup
+	b, _ := json.Marshal(one)
+	_ = json.Unmarshal(b, &m)
+	m.raw = one
+	if m.TMDB == 0 {
+		return MovieLookup{}, fmt.Errorf("Radarr could not find TMDB %d", tmdb)
+	}
+	return m, nil
+}
+
+// Folder is a library folder of the arr's, with the folders in it no movie or
+// series is tied to.
+type Folder struct {
+	Path     string `json:"path"`
+	Unmapped []struct {
+		Name string `json:"name"`
+		Path string `json:"path"`
+	} `json:"unmappedFolders"`
+}
+
+// RootFolders lists the arr's library folders.
+func (c *Client) RootFolders(ctx context.Context) ([]Folder, error) {
+	var out []Folder
+	return out, c.get(ctx, "/rootfolder", &out)
+}
+
+// AddMovie adds a looked-up movie to Radarr, monitored, on a profile. With
+// path set it is tied to that existing folder (Radarr adopts the file there);
+// otherwise it gets a new folder under root. search starts a search after.
+func (c *Client) AddMovie(ctx context.Context, m MovieLookup, profileID int64, path, root string, search bool) (Item, error) {
+	body := map[string]any{}
+	for k, v := range m.raw {
+		body[k] = v
+	}
+	body["qualityProfileId"], body["monitored"] = profileID, true
+	if path != "" {
+		body["path"] = path
+	} else {
+		body["rootFolderPath"] = root
+	}
+	body["addOptions"] = map[string]any{"searchForMovie": search}
+	var out Item
+	return out, c.send(ctx, http.MethodPost, "/movie", body, &out)
 }

@@ -13,12 +13,14 @@ package attention
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/z354prance/undermynd/internal/arr"
 	"github.com/z354prance/undermynd/internal/config"
@@ -54,6 +56,9 @@ type Arr interface {
 	SearchSeries(ctx context.Context, seriesID int64) error
 	SearchMovie(ctx context.Context, movieID int64) error
 	QueuedFor(ctx context.Context, seriesID int64) (int, error)
+	LookupMovie(ctx context.Context, tmdb int64) (arr.MovieLookup, error)
+	RootFolders(ctx context.Context) ([]arr.Folder, error)
+	AddMovie(ctx context.Context, m arr.MovieLookup, profileID int64, path, root string, search bool) (arr.Item, error)
 }
 
 // Action is one switch to the upgrade profile, kept for the admin to see.
@@ -69,6 +74,19 @@ type Action struct {
 	Error    string     `json:"error,omitempty"`    // last problem with it
 	Profile  string     `json:"profile"`            // the profile it was moved to
 	Previous int64      `json:"previous,omitempty"` // profile id before the move
+	Added    string     `json:"added,omitempty"`    // added to Radarr: the folder it was tied to
+}
+
+// Pending is a much-watched movie Radarr does not have, waiting for the
+// admin to decide (HyveMynd was not sure enough to add it itself).
+type Pending struct {
+	TMDB     int64     `json:"tmdb"`
+	Title    string    `json:"title"`
+	Year     int       `json:"year,omitempty"`
+	Reason   string    `json:"reason"`
+	Why      string    `json:"why"` // why it was not added by itself
+	Category string    `json:"category"`
+	Since    time.Time `json:"since"`
 }
 
 type saved struct {
@@ -79,9 +97,12 @@ type saved struct {
 	// Queue holds titles that qualified beyond the daily limit, oldest
 	// first; they are done on later days even once their watching is older
 	// than the window that counted it.
-	Queue     []Queued  `json:"queue,omitempty"`
-	LastRun   time.Time `json:"lastRun"`
-	LastError string    `json:"lastError,omitempty"`
+	Queue  []Queued  `json:"queue,omitempty"`
+	Decide []Pending `json:"decide,omitempty"`
+	// Dismissed movies (TMDB id) are not offered again.
+	Dismissed map[int64]time.Time `json:"dismissed,omitempty"`
+	LastRun   time.Time           `json:"lastRun"`
+	LastError string              `json:"lastError,omitempty"`
 }
 
 // Queued is a title waiting for its turn.
@@ -90,6 +111,7 @@ type Queued struct {
 	TVDB   int64     `json:"tvdb,omitempty"`
 	TMDB   int64     `json:"tmdb,omitempty"`
 	Title  string    `json:"title"`
+	Year   int       `json:"year,omitempty"`
 	Season int       `json:"season,omitempty"`
 	Reason string    `json:"reason"`
 	Since  time.Time `json:"since"` // when it first qualified
@@ -148,6 +170,7 @@ func (s *Service) save() {
 type Status struct {
 	Actions   []Action  `json:"actions"`
 	Queue     []Queued  `json:"queue"`
+	Decide    []Pending `json:"decide"`
 	LastRun   time.Time `json:"lastRun"`
 	LastError string    `json:"lastError,omitempty"`
 }
@@ -157,7 +180,7 @@ func (s *Service) Snapshot() Status {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.load()
-	out := Status{LastRun: s.st.LastRun, LastError: s.st.LastError, Queue: append([]Queued{}, s.st.Queue...)}
+	out := Status{LastRun: s.st.LastRun, LastError: s.st.LastError, Queue: append([]Queued{}, s.st.Queue...), Decide: append([]Pending{}, s.st.Decide...)}
 	for i := len(s.st.Actions) - 1; i >= 0 && len(out.Actions) < 50; i-- {
 		out.Actions = append(out.Actions, s.st.Actions[i])
 	}
@@ -199,6 +222,7 @@ type candidate struct {
 	tvdb   int64
 	tmdb   int64
 	title  string
+	year   int
 	season int // the season the watcher is on (shows)
 	reason string
 	when   time.Time // the latest qualifying play
@@ -249,7 +273,7 @@ func (s *Service) Check(ctx context.Context) {
 			keep = append(keep, q)
 			continue
 		}
-		switch s.act(ctx, set, candidate{kind: q.Kind, tvdb: q.TVDB, tmdb: q.TMDB, title: q.Title, season: q.Season, reason: q.Reason}, now) {
+		switch s.act(ctx, set, candidate{kind: q.Kind, tvdb: q.TVDB, tmdb: q.TMDB, title: q.Title, year: q.Year, season: q.Season, reason: q.Reason}, now) {
 		case moved:
 			budget--
 		case retry:
@@ -284,7 +308,7 @@ func (s *Service) enqueue(cands []candidate, now time.Time) {
 			continue
 		}
 		idx[k] = len(q)
-		q = append(q, Queued{Kind: c.kind, TVDB: c.tvdb, TMDB: c.tmdb, Title: c.title, Season: c.season, Reason: c.reason, Since: now})
+		q = append(q, Queued{Kind: c.kind, TVDB: c.tvdb, TMDB: c.tmdb, Title: c.title, Year: c.year, Season: c.season, Reason: c.reason, Since: now})
 	}
 	s.st.Queue = q
 }
@@ -308,6 +332,7 @@ func (s *Service) candidates(ctx context.Context, h History, now time.Time) ([]c
 	}
 	type mv struct {
 		title string
+		year  int
 		users map[string]string
 		when  time.Time
 	}
@@ -318,7 +343,7 @@ func (s *Service) candidates(ctx context.Context, h History, now time.Time) ([]c
 		}
 		m := byMovie[p.TMDB]
 		if m == nil {
-			m = &mv{title: p.Title, users: map[string]string{}}
+			m = &mv{title: p.Title, year: p.Year, users: map[string]string{}}
 			byMovie[p.TMDB] = m
 		}
 		m.users[p.User.ID] = p.User.Username
@@ -328,7 +353,7 @@ func (s *Service) candidates(ctx context.Context, h History, now time.Time) ([]c
 	}
 	for id, m := range byMovie {
 		if len(m.users) >= movieViewers {
-			out = append(out, candidate{kind: "movie", tmdb: id, title: m.title, when: m.when,
+			out = append(out, candidate{kind: "movie", tmdb: id, title: m.title, year: m.year, when: m.when,
 				reason: fmt.Sprintf("watched by %d people in %d days (%s)", len(m.users), movieDays, names(m.users))})
 		}
 	}
@@ -466,6 +491,9 @@ func (s *Service) act(ctx context.Context, set config.Settings, c candidate, now
 	if !reachable {
 		return retry // no arr answered: keep it for the next check
 	}
+	if c.kind == "movie" {
+		return s.addMissingMovie(ctx, set, c, now)
+	}
 	return settled // no arr has it
 }
 
@@ -513,4 +541,195 @@ func (s *Service) handoffs(ctx context.Context, set config.Settings, now time.Ti
 		a.Handoff, a.Error = &t, ""
 		s.Log.Printf("attention: %s: seasons %v done, Sonarr searches the rest", a.Title, a.Seasons)
 	}
+}
+
+// addMissingMovie handles a much-watched movie Radarr does not have. When
+// HyveMynd is sure (Radarr's lookup of the TMDB id gives the same title and
+// year, and a Radarr library folder holds an untied folder of that name),
+// it adds the movie tied to that folder, so Radarr adopts the file already
+// there and the search upgrades it. Otherwise the movie waits for the admin.
+func (s *Service) addMissingMovie(ctx context.Context, set config.Settings, c candidate, now time.Time) outcome {
+	if _, gone := s.st.Dismissed[c.tmdb]; gone {
+		return settled
+	}
+	for _, p := range s.st.Decide {
+		if p.TMDB == c.tmdb {
+			return settled // already waiting for a decision
+		}
+	}
+	var cat config.Category
+	for _, x := range set.Categories {
+		if x.Kind == "radarr" && x.ArrURL != "" {
+			cat = x
+			break
+		}
+	}
+	if cat.Name == "" {
+		return settled
+	}
+	a := s.arrFor(cat)
+	wait := func(why string) outcome {
+		s.st.Decide = append(s.st.Decide, Pending{TMDB: c.tmdb, Title: c.title, Year: c.year, Reason: c.reason, Why: why, Category: cat.Name, Since: now})
+		return settled
+	}
+	m, err := a.LookupMovie(ctx, c.tmdb)
+	if err != nil {
+		var se *arr.StatusError
+		if (errors.As(err, &se) && se.Code != 404) || strings.Contains(err.Error(), "not reachable") {
+			return retry
+		}
+		return wait("Radarr could not look it up by its TMDB id")
+	}
+	if !sameMovie(c, m) {
+		return wait(fmt.Sprintf("Radarr knows TMDB %d as %s (%d), which does not match what was watched", c.tmdb, m.Title, m.Year))
+	}
+	roots, err := a.RootFolders(ctx)
+	if err != nil {
+		return retry
+	}
+	folder := matchFolder(roots, m)
+	if folder == "" {
+		return wait("no folder for it in Radarr's library folders, so adding it could download a second copy")
+	}
+	p, err := a.ProfileByName(ctx, set.Attention.MovieProfile)
+	if err != nil {
+		s.st.LastError = err.Error()
+		return retry
+	}
+	it, err := a.AddMovie(ctx, m, p.ID, folder, "", true)
+	act := Action{Kind: "movie", Category: cat.Name, ArrID: it.ID, Title: m.Title, Reason: c.reason, At: now, Profile: p.Name, Added: folder}
+	if err != nil {
+		act.Error = "adding it to Radarr: " + err.Error()
+		s.st.Actions = append(s.st.Actions, act)
+		return wait("adding it failed: " + err.Error())
+	}
+	s.st.Actions = append(s.st.Actions, act)
+	s.Log.Printf("attention: added %s to Radarr at %s on %s (%s)", m.Title, folder, p.Name, c.reason)
+	return moved
+}
+
+// sameMovie compares what was watched with Radarr's lookup: the same title
+// (or original title) and, when the play has one, a year at most one apart.
+func sameMovie(c candidate, m arr.MovieLookup) bool {
+	t := norm(c.title)
+	if t == "" || (t != norm(m.Title) && t != norm(m.OriginalTitle)) {
+		return false
+	}
+	if c.year != 0 && m.Year != 0 {
+		d := c.year - m.Year
+		return d >= -1 && d <= 1
+	}
+	return true
+}
+
+// matchFolder finds an untied folder in Radarr's library folders named for
+// the movie: Radarr's own folder name, or "Title (Year)" with any tags such
+// as {tmdb-603} or [imdb-...] ignored.
+func matchFolder(roots []arr.Folder, m arr.MovieLookup) string {
+	want := map[string]bool{}
+	if m.Folder != "" {
+		want[norm(stripTags(m.Folder))] = true
+	}
+	if m.Year != 0 {
+		want[norm(fmt.Sprintf("%s (%d)", m.Title, m.Year))] = true
+	}
+	for _, r := range roots {
+		for _, u := range r.Unmapped {
+			if want[norm(stripTags(u.Name))] {
+				return u.Path
+			}
+		}
+	}
+	return ""
+}
+
+func stripTags(s string) string {
+	for _, p := range [][2]string{{"{", "}"}, {"[", "]"}} {
+		for {
+			i := strings.Index(s, p[0])
+			j := strings.Index(s, p[1])
+			if i < 0 || j < i {
+				break
+			}
+			s = s[:i] + s[j+1:]
+		}
+	}
+	return s
+}
+
+// norm keeps letters and digits, lower case ("Alien³" and "Alien 3" differ;
+// "Spider-Man: No Way Home" and "Spider Man No Way Home" match).
+func norm(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// Decide adds a waiting movie to Radarr (on the upgrade profile, tied to its
+// folder when there is one, else in the first library folder, and searched)
+// or dismisses it so it is not offered again.
+func (s *Service) Decide(ctx context.Context, tmdb int64, add bool) error {
+	set := s.Cfg.Get()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.load()
+	defer s.save()
+	idx := -1
+	for i, p := range s.st.Decide {
+		if p.TMDB == tmdb {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		return fmt.Errorf("that movie is not waiting for a decision")
+	}
+	p := s.st.Decide[idx]
+	drop := func() { s.st.Decide = append(s.st.Decide[:idx], s.st.Decide[idx+1:]...) }
+	if !add {
+		if s.st.Dismissed == nil {
+			s.st.Dismissed = map[int64]time.Time{}
+		}
+		s.st.Dismissed[tmdb] = s.now()
+		drop()
+		return nil
+	}
+	cat, ok := set.Category(p.Category)
+	if !ok {
+		return fmt.Errorf("category %s is gone", p.Category)
+	}
+	if strings.TrimSpace(set.Attention.MovieProfile) == "" {
+		return fmt.Errorf("choose the Radarr upgrade profile first")
+	}
+	a := s.arrFor(cat)
+	m, err := a.LookupMovie(ctx, tmdb)
+	if err != nil {
+		return err
+	}
+	pr, err := a.ProfileByName(ctx, set.Attention.MovieProfile)
+	if err != nil {
+		return err
+	}
+	roots, err := a.RootFolders(ctx)
+	if err != nil {
+		return err
+	}
+	if len(roots) == 0 {
+		return fmt.Errorf("Radarr has no library folder")
+	}
+	folder := matchFolder(roots, m)
+	it, err := a.AddMovie(ctx, m, pr.ID, folder, roots[0].Path, true)
+	if err != nil {
+		return err
+	}
+	where := folder
+	if where == "" {
+		where = roots[0].Path + " (new folder)"
+	}
+	s.st.Actions = append(s.st.Actions, Action{Kind: "movie", Category: cat.Name, ArrID: it.ID, Title: m.Title, Reason: p.Reason + " · added by you", At: s.now(), Profile: pr.Name, Added: where})
+	drop()
+	return nil
 }
