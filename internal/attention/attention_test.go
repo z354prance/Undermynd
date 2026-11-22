@@ -30,6 +30,8 @@ func (f *fakeHist) ShowIDs(_ context.Context, id string) (int64, int64, string, 
 }
 
 type fakeArr struct {
+	lookups map[int64]arr.MovieLookup
+	roots   []arr.Folder
 	items   map[int64]arr.Item
 	profile int64
 	calls   []string
@@ -62,6 +64,19 @@ func (f *fakeArr) SearchSeries(_ context.Context, id int64) error {
 func (f *fakeArr) SearchMovie(_ context.Context, id int64) error {
 	f.calls = append(f.calls, "movie")
 	return nil
+}
+func (f *fakeArr) LookupMovie(_ context.Context, id int64) (arr.MovieLookup, error) {
+	if m, ok := f.lookups[id]; ok {
+		return m, nil
+	}
+	return arr.MovieLookup{}, &arr.StatusError{Code: 404, Kind: "radarr"}
+}
+func (f *fakeArr) RootFolders(context.Context) ([]arr.Folder, error) { return f.roots, nil }
+func (f *fakeArr) AddMovie(_ context.Context, m arr.MovieLookup, p int64, path, root string, search bool) (arr.Item, error) {
+	f.calls = append(f.calls, "add:"+path+root)
+	it := arr.Item{ID: 99, Title: m.Title, ProfileID: p}
+	f.items[m.TMDB] = it
+	return it, nil
 }
 func (f *fakeArr) QueuedFor(_ context.Context, id int64) (int, error) { return f.queued, nil }
 
@@ -194,5 +209,75 @@ func TestBacklogCarriesOver(t *testing.T) {
 	}
 	if q := s.Snapshot().Queue; len(q) != 0 {
 		t.Fatalf("queue after day two: %+v", q)
+	}
+}
+
+// A much-watched movie Radarr does not have is added when Radarr's lookup
+// matches and its folder is already in Radarr's library folder; otherwise it
+// waits for a decision, and Decide adds or dismisses it.
+func TestMissingMovieAddedOrWaits(t *testing.T) {
+	secret.SetKeyForTest(make([]byte, 32))
+	dir := t.TempDir()
+	cfg, err := config.Load(config.Env{ConfigDir: filepath.Join(dir, "c"), DataDir: filepath.Join(dir, "d"), TickInterval: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := cfg.Get()
+	st.Playback.TracearrURL, st.Playback.TracearrKey = "http://t", "k"
+	st.Categories = []config.Category{{Name: "movies", Kind: "radarr", ArrURL: "http://r"}}
+	st.Attention = config.Attention{On: true, MovieProfile: "Upgrade", PerDay: 5}
+	if err := cfg.Set(st); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 21, 20, 0, 0, 0, time.UTC)
+	two := func(id int64, title string, year int) []tracearr.Play {
+		var out []tracearr.Play
+		for _, u := range []string{"ann", "bob"} {
+			out = append(out, play(u, now.Add(-time.Hour), func(p *tracearr.Play) { p.TMDB, p.Title, p.Year = id, title, year }))
+		}
+		return out
+	}
+	var plays []tracearr.Play
+	plays = append(plays, two(603, "The Matrix", 1999)...)
+	plays = append(plays, two(604, "Heat", 1995)...)
+	plays = append(plays, two(605, "Alien", 1979)...)
+	h := &fakeHist{movies: plays}
+	root := arr.Folder{Path: "/movies"}
+	root.Unmapped = append(root.Unmapped, struct {
+		Name string `json:"name"`
+		Path string `json:"path"`
+	}{"The Matrix (1999) {tmdb-603}", "/movies/The Matrix (1999) {tmdb-603}"})
+	rad := &fakeArr{items: map[int64]arr.Item{}, roots: []arr.Folder{root}, lookups: map[int64]arr.MovieLookup{
+		603: {Title: "The Matrix", Year: 1999, TMDB: 603, Folder: "The Matrix (1999)"},
+		604: {Title: "Heat", Year: 1995, TMDB: 604, Folder: "Heat (1995)"}, // no folder for it
+		605: {Title: "Aliens", Year: 1986, TMDB: 605},                      // does not match
+	}}
+	s := &Service{Cfg: cfg, Log: log.New(io.Discard, "", 0), Now: func() time.Time { return now },
+		History: func(config.Playback) History { return h }, Arr: func(config.Category) Arr { return rad }}
+	s.Check(context.Background())
+	if got := join(rad.calls); got != "add:/movies/The Matrix (1999) {tmdb-603}" {
+		t.Fatalf("calls %q", got)
+	}
+	d := s.Snapshot().Decide
+	if len(d) != 2 {
+		t.Fatalf("waiting %+v", d)
+	}
+	// A second pass does not offer them twice.
+	s.Check(context.Background())
+	if n := len(s.Snapshot().Decide); n != 2 {
+		t.Fatalf("waiting after a second pass: %d", n)
+	}
+	if err := s.Decide(context.Background(), 604, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Decide(context.Background(), 605, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := rad.calls[len(rad.calls)-1]; got != "add:/movies" {
+		t.Fatalf("Heat should go to a new folder in the first library folder: %q", got)
+	}
+	s.Check(context.Background())
+	if n := len(s.Snapshot().Decide); n != 0 {
+		t.Fatalf("a dismissed movie came back: %+v", s.Snapshot().Decide)
 	}
 }
