@@ -511,10 +511,11 @@
       function pick(label,list,val,hint){var w=el('div','fld');w.appendChild(el('label','',label));var sl=el('select');sl.appendChild(new Option('— not for '+hint+' —',''));(list||[]).forEach(function(n){sl.appendChild(new Option(n,n))});if(val&&(list||[]).indexOf(val)<0)sl.appendChild(new Option(val+' (not found)',val));sl.value=val||'';w.appendChild(sl);c.appendChild(w);return sl}
       var tv=pick('Sonarr upgrade profile',d.profiles&&d.profiles.sonarr,a.tvProfile,'shows');
       var mv=pick('Radarr upgrade profile',d.profiles&&d.profiles.radarr,a.movieProfile,'movies');
-      var pd=row(c,'Most switches a day',{type:'number',value:a.perDay||3,help:'Keeps a busy week from starting a flood of downloads.'});
+      var pd=row(c,'Most shows a day (Sonarr)',{type:'number',value:a.perDay||3});
+      var md=row(c,'Most movies a day (Radarr)',{type:'number',value:a.moviePerDay||3,help:'Keeps a busy week from starting a flood of downloads. Anything over a limit waits its turn; movies you add yourself do not count.'});
       body.appendChild(c);
       saveBar(body,function(m){m.className='msg';m.textContent='saving…';
-        api('PUT','/attention',{on:on.checked,tvProfile:tv.value,movieProfile:mv.value,perDay:parseInt(pd.value,10)||3}).then(function(){m.className='msg ok';m.textContent='saved'}).catch(function(e){m.className='msg err';m.textContent=e.message})});
+        api('PUT','/attention',{on:on.checked,tvProfile:tv.value,movieProfile:mv.value,perDay:parseInt(pd.value,10)||3,moviePerDay:parseInt(md.value,10)||3}).then(function(){m.className='msg ok';m.textContent='saved'}).catch(function(e){m.className='msg err';m.textContent=e.message})});
       split(body);
       var st=d.status||{actions:[]},box=hvBox('Moved to the upgrade profile');
       var tools=el('div','hv-pagehead');tools.appendChild(el('span','hv-note',st.lastRun&&st.lastRun[0]!=='0'?'Last checked '+ago(st.lastRun)+' ago':'Not checked yet'));tools.appendChild(el('span','hv-sp'));

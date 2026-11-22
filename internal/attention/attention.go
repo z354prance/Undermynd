@@ -75,6 +75,7 @@ type Action struct {
 	Profile  string     `json:"profile"`            // the profile it was moved to
 	Previous int64      `json:"previous,omitempty"` // profile id before the move
 	Added    string     `json:"added,omitempty"`    // added to Radarr: the folder it was tied to
+	Manual   bool       `json:"manual,omitempty"`   // done by the admin; not counted in the daily limits
 }
 
 // Pending is a much-watched movie Radarr does not have, waiting for the
@@ -257,25 +258,28 @@ func (s *Service) Check(ctx context.Context) {
 		s.Log.Printf("attention: %s", s.st.LastError)
 		return
 	}
-	budget := at.PerDay
-	if budget <= 0 {
-		budget = 3
+	// Each kind has its own daily limit: shows (Sonarr) and movies (Radarr).
+	budget := map[string]int{"show": at.PerDay, "movie": at.MoviePerDay}
+	for k, n := range budget {
+		if n <= 0 {
+			budget[k] = 3
+		}
 	}
 	for _, a := range s.st.Actions {
-		if now.Sub(a.At) < 24*time.Hour && a.Error == "" {
-			budget--
+		if now.Sub(a.At) < 24*time.Hour && a.Error == "" && !a.Manual {
+			budget[a.Kind]--
 		}
 	}
 	s.enqueue(cands, now)
 	var keep []Queued
 	for _, q := range s.st.Queue {
-		if budget <= 0 {
+		if budget[q.Kind] <= 0 {
 			keep = append(keep, q)
 			continue
 		}
 		switch s.act(ctx, set, candidate{kind: q.Kind, tvdb: q.TVDB, tmdb: q.TMDB, title: q.Title, year: q.Year, season: q.Season, reason: q.Reason}, now) {
 		case moved:
-			budget--
+			budget[q.Kind]--
 		case retry:
 			keep = append(keep, q)
 		}
@@ -729,7 +733,7 @@ func (s *Service) Decide(ctx context.Context, tmdb int64, add bool) error {
 	if where == "" {
 		where = roots[0].Path + " (new folder)"
 	}
-	s.st.Actions = append(s.st.Actions, Action{Kind: "movie", Category: cat.Name, ArrID: it.ID, Title: m.Title, Reason: p.Reason + " · added by you", At: s.now(), Profile: pr.Name, Added: where})
+	s.st.Actions = append(s.st.Actions, Action{Kind: "movie", Category: cat.Name, ArrID: it.ID, Title: m.Title, Reason: p.Reason + " · added by you", At: s.now(), Profile: pr.Name, Added: where, Manual: true})
 	drop()
 	return nil
 }
