@@ -31,6 +31,8 @@ func (f *fakeHist) ShowIDs(_ context.Context, id string) (int64, int64, string, 
 }
 
 type fakeArr struct {
+	files       map[int64][]arr.FileQuality
+	movieMet    map[int64]bool
 	lastProfile int64
 	lookups     map[int64]arr.MovieLookup
 	roots       []arr.Folder
@@ -88,6 +90,12 @@ func (f *fakeArr) SeriesByID(_ context.Context, id int64) (arr.Item, error) {
 		}
 	}
 	return arr.Item{}, &arr.StatusError{Code: 404, Kind: "sonarr"}
+}
+func (f *fakeArr) EpisodeFiles(_ context.Context, id int64) ([]arr.FileQuality, error) {
+	return f.files[id], nil
+}
+func (f *fakeArr) MovieUpgraded(_ context.Context, id int64) (bool, bool, error) {
+	return true, f.movieMet[id], nil
 }
 func (f *fakeArr) QueuedFor(_ context.Context, id int64) (int, error) { return f.queued, nil }
 
@@ -485,5 +493,35 @@ func TestShowsOneAtATime(t *testing.T) {
 	s.Check(context.Background())
 	if got := join(son.calls); got != "profile season1 season2 profile season1" {
 		t.Fatalf("B after A: %q", got)
+	}
+}
+
+// Progress counts the files that meet the upgrade profile's cutoff, per season.
+func TestProgress(t *testing.T) {
+	secret.SetKeyForTest(make([]byte, 32))
+	dir := t.TempDir()
+	cfg, err := config.Load(config.Env{ConfigDir: filepath.Join(dir, "c"), DataDir: filepath.Join(dir, "d"), TickInterval: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := cfg.Get()
+	st.Playback.TracearrURL, st.Playback.TracearrKey = "http://t", "k"
+	st.Categories = []config.Category{{Name: "tv", Kind: "sonarr", ArrURL: "http://s"}}
+	st.Attention = config.Attention{On: true, TVProfile: "Upgrade"}
+	if err := cfg.Set(st); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC)
+	son := &fakeArr{items: map[int64]arr.Item{}, files: map[int64][]arr.FileQuality{5: {
+		{Season: 0}, {Season: 1, CutoffMet: true}, {Season: 1, CutoffMet: true}, {Season: 2, CutoffMet: true}, {Season: 2}, {Season: 2},
+	}}}
+	s := &Service{Cfg: cfg, Log: log.New(io.Discard, "", 0), Now: func() time.Time { return now },
+		History: func(config.Playback) History { return &fakeHist{} }, Arr: func(config.Category) Arr { return son }}
+	s.st.Actions = []Action{{Kind: "show", Category: "tv", ArrID: 5, Title: "Suits", At: now, Seasons: []int{1}}}
+	s.ready = true
+	s.Check(context.Background())
+	p := s.Snapshot().Actions[0].Progress
+	if p == nil || p.Done != 3 || p.Total != 5 || len(p.Seasons) != 2 || p.Seasons[1].Done != 1 || p.Seasons[1].Total != 3 {
+		t.Fatalf("progress %+v", p)
 	}
 }
