@@ -32,11 +32,11 @@ func (f *fakeHist) ShowIDs(_ context.Context, id string) (int64, int64, string, 
 type fakeArr struct {
 	lastProfile int64
 	lookups     map[int64]arr.MovieLookup
-	roots   []arr.Folder
-	items   map[int64]arr.Item
-	profile int64
-	calls   []string
-	queued  int
+	roots       []arr.Folder
+	items       map[int64]arr.Item
+	profile     int64
+	calls       []string
+	queued      int
 }
 
 func (f *fakeArr) ProfileByName(_ context.Context, n string) (arr.Profile, error) {
