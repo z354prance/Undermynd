@@ -279,15 +279,18 @@ func (s *Service) Check(ctx context.Context) {
 		return
 	}
 	// Each kind has its own daily limit: shows (Sonarr) and movies (Radarr).
-	budget := map[string]int{"show": at.PerDay, "movie": at.MoviePerDay}
-	for k, n := range budget {
-		if n <= 0 {
-			budget[k] = 3
-		}
+	// Movies: a daily limit. Shows: one at a time; the next show starts only
+	// when the one in progress has had every season searched.
+	budget := map[string]int{"movie": at.MoviePerDay, "show": 1}
+	if budget["movie"] <= 0 {
+		budget["movie"] = 3
 	}
 	for _, a := range s.st.Actions {
-		if now.Sub(a.At) < 24*time.Hour && a.Error == "" && !a.Manual && a.Reverted == nil {
-			budget[a.Kind]--
+		if a.Kind == "movie" && now.Sub(a.At) < 24*time.Hour && a.Error == "" && !a.Manual && a.Reverted == nil {
+			budget["movie"]--
+		}
+		if a.Kind == "show" && showInProgress(a, now) {
+			budget["show"] = 0
 		}
 	}
 	s.revertAnime(ctx, set, now, animeShows)
@@ -598,6 +601,11 @@ func (s *Service) handoffs(ctx context.Context, set config.Settings, now time.Ti
 		}
 		it, err := ar.SeriesByID(ctx, a.ArrID)
 		if err != nil {
+			var se *arr.StatusError
+			if errors.As(err, &se) && se.Code == 404 {
+				t := now
+				a.Handoff, a.Note = &t, "removed from Sonarr"
+			}
 			continue
 		}
 		next, ok := nextSeason(it, a.Seasons)
@@ -615,6 +623,24 @@ func (s *Service) handoffs(ctx context.Context, set config.Settings, now time.Ti
 		s.Log.Printf("attention: %s: searching season %d", a.Title, next)
 	}
 }
+
+// showInProgress says whether a moved show is still being worked through
+// season by season. One that has not moved for showStall is taken as done,
+// so a show stuck in Sonarr cannot hold up the rest.
+func showInProgress(a Action, now time.Time) bool {
+	if a.Reverted != nil || a.Handoff != nil || len(a.Seasons) == 0 {
+		return false
+	}
+	last := a.At
+	if a.LastSearch != nil {
+		last = *a.LastSearch
+	}
+	return now.Sub(last) < showStall
+}
+
+// showStall is how long a show may go without a season search before the
+// next show is allowed to start.
+const showStall = 7 * 24 * time.Hour
 
 // nextSeason is the next season to search: the first unsearched monitored
 // season after the one being watched (the first searched), else the first

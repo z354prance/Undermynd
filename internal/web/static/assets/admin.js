@@ -504,18 +504,18 @@
   // Sonarr or Radarr and searched (watch history from Tracearr).
   function upgradesView(body){
     api('GET','/attention').then(function(d){body.replaceChildren();var a=d.settings||{};
-      body.appendChild(head('Upgrade what people watch','When a movie gets watched by two or more people in 30 days, or someone watches three or more episodes of a show in 14 days, HyveMynd moves it to the upgrade profile below in Radarr or Sonarr and starts the search. For a show it searches the season being watched and the next one, then hands the rest to Sonarr. Titles already on that profile are left alone.'));
+      body.appendChild(head('Upgrade what people watch','When a movie gets watched by two or more people in 30 days, or someone watches three or more episodes of a show in 14 days, HyveMynd moves it to the upgrade profile below in Radarr or Sonarr and starts the search. A show is searched the season being watched and the next one first, then one more season each time Sonarr finishes, one show at a time. Titles already on that profile are left alone.'));
       if(!d.tracearr)body.appendChild(el('div','err','Tracearr is not set up, so there is no watch history to read. Add it under Settings › Media server.'));
       var c=el('div','card');c.appendChild(el('h4','','Settings'));c.appendChild(help('Watch history comes from Tracearr and is checked every hour.'));
       var on=row(c,'Switch and search automatically',{type:'checkbox',value:a.on});
       function pick(label,list,val,hint){var w=el('div','fld');w.appendChild(el('label','',label));var sl=el('select');sl.appendChild(new Option('— not for '+hint+' —',''));(list||[]).forEach(function(n){sl.appendChild(new Option(n,n))});if(val&&(list||[]).indexOf(val)<0)sl.appendChild(new Option(val+' (not found)',val));sl.value=val||'';w.appendChild(sl);c.appendChild(w);return sl}
       var tv=pick('Sonarr upgrade profile',d.profiles&&d.profiles.sonarr,a.tvProfile,'shows');
       var mv=pick('Radarr upgrade profile',d.profiles&&d.profiles.radarr,a.movieProfile,'movies');
-      var pd=row(c,'Most shows a day (Sonarr)',{type:'number',value:a.perDay||3});
-      var md=row(c,'Most movies a day (Radarr)',{type:'number',value:a.moviePerDay||3,help:'Keeps a busy week from starting a flood of downloads. Anything over a limit waits its turn; movies you add yourself do not count.'});
+      c.appendChild(help('Shows go one at a time: the next show starts once every season of the one before has been searched.'));
+      var md=row(c,'Most movies a day (Radarr)',{type:'number',value:a.moviePerDay||3,help:'Anything over the limit waits its turn; movies you add yourself do not count.'});
       body.appendChild(c);
       saveBar(body,function(m){m.className='msg';m.textContent='saving…';
-        api('PUT','/attention',{on:on.checked,tvProfile:tv.value,movieProfile:mv.value,perDay:parseInt(pd.value,10)||3,moviePerDay:parseInt(md.value,10)||3}).then(function(){m.className='msg ok';m.textContent='saved'}).catch(function(e){m.className='msg err';m.textContent=e.message})});
+        api('PUT','/attention',{on:on.checked,tvProfile:tv.value,movieProfile:mv.value,perDay:a.perDay||3,moviePerDay:parseInt(md.value,10)||3}).then(function(){m.className='msg ok';m.textContent='saved'}).catch(function(e){m.className='msg err';m.textContent=e.message})});
       split(body);
       var st=d.status||{actions:[]},box=hvBox('Moved to the upgrade profile');
       var tools=el('div','hv-pagehead');tools.appendChild(el('span','hv-note',st.lastRun&&st.lastRun[0]!=='0'?'Last checked '+ago(st.lastRun)+' ago':'Not checked yet'));tools.appendChild(el('span','hv-sp'));
