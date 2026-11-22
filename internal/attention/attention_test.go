@@ -179,7 +179,7 @@ func TestBacklogCarriesOver(t *testing.T) {
 	st := cfg.Get()
 	st.Playback.TracearrURL, st.Playback.TracearrKey = "http://t", "k"
 	st.Categories = []config.Category{{Name: "movies", Kind: "radarr", ArrURL: "http://r"}}
-	st.Attention = config.Attention{On: true, MovieProfile: "Upgrade", PerDay: 1}
+	st.Attention = config.Attention{On: true, MovieProfile: "Upgrade", PerDay: 5, MoviePerDay: 1}
 	if err := cfg.Set(st); err != nil {
 		t.Fatal(err)
 	}

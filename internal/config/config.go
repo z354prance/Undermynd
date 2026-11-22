@@ -155,7 +155,8 @@ type Attention struct {
 	On           bool   `json:"on"`
 	TVProfile    string `json:"tvProfile"`    // Sonarr profile name
 	MovieProfile string `json:"movieProfile"` // Radarr profile name
-	PerDay       int    `json:"perDay"`       // most switches in 24 hours
+	PerDay       int    `json:"perDay"`       // most show switches in 24 hours (Sonarr)
+	MoviePerDay  int    `json:"moviePerDay"`  // most movie switches and adds in 24 hours (Radarr)
 }
 
 // Donations are the links behind the public Donate button; blank links hide it.

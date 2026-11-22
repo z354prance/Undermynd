@@ -51,6 +51,9 @@ func (s *Server) adminAttentionSave(w http.ResponseWriter, r *http.Request) {
 	if in.PerDay < 1 || in.PerDay > 20 {
 		in.PerDay = 3
 	}
+	if in.MoviePerDay < 1 || in.MoviePerDay > 20 {
+		in.MoviePerDay = 3
+	}
 	if in.On && in.TVProfile == "" && in.MovieProfile == "" {
 		jsonErr(w, http.StatusBadRequest, "choose the upgrade profile for shows, movies or both")
 		return
