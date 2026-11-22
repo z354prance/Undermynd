@@ -149,8 +149,35 @@ func TestMovesAndSearches(t *testing.T) {
 	son.items[73762] = withProfile(son.items[73762], 9)
 	rad.items[603] = withProfile(rad.items[603], 9)
 	s.Check(context.Background())
-	if got := join(son.calls); got != "profile season4 season5 series" {
-		t.Fatalf("hand-off: %q", got)
+	// One season at a time: after 4 and 5 (the last), back to season 1.
+	if got := join(son.calls); got != "profile season4 season5 season1" {
+		t.Fatalf("next season: %q", got)
+	}
+	// Not again while Sonarr is still busy with it.
+	son.queued = 2
+	now = now.Add(3 * time.Hour)
+	s.Check(context.Background())
+	son.queued = 0
+	if got := join(son.calls); got != "profile season4 season5 season1" {
+		t.Fatalf("searched while the queue was busy: %q", got)
+	}
+	for _, want := range []string{"season2", "season3"} {
+		now = now.Add(3 * time.Hour)
+		s.Check(context.Background())
+		if c := son.calls[len(son.calls)-1]; c != want {
+			t.Fatalf("want %s, got %v", want, son.calls)
+		}
+	}
+	now = now.Add(3 * time.Hour)
+	s.Check(context.Background())
+	var grey Action
+	for _, a := range s.Snapshot().Actions {
+		if a.Kind == "show" {
+			grey = a
+		}
+	}
+	if grey.Handoff == nil || len(son.calls) != 6 {
+		t.Fatalf("should be done after every season: %+v %v", grey, son.calls)
 	}
 	if n := len(s.Snapshot().Actions); n != 2 {
 		t.Fatalf("actions %d", n)

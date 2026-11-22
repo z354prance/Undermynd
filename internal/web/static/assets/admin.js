@@ -526,7 +526,7 @@
       if(!(st.actions||[]).length)l.appendChild(el('div','hv-empty','Nothing moved yet.'));
       (st.actions||[]).forEach(function(x){var r=el('div','hv-item');r.appendChild(hvPill(x.kind==='movie'?'Movie':'Show',x.kind==='movie'?'var(--movie)':'var(--tv)',true));
         var t=el('div','hv-it');t.appendChild(el('b','',x.title));
-        var sub=x.reason+(x.added?' · added to Radarr ('+x.added+') on ':' · moved to ')+x.profile;if(x.seasons&&x.seasons.length)sub+=' · searched season '+x.seasons.join(' and ');if(x.handoff)sub+=' · rest handed to Sonarr';else if(x.kind==='show'&&x.seasons&&x.seasons.length)sub+=' · rest goes to Sonarr when those finish';
+        var sub=x.reason+(x.added?' · added to Radarr ('+x.added+') on ':' · moved to ')+x.profile;if(x.seasons&&x.seasons.length)sub+=' · searched season'+(x.seasons.length>1?'s ':' ')+x.seasons.join(', ');if(x.handoff)sub+=' · every season searched';else if(x.kind==='show'&&x.seasons&&x.seasons.length)sub+=' · next season when Sonarr finishes these';
         t.appendChild(el('span','',sub));if(x.reverted)t.appendChild(el('span','hv-warn-t','Moved back: '+(x.note||'undone')));if(x.error)t.appendChild(el('span','hv-bad',x.error));r.appendChild(t);r.appendChild(el('span','hv-note',ago(x.at)+' ago'));
         if(!x.reverted&&x.previous&&!x.error){r.appendChild(hvBtn('Undo','back',function(b){if(!confirm('Move '+x.title+' back to its old profile and never move it again? Downloads already started keep going.'))return;b.disabled=true;api('POST','/attention/undo',{kind:x.kind,category:x.category,arrId:x.arrId}).then(function(){upgradesView(body)}).catch(function(e){b.disabled=false;alertMsg(e.message)})}))}
         l.appendChild(r)});
