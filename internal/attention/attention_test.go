@@ -30,12 +30,13 @@ func (f *fakeHist) ShowIDs(_ context.Context, id string) (int64, int64, string, 
 }
 
 type fakeArr struct {
-	lookups map[int64]arr.MovieLookup
-	roots   []arr.Folder
-	items   map[int64]arr.Item
-	profile int64
-	calls   []string
-	queued  int
+	lastProfile int64
+	lookups     map[int64]arr.MovieLookup
+	roots       []arr.Folder
+	items       map[int64]arr.Item
+	profile     int64
+	calls       []string
+	queued      int
 }
 
 func (f *fakeArr) ProfileByName(_ context.Context, n string) (arr.Profile, error) {
@@ -51,6 +52,7 @@ func (f *fakeArr) MovieByTMDB(_ context.Context, id int64) (arr.Item, bool, erro
 }
 func (f *fakeArr) SetProfile(_ context.Context, id, p int64) error {
 	f.calls = append(f.calls, "profile")
+	f.lastProfile = p
 	return nil
 }
 func (f *fakeArr) SearchSeason(_ context.Context, id int64, s int) error {
@@ -77,6 +79,14 @@ func (f *fakeArr) AddMovie(_ context.Context, m arr.MovieLookup, p int64, path, 
 	it := arr.Item{ID: 99, Title: m.Title, ProfileID: p}
 	f.items[m.TMDB] = it
 	return it, nil
+}
+func (f *fakeArr) SeriesByID(_ context.Context, id int64) (arr.Item, error) {
+	for _, it := range f.items {
+		if it.ID == id {
+			return it, nil
+		}
+	}
+	return arr.Item{}, &arr.StatusError{Code: 404, Kind: "sonarr"}
 }
 func (f *fakeArr) QueuedFor(_ context.Context, id int64) (int, error) { return f.queued, nil }
 
@@ -279,5 +289,54 @@ func TestMissingMovieAddedOrWaits(t *testing.T) {
 	s.Check(context.Background())
 	if n := len(s.Snapshot().Decide); n != 0 {
 		t.Fatalf("a dismissed movie came back: %+v", s.Snapshot().Decide)
+	}
+}
+
+// Anime in Sonarr is never moved; anime moved by an earlier version is put
+// back on its old profile and left alone after; Undo moves a title back.
+func TestAnimeLeftAloneAndMovedBack(t *testing.T) {
+	secret.SetKeyForTest(make([]byte, 32))
+	dir := t.TempDir()
+	cfg, err := config.Load(config.Env{ConfigDir: filepath.Join(dir, "c"), DataDir: filepath.Join(dir, "d"), TickInterval: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := cfg.Get()
+	st.Playback.TracearrURL, st.Playback.TracearrKey = "http://t", "k"
+	st.Categories = []config.Category{{Name: "tv", Kind: "sonarr", ArrURL: "http://s"}, {Name: "anime", Kind: "rss", LibraryDir: "/media/Anime"}}
+	st.Attention = config.Attention{On: true, TVProfile: "Upgrade", PerDay: 5}
+	if err := cfg.Set(st); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 21, 20, 0, 0, 0, time.UTC)
+	eps := func(show string) []tracearr.Play {
+		var out []tracearr.Play
+		for e := 1; e <= 3; e++ {
+			e := e
+			out = append(out, play("ann", now.Add(-time.Duration(e)*time.Hour), func(p *tracearr.Play) { p.ShowMediaID, p.Season, p.Episode = show, 1, e }))
+		}
+		return out
+	}
+	h := &fakeHist{eps: eps("show-grey")}
+	son := &fakeArr{items: map[int64]arr.Item{73762: {ID: 5, Title: "Frieren", ProfileID: 1, Path: "/media/Anime/Frieren"}}}
+	s := &Service{Cfg: cfg, Log: log.New(io.Discard, "", 0), Now: func() time.Time { return now },
+		History: func(config.Playback) History { return h }, Arr: func(config.Category) Arr { return son }}
+	s.Check(context.Background())
+	if len(son.calls) != 0 {
+		t.Fatalf("anime in an anime folder was touched: %v", son.calls)
+	}
+	// An earlier version moved it: it goes back to profile 1 and stays.
+	s.st.Actions = append(s.st.Actions, Action{Kind: "show", Category: "tv", ArrID: 5, Title: "Frieren", At: now, Previous: 1, Seasons: []int{1}})
+	s.Check(context.Background())
+	if son.lastProfile != 1 || s.Snapshot().Actions[0].Reverted == nil {
+		t.Fatalf("not moved back: profile %d %+v", son.lastProfile, s.Snapshot().Actions[0])
+	}
+	// Undo on an ordinary show.
+	s.st.Actions = append(s.st.Actions, Action{Kind: "show", Category: "tv", ArrID: 6, Title: "Suits", At: now, Previous: 2, Checked: true})
+	if err := s.Undo(context.Background(), "show", "tv", 6); err != nil || son.lastProfile != 2 {
+		t.Fatalf("undo: %v, profile %d", err, son.lastProfile)
+	}
+	if !s.st.Skip["show:tv:6"] {
+		t.Fatal("an undone show should not be moved again")
 	}
 }

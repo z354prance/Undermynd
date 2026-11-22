@@ -101,3 +101,27 @@ func (s *Server) adminAttentionDecide(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, s.Attention.Snapshot())
 }
+
+// adminAttentionUndo moves a title back to the profile it had.
+func (s *Server) adminAttentionUndo(w http.ResponseWriter, r *http.Request) {
+	if s.Attention == nil {
+		jsonErr(w, http.StatusServiceUnavailable, "not running")
+		return
+	}
+	var in struct {
+		Kind     string `json:"kind"`
+		Category string `json:"category"`
+		ArrID    int64  `json:"arrId"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<12)).Decode(&in); err != nil || in.ArrID <= 0 {
+		jsonErr(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if err := s.Attention.Undo(ctx, in.Kind, in.Category, in.ArrID); err != nil {
+		jsonErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, s.Attention.Snapshot())
+}

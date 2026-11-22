@@ -75,7 +75,12 @@ type Item struct {
 	Title     string `json:"title"`
 	ProfileID int64  `json:"qualityProfileId"`
 	Monitored bool   `json:"monitored"`
-	Seasons   []struct {
+	// Sonarr: standard, daily or anime; with the genres and folder, used to
+	// leave anime alone.
+	SeriesType string   `json:"seriesType,omitempty"`
+	Genres     []string `json:"genres,omitempty"`
+	Path       string   `json:"path,omitempty"`
+	Seasons    []struct {
 		Number    int  `json:"seasonNumber"`
 		Monitored bool `json:"monitored"`
 	} `json:"seasons,omitempty"`
@@ -213,4 +218,10 @@ func (c *Client) AddMovie(ctx context.Context, m MovieLookup, profileID int64, p
 	body["addOptions"] = map[string]any{"searchForMovie": search}
 	var out Item
 	return out, c.send(ctx, http.MethodPost, "/movie", body, &out)
+}
+
+// SeriesByID reads one Sonarr series.
+func (c *Client) SeriesByID(ctx context.Context, id int64) (Item, error) {
+	var out Item
+	return out, c.get(ctx, fmt.Sprintf("/series/%d", id), &out)
 }
