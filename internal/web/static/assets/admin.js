@@ -553,7 +553,7 @@
     function count(t,n){var h=t.querySelector('h3');h.replaceChildren(document.createTextNode(h.dataset.t||(h.dataset.t=h.textContent)));if(n){h.appendChild(el('span','hv-n',String(n)))}}
     function drawPills(){pills.replaceChildren();if(!sysInfo)return;var s=sysInfo;
       pills.appendChild(hvHealth('Intake',s.paused?'paused':'running',s.paused?'warn':'ok'));
-      if(s.torbox.configured)pills.appendChild(hvHealth('TorBox',s.torbox.backoffUntil?'backing off':s.torbox.used+' / '+s.torbox.limit+' an hour',s.torbox.backoffUntil?'warn':'ok'));
+      if(s.torbox.configured)pills.appendChild(hvHealth('TorBox',s.torbox.backoffUntil?'new adds paused':'usenet '+s.torbox.used+' · torrents '+(s.torbox.torrentUsed||0)+' of '+s.torbox.limit+' an hour',s.torbox.backoffUntil?'warn':'ok'));
       else pills.appendChild(hvHealth('TorBox','not set','dim'));
       pills.appendChild(hvHealth('Tdarr',s.tdarr.api?s.tdarr.inFlight+' / '+s.tdarr.max+' busy':'folders only',s.tdarr.api?'ok':'dim'));
       if(s.complete&&s.complete.totalBytes){var fr=s.complete.freeBytes/s.complete.totalBytes;pills.appendChild(hvHealth('Complete folder',Math.round(fr*100)+'% free',fr<.1?'bad':fr<.2?'warn':'ok'))}
@@ -904,8 +904,8 @@
       ['queued','downloading','processing','finishing','failed'].forEach(function(x){var r=el('div','kv');r.appendChild(el('span','k',x));r.appendChild(el('span','v',String(d.counts[x]||0)));c1.appendChild(r)});g.appendChild(c1);
       var c2=el('div','card');c2.appendChild(el('h4','','TorBox'));
       if(!d.torbox.configured){c2.appendChild(help('No token set.'))}else{
-        var r1=el('div','kv');r1.appendChild(el('span','k','new downloads this hour'));r1.appendChild(el('span','v',d.torbox.used+' of '+d.torbox.limit));c2.appendChild(r1);
-        var br=el('div','bar');var bf=el('i');bf.style.width=Math.min(100,d.torbox.limit?d.torbox.used*100/d.torbox.limit:0)+'%';br.appendChild(bf);c2.appendChild(br);
+        [['new usenet downloads this hour',d.torbox.used],['new torrents this hour (cached ones not counted)',d.torbox.torrentUsed||0]].forEach(function(x){var r1=el('div','kv');r1.appendChild(el('span','k',x[0]));r1.appendChild(el('span','v',x[1]+' of '+d.torbox.limit));c2.appendChild(r1);
+          var br=el('div','bar');var bf=el('i');bf.style.width=Math.min(100,d.torbox.limit?x[1]*100/d.torbox.limit:0)+'%';br.appendChild(bf);c2.appendChild(br)});
         if(d.torbox.backoffUntil){var r2=el('div','kv');r2.appendChild(el('span','k','backing off until'));r2.appendChild(el('span','v flag',new Date(d.torbox.backoffUntil).toLocaleTimeString()));c2.appendChild(r2)}}
       g.appendChild(c2);
       var c3=el('div','card');c3.appendChild(el('h4','','Tdarr'));var t1=el('div','kv');t1.appendChild(el('span','k','jobs with Tdarr'));t1.appendChild(el('span','v',d.tdarr.inFlight+' of '+d.tdarr.max));c3.appendChild(t1);
