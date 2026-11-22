@@ -16,13 +16,13 @@ import (
 
 type fakeHist struct{ movies, eps []tracearr.Play }
 
-func (f fakeHist) History(_ context.Context, kind string, _ time.Time) ([]tracearr.Play, error) {
+func (f *fakeHist) History(_ context.Context, kind string, _ time.Time) ([]tracearr.Play, error) {
 	if kind == "movie" {
 		return f.movies, nil
 	}
 	return f.eps, nil
 }
-func (f fakeHist) ShowIDs(_ context.Context, id string) (int64, int64, string, error) {
+func (f *fakeHist) ShowIDs(_ context.Context, id string) (int64, int64, string, error) {
 	if id == "show-grey" {
 		return 73762, 1416, "Grey's Anatomy", nil
 	}
@@ -87,7 +87,7 @@ func TestMovesAndSearches(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 11, 21, 20, 0, 0, 0, time.UTC)
-	h := fakeHist{
+	h := &fakeHist{
 		movies: []tracearr.Play{
 			play("ann", now.Add(-48*time.Hour), func(p *tracearr.Play) { p.TMDB, p.Title = 603, "The Matrix" }),
 			play("bob", now.Add(-24*time.Hour), func(p *tracearr.Play) { p.TMDB, p.Title = 603, "The Matrix" }),
@@ -150,4 +150,49 @@ func join(s []string) string {
 		out += x
 	}
 	return out
+}
+
+// Titles over the daily limit wait in the queue and are done on a later day,
+// even when their watching has left the history window by then.
+func TestBacklogCarriesOver(t *testing.T) {
+	secret.SetKeyForTest(make([]byte, 32))
+	dir := t.TempDir()
+	cfg, err := config.Load(config.Env{ConfigDir: filepath.Join(dir, "c"), DataDir: filepath.Join(dir, "d"), TickInterval: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := cfg.Get()
+	st.Playback.TracearrURL, st.Playback.TracearrKey = "http://t", "k"
+	st.Categories = []config.Category{{Name: "movies", Kind: "radarr", ArrURL: "http://r"}}
+	st.Attention = config.Attention{On: true, MovieProfile: "Upgrade", PerDay: 1}
+	if err := cfg.Set(st); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 21, 20, 0, 0, 0, time.UTC)
+	h := &fakeHist{movies: []tracearr.Play{
+		play("ann", now.Add(-5*time.Hour), func(p *tracearr.Play) { p.TMDB, p.Title = 1, "A" }),
+		play("bob", now.Add(-5*time.Hour), func(p *tracearr.Play) { p.TMDB, p.Title = 1, "A" }),
+		play("ann", now.Add(-2*time.Hour), func(p *tracearr.Play) { p.TMDB, p.Title = 2, "B" }),
+		play("bob", now.Add(-2*time.Hour), func(p *tracearr.Play) { p.TMDB, p.Title = 2, "B" }),
+	}}
+	rad := &fakeArr{items: map[int64]arr.Item{1: {ID: 11, Title: "A", ProfileID: 1}, 2: {ID: 12, Title: "B", ProfileID: 1}}}
+	s := &Service{Cfg: cfg, Log: log.New(io.Discard, "", 0), Now: func() time.Time { return now },
+		History: func(config.Playback) History { return h }, Arr: func(config.Category) Arr { return rad }}
+	s.Check(context.Background())
+	if got := join(rad.calls); got != "profile movie" {
+		t.Fatalf("day one: %q", got)
+	}
+	if q := s.Snapshot().Queue; len(q) != 1 || q[0].Title != "B" {
+		t.Fatalf("queue after day one: %+v", q)
+	}
+	// The history no longer shows B; the queue still does it the next day.
+	h.movies = nil
+	now = now.Add(25 * time.Hour)
+	s.Check(context.Background())
+	if got := join(rad.calls); got != "profile movie profile movie" {
+		t.Fatalf("day two: %q", got)
+	}
+	if q := s.Snapshot().Queue; len(q) != 0 {
+		t.Fatalf("queue after day two: %+v", q)
+	}
 }

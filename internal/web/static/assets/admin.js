@@ -527,7 +527,11 @@
         var t=el('div','hv-it');t.appendChild(el('b','',x.title));
         var sub=x.reason+' · moved to '+x.profile;if(x.seasons&&x.seasons.length)sub+=' · searched season '+x.seasons.join(' and ');if(x.handoff)sub+=' · rest handed to Sonarr';else if(x.kind==='show'&&x.seasons&&x.seasons.length)sub+=' · rest goes to Sonarr when those finish';
         t.appendChild(el('span','',sub));if(x.error)t.appendChild(el('span','hv-bad',x.error));r.appendChild(t);r.appendChild(el('span','hv-note',ago(x.at)+' ago'));l.appendChild(r)});
-      box.appendChild(l);body.appendChild(box);
+      box.appendChild(l);
+      var q=st.queue||[];if(q.length){var qb=hvBox('Waiting for their turn');qb.appendChild(el('p','hv-note','Over the daily limit: done oldest first on the next days, even after the watching is older than the window that counted it.'));var ql=el('div','hv-list');
+        q.forEach(function(x,i){var r=el('div','hv-item slim');r.appendChild(hvPill(String(i+1),'var(--dim)'));var t=el('div','hv-it');t.appendChild(el('b','',x.title));t.appendChild(el('span','',(x.kind==='movie'?'Movie':'Show')+' · '+x.reason));r.appendChild(t);r.appendChild(el('span','hv-note','waiting '+ago(x.since)));ql.appendChild(r)});
+        qb.appendChild(ql);body.appendChild(qb)}
+      body.appendChild(box);
     }).catch(fail)}
   function alertMsg(t){var d=el('div','err',t);root.appendChild(d);setTimeout(function(){d.remove()},6000)}
   // Overview (pinned v2 admin): health pills, Needs you, Pipeline now, Just finished, Who runs what.
