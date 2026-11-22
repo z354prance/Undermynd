@@ -75,10 +75,28 @@ type saved struct {
 	Actions []Action `json:"actions"`
 	// Seen marks items found already on the upgrade profile, so they are not
 	// looked up again every hour ("sonarr:tv:123").
-	Seen      map[string]time.Time `json:"seen,omitempty"`
-	LastRun   time.Time            `json:"lastRun"`
-	LastError string               `json:"lastError,omitempty"`
+	Seen map[string]time.Time `json:"seen,omitempty"`
+	// Queue holds titles that qualified beyond the daily limit, oldest
+	// first; they are done on later days even once their watching is older
+	// than the window that counted it.
+	Queue     []Queued  `json:"queue,omitempty"`
+	LastRun   time.Time `json:"lastRun"`
+	LastError string    `json:"lastError,omitempty"`
 }
+
+// Queued is a title waiting for its turn.
+type Queued struct {
+	Kind   string    `json:"kind"`
+	TVDB   int64     `json:"tvdb,omitempty"`
+	TMDB   int64     `json:"tmdb,omitempty"`
+	Title  string    `json:"title"`
+	Season int       `json:"season,omitempty"`
+	Reason string    `json:"reason"`
+	Since  time.Time `json:"since"` // when it first qualified
+}
+
+// queueKeep is how long a queued title waits at most.
+const queueKeep = 60 * 24 * time.Hour
 
 // Service runs the check.
 type Service struct {
@@ -129,6 +147,7 @@ func (s *Service) save() {
 // Status is what the admin shows.
 type Status struct {
 	Actions   []Action  `json:"actions"`
+	Queue     []Queued  `json:"queue"`
 	LastRun   time.Time `json:"lastRun"`
 	LastError string    `json:"lastError,omitempty"`
 }
@@ -138,7 +157,7 @@ func (s *Service) Snapshot() Status {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.load()
-	out := Status{LastRun: s.st.LastRun, LastError: s.st.LastError}
+	out := Status{LastRun: s.st.LastRun, LastError: s.st.LastError, Queue: append([]Queued{}, s.st.Queue...)}
 	for i := len(s.st.Actions) - 1; i >= 0 && len(out.Actions) < 50; i-- {
 		out.Actions = append(out.Actions, s.st.Actions[i])
 	}
@@ -223,15 +242,62 @@ func (s *Service) Check(ctx context.Context) {
 			budget--
 		}
 	}
-	for _, c := range cands {
+	s.enqueue(cands, now)
+	var keep []Queued
+	for _, q := range s.st.Queue {
 		if budget <= 0 {
-			return
+			keep = append(keep, q)
+			continue
 		}
-		if s.act(ctx, set, c, now) {
+		switch s.act(ctx, set, candidate{kind: q.Kind, tvdb: q.TVDB, tmdb: q.TMDB, title: q.Title, season: q.Season, reason: q.Reason}, now) {
+		case moved:
 			budget--
+		case retry:
+			keep = append(keep, q)
 		}
 	}
+	s.st.Queue = keep
 }
+
+// enqueue adds new candidates to the queue (oldest first) and refreshes the
+// ones already in it; titles waiting longer than queueKeep are dropped.
+func (s *Service) enqueue(cands []candidate, now time.Time) {
+	idx := map[string]int{}
+	var q []Queued
+	for _, x := range s.st.Queue {
+		if now.Sub(x.Since) > queueKeep {
+			continue
+		}
+		idx[qkey(x.Kind, x.TVDB, x.TMDB)] = len(q)
+		q = append(q, x)
+	}
+	// candidates come newest first; add the oldest first so the queue keeps
+	// its order by when each qualified.
+	for i := len(cands) - 1; i >= 0; i-- {
+		c := cands[i]
+		k := qkey(c.kind, c.tvdb, c.tmdb)
+		if j, ok := idx[k]; ok {
+			q[j].Reason, q[j].Title = c.reason, c.title
+			if c.season > 0 {
+				q[j].Season = c.season
+			}
+			continue
+		}
+		idx[k] = len(q)
+		q = append(q, Queued{Kind: c.kind, TVDB: c.tvdb, TMDB: c.tmdb, Title: c.title, Season: c.season, Reason: c.reason, Since: now})
+	}
+	s.st.Queue = q
+}
+
+func qkey(kind string, tvdb, tmdb int64) string { return fmt.Sprintf("%s:%d:%d", kind, tvdb, tmdb) }
+
+type outcome int
+
+const (
+	moved   outcome = iota // switched to the upgrade profile
+	settled                // nothing to do: already on it, or no arr has it
+	retry                  // could not finish now; try again later
+)
 
 // candidates reads the plays and picks what qualifies, most recent first.
 func (s *Service) candidates(ctx context.Context, h History, now time.Time) ([]candidate, error) {
@@ -324,23 +390,23 @@ func names(m map[string]string) string {
 	return strings.Join(n, ", ")
 }
 
-// act moves one candidate to the upgrade profile and starts its searches; it
-// reports whether it switched something.
-func (s *Service) act(ctx context.Context, set config.Settings, c candidate, now time.Time) bool {
+// act moves one candidate to the upgrade profile and starts its searches.
+func (s *Service) act(ctx context.Context, set config.Settings, c candidate, now time.Time) outcome {
 	kind, profile := "sonarr", set.Attention.TVProfile
 	if c.kind == "movie" {
 		kind, profile = "radarr", set.Attention.MovieProfile
 	}
 	if strings.TrimSpace(profile) == "" {
-		return false
+		return settled // that kind is switched off
 	}
+	reachable := false
 	for _, cat := range set.Categories {
 		if cat.Kind != kind || cat.ArrURL == "" {
 			continue
 		}
 		key := fmt.Sprintf("%s:%s:%d:%d", kind, cat.Name, c.tvdb, c.tmdb)
 		if t, ok := s.st.Seen[key]; ok && now.Sub(t) < 7*24*time.Hour {
-			return false
+			return settled
 		}
 		a := s.arrFor(cat)
 		var it arr.Item
@@ -351,20 +417,24 @@ func (s *Service) act(ctx context.Context, set config.Settings, c candidate, now
 		} else {
 			it, found, err = a.SeriesByTVDB(ctx, c.tvdb)
 		}
-		if err != nil || !found {
+		if err != nil {
+			continue
+		}
+		reachable = true
+		if !found {
 			continue
 		}
 		p, err := a.ProfileByName(ctx, profile)
 		if err != nil {
 			s.st.LastError = err.Error()
-			return false
+			return retry
 		}
 		if it.ProfileID == p.ID {
 			if s.st.Seen == nil {
 				s.st.Seen = map[string]time.Time{}
 			}
 			s.st.Seen[key] = now
-			return false
+			return settled
 		}
 		act := Action{Kind: c.kind, Category: cat.Name, ArrID: it.ID, Title: it.Title, Reason: c.reason, At: now, Profile: p.Name, Previous: it.ProfileID}
 		if act.Title == "" {
@@ -374,7 +444,7 @@ func (s *Service) act(ctx context.Context, set config.Settings, c candidate, now
 			act.Error = "moving it to " + p.Name + ": " + err.Error()
 			s.st.Actions = append(s.st.Actions, act)
 			s.Log.Printf("attention: %s: %s", act.Title, act.Error)
-			return false
+			return retry
 		}
 		if c.kind == "movie" {
 			if err := a.SearchMovie(ctx, it.ID); err != nil {
@@ -391,9 +461,12 @@ func (s *Service) act(ctx context.Context, set config.Settings, c candidate, now
 		}
 		s.st.Actions = append(s.st.Actions, act)
 		s.Log.Printf("attention: moved %s to %s (%s)", act.Title, p.Name, c.reason)
-		return true
+		return moved
 	}
-	return false
+	if !reachable {
+		return retry // no arr answered: keep it for the next check
+	}
+	return settled // no arr has it
 }
 
 // searchSeasons is the season being watched and the next one, as far as the
