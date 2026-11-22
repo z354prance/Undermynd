@@ -527,7 +527,7 @@
       (st.actions||[]).forEach(function(x){var r=el('div','hv-item');r.appendChild(hvPill(x.kind==='movie'?'Movie':'Show',x.kind==='movie'?'var(--movie)':'var(--tv)',true));
         var t=el('div','hv-it');t.appendChild(el('b','',x.title));
         var sub=x.reason+(x.added?' · added to Radarr ('+x.added+') on ':' · moved to ')+x.profile;if(x.seasons&&x.seasons.length)sub+=' · searched season'+(x.seasons.length>1?'s ':' ')+x.seasons.join(', ');if(x.handoff)sub+=' · every season searched';else if(x.kind==='show'&&x.seasons&&x.seasons.length)sub+=' · next season when Sonarr finishes these';
-        t.appendChild(el('span','',sub));if(x.reverted)t.appendChild(el('span','hv-warn-t','Moved back: '+(x.note||'undone')));if(x.error)t.appendChild(el('span','hv-bad',x.error));r.appendChild(t);r.appendChild(el('span','hv-note',ago(x.at)+' ago'));
+        t.appendChild(el('span','',sub));if(x.progress&&!x.reverted)t.appendChild(upBar(x));if(x.reverted)t.appendChild(el('span','hv-warn-t','Moved back: '+(x.note||'undone')));if(x.error)t.appendChild(el('span','hv-bad',x.error));r.appendChild(t);r.appendChild(el('span','hv-note',ago(x.at)+' ago'));
         if(!x.reverted&&x.previous&&!x.error){r.appendChild(hvBtn('Undo','back',function(b){if(!confirm('Move '+x.title+' back to its old profile and never move it again? Downloads already started keep going.'))return;b.disabled=true;api('POST','/attention/undo',{kind:x.kind,category:x.category,arrId:x.arrId}).then(function(){upgradesView(body)}).catch(function(e){b.disabled=false;alertMsg(e.message)})}))}
         l.appendChild(r)});
       box.appendChild(l);
@@ -535,11 +535,19 @@
         dd.forEach(function(x){var r=el('div','hv-item');r.appendChild(hvPill('Movie','var(--movie)',true));var t=el('div','hv-it');t.appendChild(el('b','',x.title+(x.year?' ('+x.year+')':'')));t.appendChild(el('span','',x.reason));t.appendChild(el('span','hv-warn-t',x.why));r.appendChild(t);
           var bs=el('div','hv-acts');[['Add to Radarr',true],['Dismiss',false]].forEach(function(o){bs.appendChild(hvBtn(o[0],o[1]?'plus':'x',function(b){b.disabled=true;api('POST','/attention/decide',{tmdb:x.tmdb,add:o[1]}).then(function(){upgradesView(body)}).catch(function(e){b.disabled=false;alertMsg(e.message)})},o[1]))});r.appendChild(bs);dl.appendChild(r)});
         db.appendChild(dl);body.appendChild(db)}
-      var q=st.queue||[];if(q.length){var qb=hvBox('Waiting for their turn');qb.appendChild(el('p','hv-note','Over the daily limit: done oldest first on the next days, even after the watching is older than the window that counted it.'));var ql=el('div','hv-list');
+      var q=st.queue||[];if(q.length){var qb=hvBox('Waiting for their turn');qb.appendChild(el('p','hv-note','Shows start one at a time, after the show in progress has had every season searched; movies over the daily limit go on the next days. Oldest first, even after the watching is older than the window that counted it.'));var ql=el('div','hv-list');
         q.forEach(function(x,i){var r=el('div','hv-item slim');r.appendChild(hvPill(String(i+1),'var(--dim)'));var t=el('div','hv-it');t.appendChild(el('b','',x.title));t.appendChild(el('span','',(x.kind==='movie'?'Movie':'Show')+' · '+x.reason));r.appendChild(t);r.appendChild(el('span','hv-note','waiting '+ago(x.since)));ql.appendChild(r)});
         qb.appendChild(ql);body.appendChild(qb)}
       body.appendChild(box);
     }).catch(fail)}
+  // Upgrade progress: one segment per season, filled to the share of its
+  // episodes already at the upgrade quality (Sonarr's own cutoff check).
+  function upBar(x){var p=x.progress,w=el('div','up-w');
+    if(!p.total){w.appendChild(el('span','hv-note',x.kind==='movie'?'no file yet':'no episode files yet'));return w}
+    var pct=Math.floor(100*p.done/p.total);
+    if(x.kind==='show'&&(p.seasons||[]).length){var b=el('div','up-ss');b.setAttribute('role','img');b.setAttribute('aria-label',pct+'% upgraded');
+      p.seasons.forEach(function(sd){var g=el('span','up-seg'+(sd.done===sd.total?' full':''));g.style.flexGrow=String(Math.max(1,Math.sqrt(sd.total)));var f=el('i');f.style.width=(100*sd.done/sd.total).toFixed(1)+'%';g.appendChild(f);g.appendChild(el('b','','S'+sd.season));g.title='Season '+sd.season+': '+sd.done+' of '+sd.total+' upgraded';b.appendChild(g)});w.appendChild(b)}
+    w.appendChild(el('span','up-pct'+(pct===100?' full':''),x.kind==='movie'?(p.done?'upgraded':'waiting for a better copy'):pct+'% upgraded · '+p.done+' of '+p.total+' episodes'));return w}
   function alertMsg(t){var d=el('div','err',t);root.appendChild(d);setTimeout(function(){d.remove()},6000)}
   // Overview (pinned v2 admin): health pills, Needs you, Pipeline now, Just finished, Who runs what.
   var STAGE6=[['found','Found','var(--st-found)'],['download','Download','var(--st-down)'],['transfer','Transfer','var(--st-transfer)'],['convert','Convert','var(--st-convert)'],['ready','Ready','var(--st-ready)']];

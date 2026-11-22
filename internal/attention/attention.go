@@ -58,6 +58,8 @@ type Arr interface {
 	SearchMovie(ctx context.Context, movieID int64) error
 	QueuedFor(ctx context.Context, seriesID int64) (int, error)
 	SeriesByID(ctx context.Context, id int64) (arr.Item, error)
+	EpisodeFiles(ctx context.Context, seriesID int64) ([]arr.FileQuality, error)
+	MovieUpgraded(ctx context.Context, movieID int64) (hasFile, met bool, err error)
 	LookupMovie(ctx context.Context, tmdb int64) (arr.MovieLookup, error)
 	RootFolders(ctx context.Context) ([]arr.Folder, error)
 	AddMovie(ctx context.Context, m arr.MovieLookup, profileID int64, path, root string, search bool) (arr.Item, error)
@@ -80,6 +82,8 @@ type Action struct {
 	At       time.Time  `json:"at"`
 	Seasons  []int      `json:"seasons,omitempty"` // seasons searched first
 	Handoff  *time.Time `json:"handoff,omitempty"` // every season has been searched
+	// Progress is how much of it is at the upgrade quality, from the arr.
+	Progress *Progress `json:"progress,omitempty"`
 	// LastSearch is when the latest season search was sent.
 	LastSearch *time.Time `json:"lastSearch,omitempty"`
 	Error      string     `json:"error,omitempty"`    // last problem with it
@@ -90,6 +94,22 @@ type Action struct {
 	Reverted   *time.Time `json:"reverted,omitempty"` // moved back to its old profile
 	Note       string     `json:"note,omitempty"`     // why it was moved back
 	Checked    bool       `json:"checked,omitempty"`  // looked at for anime once
+}
+
+// Progress is how far a moved title has been upgraded: the files that meet
+// the cutoff of the upgrade profile, out of the files it has.
+type Progress struct {
+	Done    int          `json:"done"`
+	Total   int          `json:"total"`
+	Seasons []SeasonDone `json:"seasons,omitempty"`
+	At      time.Time    `json:"at"`
+}
+
+// SeasonDone is one season's share of Progress.
+type SeasonDone struct {
+	Season int `json:"season"`
+	Done   int `json:"done"`
+	Total  int `json:"total"`
 }
 
 // Pending is a much-watched movie Radarr does not have, waiting for the
@@ -266,6 +286,7 @@ func (s *Service) Check(ctx context.Context) {
 
 	ac := s.animeCheck(ctx, set)
 	s.handoffs(ctx, set, now)
+	s.progress(ctx, set, now)
 
 	if set.Playback.TracearrURL == "" || set.Playback.TracearrKey == "" {
 		s.st.LastError = "Tracearr is not set up (Settings › Media server)"
@@ -1143,4 +1164,64 @@ func (s *Service) needsMove(ctx context.Context, set config.Settings, q Queued, 
 		return true
 	}
 	return false // Sonarr does not have the show
+}
+
+// progress reads, for each title moved in the last 60 days and not moved
+// back, how many of its files meet the upgrade profile's cutoff. A title
+// already fully upgraded is not read again.
+func (s *Service) progress(ctx context.Context, set config.Settings, now time.Time) {
+	for i := range s.st.Actions {
+		a := &s.st.Actions[i]
+		if a.Reverted != nil || a.ArrID == 0 || now.Sub(a.At) > 60*24*time.Hour {
+			continue
+		}
+		if p := a.Progress; p != nil && p.Total > 0 && p.Done == p.Total && a.Handoff != nil {
+			continue
+		}
+		cat, ok := set.Category(a.Category)
+		if !ok || cat.ArrURL == "" {
+			continue
+		}
+		ar := s.arrFor(cat)
+		p := &Progress{At: now}
+		if a.Kind == "movie" {
+			has, met, err := ar.MovieUpgraded(ctx, a.ArrID)
+			if err != nil {
+				continue
+			}
+			if has {
+				p.Total = 1
+				if met {
+					p.Done = 1
+				}
+			}
+		} else {
+			files, err := ar.EpisodeFiles(ctx, a.ArrID)
+			if err != nil {
+				continue
+			}
+			by := map[int]*SeasonDone{}
+			for _, f := range files {
+				if f.Season < 1 {
+					continue // specials
+				}
+				sd := by[f.Season]
+				if sd == nil {
+					sd = &SeasonDone{Season: f.Season}
+					by[f.Season] = sd
+				}
+				sd.Total++
+				p.Total++
+				if f.CutoffMet {
+					sd.Done++
+					p.Done++
+				}
+			}
+			for _, sd := range by {
+				p.Seasons = append(p.Seasons, *sd)
+			}
+			sort.Slice(p.Seasons, func(i, j int) bool { return p.Seasons[i].Season < p.Seasons[j].Season })
+		}
+		a.Progress = p
+	}
 }

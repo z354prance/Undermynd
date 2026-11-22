@@ -226,3 +226,42 @@ func (c *Client) SeriesByID(ctx context.Context, id int64) (Item, error) {
 	var out Item
 	return out, c.get(ctx, fmt.Sprintf("/series/%d", id), &out)
 }
+
+// FileQuality is whether one file meets the cutoff of its profile.
+type FileQuality struct {
+	Season    int  `json:"seasonNumber"`
+	CutoffMet bool `json:"-"`
+	NotMet    bool `json:"qualityCutoffNotMet"`
+}
+
+// EpisodeFiles lists a series' episode files with whether each meets the
+// cutoff of the series' profile (on an upgrade profile: whether it has been
+// upgraded). A file holding several episodes counts once.
+func (c *Client) EpisodeFiles(ctx context.Context, seriesID int64) ([]FileQuality, error) {
+	var out []FileQuality
+	if err := c.get(ctx, fmt.Sprintf("/episodefile?seriesId=%d", seriesID), &out); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].CutoffMet = !out[i].NotMet
+	}
+	return out, nil
+}
+
+// MovieUpgraded says whether a Radarr movie's file meets the cutoff of its
+// profile (has a file: whether there is one at all).
+func (c *Client) MovieUpgraded(ctx context.Context, movieID int64) (hasFile, met bool, err error) {
+	var m struct {
+		HasFile   bool `json:"hasFile"`
+		MovieFile *struct {
+			NotMet bool `json:"qualityCutoffNotMet"`
+		} `json:"movieFile"`
+	}
+	if err := c.get(ctx, fmt.Sprintf("/movie/%d", movieID), &m); err != nil {
+		return false, false, err
+	}
+	if !m.HasFile || m.MovieFile == nil {
+		return false, false, nil
+	}
+	return true, !m.MovieFile.NotMet, nil
+}
