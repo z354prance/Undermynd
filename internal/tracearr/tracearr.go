@@ -318,3 +318,65 @@ func groupShows(items []Item) []Item {
 }
 
 var _ = strconv.Itoa
+
+// Play is one play in Tracearr's watch history (a resumed play is one record).
+type Play struct {
+	MediaType   string     `json:"media_type"`
+	Title       string     `json:"media_title"`
+	ShowTitle   string     `json:"show_title"`
+	Season      int        `json:"season_number"`
+	Episode     int        `json:"episode_number"`
+	Year        int        `json:"year"`
+	TMDB        int64      `json:"tmdb_id"`
+	TVDB        int64      `json:"tvdb_id"`
+	ShowMediaID string     `json:"show_media_id"`
+	Watched     bool       `json:"watched"`
+	Percent     float64    `json:"percent_complete"`
+	StartedAt   *time.Time `json:"started_at"`
+	User        struct {
+		ID       string `json:"id"`
+		Username string `json:"username"`
+	} `json:"user"`
+}
+
+// History lists the plays of one media type (movie, episode) started since a
+// time, newest first, following Tracearr's cursor pages (at most 50 pages of 100).
+func (c *Client) History(ctx context.Context, mediaType string, since time.Time) ([]Play, error) {
+	var out []Play
+	cursor := ""
+	for page := 0; page < 50; page++ {
+		q := url.Values{"pageSize": {"100"}, "media_type": {mediaType}, "since": {since.UTC().Format(time.RFC3339)}}
+		if cursor != "" {
+			q.Set("cursor", cursor)
+		}
+		var r struct {
+			Data []Play `json:"data"`
+			Meta struct {
+				NextCursor *string `json:"nextCursor"`
+			} `json:"meta"`
+		}
+		if err := c.get(ctx, "history?"+q.Encode(), &r); err != nil {
+			return out, err
+		}
+		out = append(out, r.Data...)
+		if r.Meta.NextCursor == nil || *r.Meta.NextCursor == "" || len(r.Data) == 0 {
+			break
+		}
+		cursor = *r.Meta.NextCursor
+	}
+	return out, nil
+}
+
+// ShowIDs looks up a show's own ids from its Tracearr media id (an episode's
+// play carries the episode's ids; its show_media_id leads to the show's).
+func (c *Client) ShowIDs(ctx context.Context, showMediaID string) (tvdb, tmdb int64, title string, err error) {
+	var r struct {
+		Title string `json:"title"`
+		TVDB  int64  `json:"tvdb_id"`
+		TMDB  int64  `json:"tmdb_id"`
+	}
+	if err := c.get(ctx, "media/"+url.PathEscape(showMediaID), &r); err != nil {
+		return 0, 0, "", err
+	}
+	return r.TVDB, r.TMDB, r.Title, nil
+}

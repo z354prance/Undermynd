@@ -147,6 +147,17 @@ type Playback struct {
 	PathTo   string `json:"pathTo,omitempty"`
 }
 
+// Attention moves what people watch a lot to an upgrade profile in the arr and
+// starts the upgrade search: a movie two or more people watched in 30 days, a
+// show someone watched three or more episodes of in 14 days (from Tracearr's
+// history). Off until switched on with the profiles to use.
+type Attention struct {
+	On           bool   `json:"on"`
+	TVProfile    string `json:"tvProfile"`    // Sonarr profile name
+	MovieProfile string `json:"movieProfile"` // Radarr profile name
+	PerDay       int    `json:"perDay"`       // most switches in 24 hours
+}
+
 // Donations are the links behind the public Donate button; blank links hide it.
 type Donations struct {
 	Title       string `json:"title"`
@@ -220,6 +231,7 @@ type Settings struct {
 	Categories   []Category `json:"categories"`
 	QBit         QBit       `json:"qbit"`
 	Metadata     Metadata   `json:"metadata"`
+	Attention    Attention  `json:"attention"`
 
 	// Login the arrs use against the fake client API.
 	ClientUser     string        `json:"clientUser"`
