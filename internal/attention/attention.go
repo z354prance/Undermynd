@@ -56,6 +56,7 @@ type Arr interface {
 	SearchSeries(ctx context.Context, seriesID int64) error
 	SearchMovie(ctx context.Context, movieID int64) error
 	QueuedFor(ctx context.Context, seriesID int64) (int, error)
+	SeriesByID(ctx context.Context, id int64) (arr.Item, error)
 	LookupMovie(ctx context.Context, tmdb int64) (arr.MovieLookup, error)
 	RootFolders(ctx context.Context) ([]arr.Folder, error)
 	AddMovie(ctx context.Context, m arr.MovieLookup, profileID int64, path, root string, search bool) (arr.Item, error)
@@ -76,6 +77,9 @@ type Action struct {
 	Previous int64      `json:"previous,omitempty"` // profile id before the move
 	Added    string     `json:"added,omitempty"`    // added to Radarr: the folder it was tied to
 	Manual   bool       `json:"manual,omitempty"`   // done by the admin; not counted in the daily limits
+	Reverted *time.Time `json:"reverted,omitempty"` // moved back to its old profile
+	Note     string     `json:"note,omitempty"`     // why it was moved back
+	Checked  bool       `json:"checked,omitempty"`  // looked at for anime once
 }
 
 // Pending is a much-watched movie Radarr does not have, waiting for the
@@ -102,8 +106,11 @@ type saved struct {
 	Decide []Pending `json:"decide,omitempty"`
 	// Dismissed movies (TMDB id) are not offered again.
 	Dismissed map[int64]time.Time `json:"dismissed,omitempty"`
-	LastRun   time.Time           `json:"lastRun"`
-	LastError string              `json:"lastError,omitempty"`
+	// Skip holds titles moved back (undone, or anime): never moved again
+	// ("show:tv:5").
+	Skip      map[string]bool `json:"skip,omitempty"`
+	LastRun   time.Time       `json:"lastRun"`
+	LastError string          `json:"lastError,omitempty"`
 }
 
 // Queued is a title waiting for its turn.
@@ -224,7 +231,8 @@ type candidate struct {
 	tmdb   int64
 	title  string
 	year   int
-	season int // the season the watcher is on (shows)
+	anime  bool // a play of it was tagged Anime
+	season int  // the season the watcher is on (shows)
 	reason string
 	when   time.Time // the latest qualifying play
 }
@@ -245,6 +253,7 @@ func (s *Service) Check(ctx context.Context) {
 	s.st.LastRun, s.st.LastError = now, ""
 	defer s.save()
 
+	s.revertAnime(ctx, set, now)
 	s.handoffs(ctx, set, now)
 
 	if set.Playback.TracearrURL == "" || set.Playback.TracearrKey == "" {
@@ -266,7 +275,7 @@ func (s *Service) Check(ctx context.Context) {
 		}
 	}
 	for _, a := range s.st.Actions {
-		if now.Sub(a.At) < 24*time.Hour && a.Error == "" && !a.Manual {
+		if now.Sub(a.At) < 24*time.Hour && a.Error == "" && !a.Manual && a.Reverted == nil {
 			budget[a.Kind]--
 		}
 	}
@@ -371,6 +380,7 @@ func (s *Service) candidates(ctx context.Context, h History, now time.Time) ([]c
 		eps              map[[2]int]bool
 		season           int
 		when             time.Time
+		anime            bool
 	}
 	byWatch := map[[2]string]*watch{}
 	for _, p := range eps {
@@ -384,6 +394,9 @@ func (s *Service) candidates(ctx context.Context, h History, now time.Time) ([]c
 			byWatch[k] = w
 		}
 		w.eps[[2]int{p.Season, p.Episode}] = true
+		if hasAnime(p.Genres) {
+			w.anime = true
+		}
 		if p.StartedAt != nil && p.StartedAt.After(w.when) {
 			w.when, w.season = *p.StartedAt, p.Season
 		}
@@ -400,6 +413,9 @@ func (s *Service) candidates(ctx context.Context, h History, now time.Time) ([]c
 		}
 		if title == "" {
 			title = w.show
+		}
+		if w.anime {
+			continue
 		}
 		out = append(out, candidate{kind: "show", tvdb: tvdb, title: title, season: w.season, when: w.when,
 			reason: fmt.Sprintf("%s watched %d episodes in %d days", w.name, len(w.eps), showDays)})
@@ -452,6 +468,12 @@ func (s *Service) act(ctx context.Context, set config.Settings, c candidate, now
 		reachable = true
 		if !found {
 			continue
+		}
+		if s.st.Skip[skipKey(c.kind, cat.Name, it.ID)] {
+			return settled
+		}
+		if c.kind == "show" && isAnime(it, set) {
+			return settled // anime is left alone
 		}
 		p, err := a.ProfileByName(ctx, profile)
 		if err != nil {
@@ -525,7 +547,7 @@ func searchSeasons(it arr.Item, cur int) []int {
 func (s *Service) handoffs(ctx context.Context, set config.Settings, now time.Time) {
 	for i := range s.st.Actions {
 		a := &s.st.Actions[i]
-		if a.Kind != "show" || a.Handoff != nil || len(a.Seasons) == 0 || now.Sub(a.At) < handoffAfter {
+		if a.Kind != "show" || a.Handoff != nil || a.Reverted != nil || len(a.Seasons) == 0 || now.Sub(a.At) < handoffAfter {
 			continue
 		}
 		cat, ok := set.Category(a.Category)
@@ -736,4 +758,101 @@ func (s *Service) Decide(ctx context.Context, tmdb int64, add bool) error {
 	s.st.Actions = append(s.st.Actions, Action{Kind: "movie", Category: cat.Name, ArrID: it.ID, Title: m.Title, Reason: p.Reason + " · added by you", At: s.now(), Profile: pr.Name, Added: where, Manual: true})
 	drop()
 	return nil
+}
+
+func skipKey(kind, cat string, id int64) string { return fmt.Sprintf("%s:%s:%d", kind, cat, id) }
+
+func hasAnime(genres []string) bool {
+	for _, g := range genres {
+		if strings.EqualFold(strings.TrimSpace(g), "anime") {
+			return true
+		}
+	}
+	return false
+}
+
+// isAnime says whether a Sonarr series is anime: Sonarr's series type, its
+// genres, or a folder inside one of HyveMynd's own anime libraries.
+func isAnime(it arr.Item, set config.Settings) bool {
+	if strings.EqualFold(it.SeriesType, "anime") || hasAnime(it.Genres) {
+		return true
+	}
+	if it.Path == "" {
+		return false
+	}
+	p := strings.ToLower(strings.TrimRight(it.Path, "/")) + "/"
+	for _, c := range set.Categories {
+		if d := c.OwnLibrary(); d != "" && strings.HasPrefix(p, strings.ToLower(strings.TrimRight(d, "/"))+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// revertAnime looks once at each show already moved and puts anime back on
+// the profile it had.
+func (s *Service) revertAnime(ctx context.Context, set config.Settings, now time.Time) {
+	for i := range s.st.Actions {
+		a := &s.st.Actions[i]
+		if a.Kind != "show" || a.Checked || a.Reverted != nil || a.Error != "" {
+			continue
+		}
+		cat, ok := set.Category(a.Category)
+		if !ok || cat.ArrURL == "" {
+			continue
+		}
+		ar := s.arrFor(cat)
+		it, err := ar.SeriesByID(ctx, a.ArrID)
+		if err != nil {
+			continue
+		}
+		a.Checked = true
+		if !isAnime(it, set) {
+			continue
+		}
+		if err := s.moveBack(ctx, ar, a, now, "anime: moved back to its old profile"); err != nil {
+			a.Error = "moving the anime back: " + err.Error()
+		}
+	}
+}
+
+// moveBack puts a moved title back on its old profile and keeps it from
+// being moved again. Searches already started cannot be taken back.
+func (s *Service) moveBack(ctx context.Context, ar Arr, a *Action, now time.Time, note string) error {
+	if a.Previous == 0 {
+		return fmt.Errorf("its old profile is not known")
+	}
+	if err := ar.SetProfile(ctx, a.ArrID, a.Previous); err != nil {
+		return err
+	}
+	t := now
+	a.Reverted, a.Note = &t, note
+	if s.st.Skip == nil {
+		s.st.Skip = map[string]bool{}
+	}
+	s.st.Skip[skipKey(a.Kind, a.Category, a.ArrID)] = true
+	s.Log.Printf("attention: %s: %s", a.Title, note)
+	return nil
+}
+
+// Undo moves a title back to the profile it had before HyveMynd moved it,
+// and never moves it again.
+func (s *Service) Undo(ctx context.Context, kind, category string, arrID int64) error {
+	set := s.Cfg.Get()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.load()
+	defer s.save()
+	for i := len(s.st.Actions) - 1; i >= 0; i-- {
+		a := &s.st.Actions[i]
+		if a.Kind != kind || a.Category != category || a.ArrID != arrID || a.Reverted != nil {
+			continue
+		}
+		cat, ok := set.Category(category)
+		if !ok {
+			return fmt.Errorf("category %s is gone", category)
+		}
+		return s.moveBack(ctx, s.arrFor(cat), a, s.now(), "undone by you")
+	}
+	return fmt.Errorf("nothing to undo for that title")
 }

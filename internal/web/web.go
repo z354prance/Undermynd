@@ -98,6 +98,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /admin/api/attention", s.admin(s.adminAttentionSave))
 	mux.HandleFunc("POST /admin/api/attention/run", s.admin(s.adminAttentionRun))
 	mux.HandleFunc("POST /admin/api/attention/decide", s.admin(s.adminAttentionDecide))
+	mux.HandleFunc("POST /admin/api/attention/undo", s.admin(s.adminAttentionUndo))
 	mux.HandleFunc("GET /admin/api/missing/art", s.admin(s.adminMissingArt))
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, map[string]string{"status": "ok"}) })
 	mux.Handle("GET /assets/", files)
