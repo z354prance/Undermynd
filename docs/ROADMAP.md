@@ -1,4 +1,4 @@
-# Roadmap: folding the arr stack into Undermynd (v46, Nov 18, 2026)
+# Roadmap: folding the arr stack into Undermynd (v47, Nov 21, 2026)
 
 Goal: one app that does what Radarr, Sonarr, Lidarr, Prowlarr, Seerr, Houndarr and Recyclarr do today, so nothing else has to run or be configured. It will be renamed HyveMynd at the end.
 
@@ -18,6 +18,7 @@ The user decided to keep HyveMynd beside the arr stack instead of replacing it: 
   - **Placed files are named after their show folder**, in the way that folder already names its files: SxxEyy or a bare number, the same zero padding, the resolution in parentheses or a [Group Res] tag when the folder's files have one. A new folder follows the release's own form, Rename.ps1 style. A category's "keep release names" switch turns this off.
   - **Naming page** (Anime › Naming, and "Tidy names" on each show): lists folders whose older files do not fit, with a preview of every rename (subtitles follow their video; nothing is overwritten), files with no episode number to replace through a nyaa search, and episodes kept twice.
 - **Missing page (v46, Nov 18):** Library › TV became Library › Missing: what each arr reports as wanted and not on disk, one section per arr category (Sonarr, Radarr, Lidarr colours), as a grid of posters taken from the arr (series and movie posters, album covers, falling back to the artist's picture) through the image proxy. Sonarr items are grouped per series with the missing episode count and codes; each poster opens the item in its arr. A filter box searches all sections.
+- **Upgrade what people watch (v47, Nov 21):** Library › Upgrades. From Tracearr's watch history, hourly: a movie two or more people watched (finished or past halfway) in 30 days, or a show someone watched three or more episodes of in 14 days, is moved to the chosen upgrade profile in Radarr or Sonarr (through the arr's bulk editor) and searched: a movie at once; a show's current and next season first, then, once Sonarr's queue has nothing left for the series, a whole-series search so Sonarr finishes the rest. Titles already on the profile are left alone; at most 3 switches a day by default. Off until switched on with the profiles. This is the one place HyveMynd changes something in an arr.
 - **To revisit:** check out `archive/arr-takeover`; the rest of this document describes that work as it was.
 
 ---
@@ -239,6 +240,7 @@ The earlier plan below listed screens each UI milestone needed; parts 1 to 5 cov
 
 ## 11. Change log
 
+- v47: Upgrade what people watch (Library › Upgrades).
 - v46: Library › Missing: per-arr poster grid of what the arrs report missing, artwork from the arr.
 - v45: anime follow, nyaa search and gap filling back; placed files named after their folder; Naming page.
 - v44: design part 5 for the rolled-back admin: new menu, restyled pages, sign-in card, phone layout. No Anime tab in Request media.

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/z354prance/undermynd/internal/attention"
 	"io"
 	"log"
 	"net/http"
@@ -187,6 +188,8 @@ func main() {
 	site.Storage.Persist(filepath.Join(env.ConfigDir, "storage-scan.json"))
 	go site.Storage.Run(ctx, func() time.Duration { return time.Duration(cfg.Get().StorageScanMinutes) * time.Minute })
 	go pt.Run(ctx)
+	site.Attention = &attention.Service{Cfg: cfg, Log: logger, State: blobs}
+	go site.Attention.Run(ctx)
 	if dbh != nil {
 		if n, err := metadata.Renormalize(dbh); err != nil {
 			logger.Printf("metadata: renormalising titles: %v", err)

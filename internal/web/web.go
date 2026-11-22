@@ -7,6 +7,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"github.com/z354prance/undermynd/internal/attention"
 	"github.com/z354prance/undermynd/internal/tdarr"
 	"io/fs"
 	"log"
@@ -60,7 +61,9 @@ type Server struct {
 	// Shows follows show folders of the simple importer (the Anime page); nil
 	// without the database.
 	Shows *shows.Service
-	RSS   interface {
+	// Attention moves much-watched titles to an upgrade profile.
+	Attention *attention.Service
+	RSS       interface {
 		Status() []rss.FeedStatus
 		Download(ctx context.Context, feed string, index int, title, category string) (string, error)
 		CheckNow(context.Context)
@@ -91,6 +94,9 @@ func (s *Server) Handler() http.Handler {
 	s.dashboardRoutes(mux, files)
 	mux.HandleFunc("GET /admin/api/library", s.admin(s.adminLibrary))
 	mux.HandleFunc("GET /admin/api/missing", s.admin(s.adminMissing))
+	mux.HandleFunc("GET /admin/api/attention", s.admin(s.adminAttention))
+	mux.HandleFunc("PUT /admin/api/attention", s.admin(s.adminAttentionSave))
+	mux.HandleFunc("POST /admin/api/attention/run", s.admin(s.adminAttentionRun))
 	mux.HandleFunc("GET /admin/api/missing/art", s.admin(s.adminMissingArt))
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, map[string]string{"status": "ok"}) })
 	mux.Handle("GET /assets/", files)

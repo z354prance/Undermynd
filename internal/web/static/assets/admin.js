@@ -64,7 +64,7 @@
       {id:'overview',label:'Overview',icon:'s_over',pages:[['overview','Overview']]},
       {id:'downloads',label:'Downloads',icon:'s_dl',pages:[['jobs','On the way'],['rss','Feeds'],['reencode','Re-encode']]},
       {id:'requests',label:'Requests',icon:'s_req',pages:[['requests','Media'],['access','Accounts']]},
-      {id:'library',label:'Library',icon:'s_lib',pages:[['missing','Missing'],['anime','Anime']]},
+      {id:'library',label:'Library',icon:'s_lib',pages:[['missing','Missing'],['anime','Anime'],['upgrades','Upgrades']]},
       {id:'settings',label:'Settings',icon:'s_sys',pages:[['arrs','Arrs'],['clients','Download clients'],['transcode','Tdarr'],['public','Public page'],['playback','Media server'],['system','Server'],['log','Log']]}];
     function first(p){return p[2]?p[2][0][0]:p[0]}
     var cur=null,curPage=null;NAV.forEach(function(sec){sec.pages.forEach(function(p){if(p[0]===tab||(p[2]&&p[2].some(function(q){return q[0]===tab}))){cur=sec;curPage=p}})});
@@ -86,7 +86,7 @@
     if(curPage[2]){var tb=el('div','hv-tabs');tb.setAttribute('role','tablist');curPage[2].forEach(function(q){var b=el('button',q[0]===tab?'on':'',q[1]);b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-selected',q[0]===tab?'true':'false');b.onclick=function(){go(q[0])};tabBtns[q[0]]=b;tb.appendChild(b)});mainCol.appendChild(tb)}
     var bodyWrap=el('div','hv-body');mainCol.appendChild(bodyWrap);
     var main=el('main','main'),body=el('div');main.appendChild(body);bodyWrap.appendChild(main);shell.appendChild(side);shell.appendChild(mainCol);root.appendChild(shell);
-    if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else if(tab==='requests')requestsView(body);else if(tab==='missing')missingView(body);else if(tab==='reencode')reencodeView(body);else if(tab==='log')logView(body);else if(tab==='access')accessView(body);else if(tab==='anime')animeView(body);else settingsView(body);
+    if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else if(tab==='requests')requestsView(body);else if(tab==='missing')missingView(body);else if(tab==='upgrades')upgradesView(body);else if(tab==='reencode')reencodeView(body);else if(tab==='log')logView(body);else if(tab==='access')accessView(body);else if(tab==='anime')animeView(body);else settingsView(body);
   }
   function fail(e){if(e.status===401){start()}else{var d=el('div','err',e.message);root.appendChild(d)}}
   function ago(t){var s=Math.max(0,(Date.now()-new Date(t))/1000);if(s<90)return Math.round(s)+'s';if(s<5400)return Math.round(s/60)+'m';if(s<172800)return Math.round(s/3600)+'h';return Math.round(s/86400)+'d'}
@@ -500,6 +500,36 @@
         x.more.hidden=gs.length<=lim;x.more.textContent='Show all '+gs.length;x.more.onclick=function(){missAll[x.a.category]=true;draw()}})}
       q.oninput=function(){missQ=q.value;draw()};draw();
     }).catch(fail)}
+  // Upgrades: much-watched shows and movies are moved to an upgrade profile in
+  // Sonarr or Radarr and searched (watch history from Tracearr).
+  function upgradesView(body){
+    api('GET','/attention').then(function(d){body.replaceChildren();var a=d.settings||{};
+      body.appendChild(head('Upgrade what people watch','When a movie gets watched by two or more people in 30 days, or someone watches three or more episodes of a show in 14 days, HyveMynd moves it to the upgrade profile below in Radarr or Sonarr and starts the search. For a show it searches the season being watched and the next one, then hands the rest to Sonarr. Titles already on that profile are left alone.'));
+      if(!d.tracearr)body.appendChild(el('div','err','Tracearr is not set up, so there is no watch history to read. Add it under Settings › Media server.'));
+      var c=el('div','card');c.appendChild(el('h4','','Settings'));c.appendChild(help('Watch history comes from Tracearr and is checked every hour.'));
+      var on=row(c,'Switch and search automatically',{type:'checkbox',value:a.on});
+      function pick(label,list,val,hint){var w=el('div','fld');w.appendChild(el('label','',label));var sl=el('select');sl.appendChild(new Option('— not for '+hint+' —',''));(list||[]).forEach(function(n){sl.appendChild(new Option(n,n))});if(val&&(list||[]).indexOf(val)<0)sl.appendChild(new Option(val+' (not found)',val));sl.value=val||'';w.appendChild(sl);c.appendChild(w);return sl}
+      var tv=pick('Sonarr upgrade profile',d.profiles&&d.profiles.sonarr,a.tvProfile,'shows');
+      var mv=pick('Radarr upgrade profile',d.profiles&&d.profiles.radarr,a.movieProfile,'movies');
+      var pd=row(c,'Most switches a day',{type:'number',value:a.perDay||3,help:'Keeps a busy week from starting a flood of downloads.'});
+      body.appendChild(c);
+      saveBar(body,function(m){m.className='msg';m.textContent='saving…';
+        api('PUT','/attention',{on:on.checked,tvProfile:tv.value,movieProfile:mv.value,perDay:parseInt(pd.value,10)||3}).then(function(){m.className='msg ok';m.textContent='saved'}).catch(function(e){m.className='msg err';m.textContent=e.message})});
+      split(body);
+      var st=d.status||{actions:[]},box=hvBox('Moved to the upgrade profile');
+      var tools=el('div','hv-pagehead');tools.appendChild(el('span','hv-note',st.lastRun&&st.lastRun[0]!=='0'?'Last checked '+ago(st.lastRun)+' ago':'Not checked yet'));tools.appendChild(el('span','hv-sp'));
+      tools.appendChild(hvBtn('Check now','refresh',function(b){b.disabled=true;api('POST','/attention/run').then(function(){upgradesView(body)}).catch(function(e){b.disabled=false;alertMsg(e.message)})}));
+      box.appendChild(tools);
+      if(st.lastError)box.appendChild(el('div','err',st.lastError));
+      var l=el('div','hv-list');
+      if(!(st.actions||[]).length)l.appendChild(el('div','hv-empty','Nothing moved yet.'));
+      (st.actions||[]).forEach(function(x){var r=el('div','hv-item');r.appendChild(hvPill(x.kind==='movie'?'Movie':'Show',x.kind==='movie'?'var(--movie)':'var(--tv)',true));
+        var t=el('div','hv-it');t.appendChild(el('b','',x.title));
+        var sub=x.reason+' · moved to '+x.profile;if(x.seasons&&x.seasons.length)sub+=' · searched season '+x.seasons.join(' and ');if(x.handoff)sub+=' · rest handed to Sonarr';else if(x.kind==='show'&&x.seasons&&x.seasons.length)sub+=' · rest goes to Sonarr when those finish';
+        t.appendChild(el('span','',sub));if(x.error)t.appendChild(el('span','hv-bad',x.error));r.appendChild(t);r.appendChild(el('span','hv-note',ago(x.at)+' ago'));l.appendChild(r)});
+      box.appendChild(l);body.appendChild(box);
+    }).catch(fail)}
+  function alertMsg(t){var d=el('div','err',t);root.appendChild(d);setTimeout(function(){d.remove()},6000)}
   // Overview (pinned v2 admin): health pills, Needs you, Pipeline now, Just finished, Who runs what.
   var STAGE6=[['found','Found','var(--st-found)'],['download','Download','var(--st-down)'],['transfer','Transfer','var(--st-transfer)'],['convert','Convert','var(--st-convert)'],['ready','Ready','var(--st-ready)']];
   function hvHealth(label,value,tone){var p=el('div','hv-health '+(tone||'ok'));p.appendChild(el('i'));p.appendChild(el('span','',label));if(value)p.appendChild(el('b','',value));return p}
