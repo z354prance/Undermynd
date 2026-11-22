@@ -78,16 +78,18 @@ type Action struct {
 	Title    string     `json:"title"`
 	Reason   string     `json:"reason"`
 	At       time.Time  `json:"at"`
-	Seasons  []int      `json:"seasons,omitempty"`  // seasons searched first
-	Handoff  *time.Time `json:"handoff,omitempty"`  // whole-series search sent
-	Error    string     `json:"error,omitempty"`    // last problem with it
-	Profile  string     `json:"profile"`            // the profile it was moved to
-	Previous int64      `json:"previous,omitempty"` // profile id before the move
-	Added    string     `json:"added,omitempty"`    // added to Radarr: the folder it was tied to
-	Manual   bool       `json:"manual,omitempty"`   // done by the admin; not counted in the daily limits
-	Reverted *time.Time `json:"reverted,omitempty"` // moved back to its old profile
-	Note     string     `json:"note,omitempty"`     // why it was moved back
-	Checked  bool       `json:"checked,omitempty"`  // looked at for anime once
+	Seasons  []int      `json:"seasons,omitempty"` // seasons searched first
+	Handoff  *time.Time `json:"handoff,omitempty"` // every season has been searched
+	// LastSearch is when the latest season search was sent.
+	LastSearch *time.Time `json:"lastSearch,omitempty"`
+	Error      string     `json:"error,omitempty"`    // last problem with it
+	Profile    string     `json:"profile"`            // the profile it was moved to
+	Previous   int64      `json:"previous,omitempty"` // profile id before the move
+	Added      string     `json:"added,omitempty"`    // added to Radarr: the folder it was tied to
+	Manual     bool       `json:"manual,omitempty"`   // done by the admin; not counted in the daily limits
+	Reverted   *time.Time `json:"reverted,omitempty"` // moved back to its old profile
+	Note       string     `json:"note,omitempty"`     // why it was moved back
+	Checked    bool       `json:"checked,omitempty"`  // looked at for anime once
 }
 
 // Pending is a much-watched movie Radarr does not have, waiting for the
@@ -567,12 +569,22 @@ func searchSeasons(it arr.Item, cur int) []int {
 	return out
 }
 
-// handoffs sends the whole-series search for shows whose first two seasons
-// were searched and have nothing left in Sonarr's queue.
+// handoffs searches a moved show one season at a time: each time Sonarr's
+// queue holds nothing for the series (and the last search is at least
+// handoffAfter old), the next season is searched, going forward from the
+// seasons searched first and then back to the earlier ones. When every
+// season has been searched the show is done (Handoff is set).
 func (s *Service) handoffs(ctx context.Context, set config.Settings, now time.Time) {
 	for i := range s.st.Actions {
 		a := &s.st.Actions[i]
-		if a.Kind != "show" || a.Handoff != nil || a.Reverted != nil || len(a.Seasons) == 0 || now.Sub(a.At) < handoffAfter {
+		if a.Kind != "show" || a.Handoff != nil || a.Reverted != nil || len(a.Seasons) == 0 {
+			continue
+		}
+		last := a.At
+		if a.LastSearch != nil {
+			last = *a.LastSearch
+		}
+		if now.Sub(last) < handoffAfter {
 			continue
 		}
 		cat, ok := set.Category(a.Category)
@@ -584,14 +596,58 @@ func (s *Service) handoffs(ctx context.Context, set config.Settings, now time.Ti
 		if err != nil || n > 0 {
 			continue
 		}
-		if err := ar.SearchSeries(ctx, a.ArrID); err != nil {
-			a.Error = "handing the rest to Sonarr: " + err.Error()
+		it, err := ar.SeriesByID(ctx, a.ArrID)
+		if err != nil {
 			continue
 		}
+		next, ok := nextSeason(it, a.Seasons)
 		t := now
-		a.Handoff, a.Error = &t, ""
-		s.Log.Printf("attention: %s: seasons %v done, Sonarr searches the rest", a.Title, a.Seasons)
+		if !ok {
+			a.Handoff, a.Error = &t, ""
+			s.Log.Printf("attention: %s: every season searched", a.Title)
+			continue
+		}
+		if err := ar.SearchSeason(ctx, a.ArrID, next); err != nil {
+			a.Error = "searching season " + fmt.Sprint(next) + ": " + err.Error()
+			continue
+		}
+		a.Seasons, a.LastSearch, a.Error = append(a.Seasons, next), &t, ""
+		s.Log.Printf("attention: %s: searching season %d", a.Title, next)
 	}
+}
+
+// nextSeason is the next season to search: the first unsearched monitored
+// season after the one being watched (the first searched), else the first
+// before it (specials skipped).
+func nextSeason(it arr.Item, done []int) (int, bool) {
+	if len(done) == 0 {
+		return 0, false
+	}
+	searched := map[int]bool{}
+	for _, n := range done {
+		searched[n] = true
+	}
+	start := done[0]
+	var after, before []int
+	for _, sn := range it.Seasons {
+		if sn.Number < 1 || !sn.Monitored || searched[sn.Number] {
+			continue
+		}
+		if sn.Number > start {
+			after = append(after, sn.Number)
+		} else {
+			before = append(before, sn.Number)
+		}
+	}
+	sort.Ints(after)
+	sort.Ints(before)
+	if len(after) > 0 {
+		return after[0], true
+	}
+	if len(before) > 0 {
+		return before[0], true
+	}
+	return 0, false
 }
 
 // addMissingMovie handles a much-watched movie Radarr does not have. When
