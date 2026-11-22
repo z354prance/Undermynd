@@ -3,6 +3,9 @@ package backend
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
+	"encoding/base32"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -48,6 +51,13 @@ func NewTorBox(baseURL, token string, lim *Limiter) *TorBox {
 }
 
 func (t *TorBox) Name() string { return "torbox" }
+
+func (t *TorBox) kind() string {
+	if t.Torrents {
+		return "torrents"
+	}
+	return "usenet downloads"
+}
 
 // NewTorBoxTorrents is the same adapter pointed at TorBox's torrent endpoints.
 func NewTorBoxTorrents(baseURL, token string, lim *Limiter) *TorBox {
@@ -131,6 +141,13 @@ func (t *TorBox) call(ctx context.Context, c Class, method, path string, q url.V
 		if s, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && s > 0 {
 			d = time.Duration(s) * time.Second
 		}
+		if c == Create || c == CreateCached {
+			if c == Create {
+				t.Lim.Refund() // TorBox did not take it
+			}
+			t.Lim.BackoffCreate(d)
+			return nil, fmt.Errorf("%w: TorBox's limit on new %s (HTTP 429), waiting %s; downloads already at TorBox keep going", ErrBusy, t.kind(), d)
+		}
 		t.Lim.Backoff(d)
 		return nil, fmt.Errorf("%w: TorBox rate limit (HTTP 429), waiting %s", ErrBusy, d)
 	}
@@ -139,7 +156,10 @@ func (t *TorBox) call(ctx context.Context, c Class, method, path string, q url.V
 	code := strings.ToUpper(fmt.Sprint(env.Error))
 	switch {
 	case strings.Contains(code, "ACTIVE_LIMIT"), strings.Contains(code, "COOLDOWN_LIMIT"):
-		t.Lim.Backoff(2 * time.Minute)
+		if c == Create {
+			t.Lim.Refund()
+		}
+		t.Lim.BackoffCreate(2 * time.Minute)
 		return nil, fmt.Errorf("%w: TorBox says %s", ErrBusy, code)
 	case strings.Contains(code, "BOZO_NZB"):
 		return nil, Permanent{"TorBox rejected the NZB as invalid"}
@@ -191,7 +211,11 @@ func (t *TorBox) Add(ctx context.Context, j job.Job) (string, string, error) {
 		_ = w.WriteField("name", j.Name)
 	}
 	_ = w.Close()
-	data, err := t.call(ctx, Create, http.MethodPost, t.ep(create), nil, &buf, w.FormDataContentType())
+	class := Create
+	if t.Torrents && t.cached(ctx, j) {
+		class = CreateCached // TorBox has it: not counted in the hourly allowance
+	}
+	data, err := t.call(ctx, class, http.MethodPost, t.ep(create), nil, &buf, w.FormDataContentType())
 	if err != nil {
 		return "", "", err
 	}
@@ -453,4 +477,134 @@ func (t *TorBox) Fetch(ctx context.Context, id string, f File, dst string, progr
 		return fmt.Errorf("size mismatch: got %d of %d bytes", have+written, f.Size)
 	}
 	return os.Rename(part, dst)
+}
+
+// cached asks TorBox whether it already has a torrent (by its info hash);
+// any doubt counts as not cached.
+func (t *TorBox) cached(ctx context.Context, j job.Job) bool {
+	h := magnetHash(j.Magnet)
+	if h == "" && j.TorrentPath != "" {
+		if b, err := os.ReadFile(j.TorrentPath); err == nil {
+			h = InfoHash(b)
+		}
+	}
+	if h == "" {
+		return false
+	}
+	data, err := t.call(ctx, API, http.MethodGet, "/v1/api/torrents/checkcached", url.Values{"hash": {h}, "format": {"object"}, "list_files": {"false"}}, nil, "")
+	if err != nil {
+		return false
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal(data, &m) != nil {
+		return false
+	}
+	for k, v := range m {
+		if strings.EqualFold(k, h) && string(v) != "null" {
+			return true
+		}
+	}
+	return false
+}
+
+// magnetHash is the info hash of a magnet link, in lower-case hex.
+func magnetHash(m string) string {
+	i := strings.Index(strings.ToLower(m), "xt=urn:btih:")
+	if i < 0 {
+		return ""
+	}
+	v := m[i+len("xt=urn:btih:"):]
+	if j := strings.IndexAny(v, "&"); j >= 0 {
+		v = v[:j]
+	}
+	switch len(v) {
+	case 40:
+		if _, err := hex.DecodeString(v); err == nil {
+			return strings.ToLower(v)
+		}
+	case 32:
+		if b, err := base32.StdEncoding.DecodeString(strings.ToUpper(v)); err == nil {
+			return hex.EncodeToString(b)
+		}
+	}
+	return ""
+}
+
+// InfoHash is the info hash of a .torrent file (SHA-1 of its bencoded info
+// dictionary), in lower-case hex, or "" if the file cannot be read.
+func InfoHash(b []byte) string {
+	if len(b) == 0 || b[0] != 'd' {
+		return ""
+	}
+	i := 1
+	for i < len(b) && b[i] != 'e' {
+		k, n := bstr(b, i)
+		if n < 0 {
+			return ""
+		}
+		v := n
+		end := bskip(b, v)
+		if end < 0 {
+			return ""
+		}
+		if k == "info" {
+			sum := sha1.Sum(b[v:end])
+			return hex.EncodeToString(sum[:])
+		}
+		i = end
+	}
+	return ""
+}
+
+// bstr reads a bencoded string at i: its text and the index after it.
+func bstr(b []byte, i int) (string, int) {
+	j := i
+	for j < len(b) && b[j] >= '0' && b[j] <= '9' {
+		j++
+	}
+	if j == i || j >= len(b) || b[j] != ':' {
+		return "", -1
+	}
+	n, err := strconv.Atoi(string(b[i:j]))
+	if err != nil || n < 0 || j+1+n > len(b) {
+		return "", -1
+	}
+	return string(b[j+1 : j+1+n]), j + 1 + n
+}
+
+// bskip returns the index just after the bencoded value at i, or -1.
+func bskip(b []byte, i int) int {
+	if i >= len(b) {
+		return -1
+	}
+	switch c := b[i]; {
+	case c == 'i':
+		j := bytes.IndexByte(b[i:], 'e')
+		if j < 0 {
+			return -1
+		}
+		return i + j + 1
+	case c == 'l' || c == 'd':
+		i++
+		for i < len(b) && b[i] != 'e' {
+			if c == 'd' {
+				if _, n := bstr(b, i); n < 0 {
+					return -1
+				} else {
+					i = n
+				}
+			}
+			if i = bskip(b, i); i < 0 {
+				return -1
+			}
+		}
+		if i >= len(b) {
+			return -1
+		}
+		return i + 1
+	case c >= '0' && c <= '9':
+		_, n := bstr(b, i)
+		return n
+	}
+	return -1
 }

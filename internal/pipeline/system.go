@@ -21,8 +21,9 @@ type SystemInfo struct {
 	Counts map[string]int `json:"counts"` // jobs per public group
 	TorBox struct {
 		Configured   bool       `json:"configured"`
-		Used         int        `json:"used"`
-		Limit        int        `json:"limit"`
+		Used         int        `json:"used"`  // usenet creates this hour
+		Limit        int        `json:"limit"` // per kind
+		TorrentUsed  int        `json:"torrentUsed"`
 		BackoffUntil *time.Time `json:"backoffUntil,omitempty"`
 	} `json:"torbox"`
 	Tdarr struct {
@@ -76,12 +77,19 @@ func (e *Engine) System() SystemInfo {
 	if tb := e.torbox(); tb != nil {
 		si.TorBox.Configured = true
 		e.bmu.Lock()
-		lim := e.lim
+		lim, tlim := e.lim, e.tlim
 		e.bmu.Unlock()
 		if lim != nil {
 			used, limit, until := lim.Status()
 			si.TorBox.Used, si.TorBox.Limit = used, limit
 			if until.After(e.Now()) {
+				si.TorBox.BackoffUntil = &until
+			}
+		}
+		if tlim != nil {
+			used, _, until := tlim.Status()
+			si.TorBox.TorrentUsed = used
+			if until.After(e.Now()) && (si.TorBox.BackoffUntil == nil || until.After(*si.TorBox.BackoffUntil)) {
 				si.TorBox.BackoffUntil = &until
 			}
 		}

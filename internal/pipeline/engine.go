@@ -55,7 +55,8 @@ type Engine struct {
 	tkey     string
 	tcache   *backend.TorBox
 	ttcache  *backend.TorBox
-	lim      *backend.Limiter
+	lim      *backend.Limiter // usenet creates
+	tlim     *backend.Limiter // torrent creates (TorBox counts them apart)
 	nmu      sync.Mutex
 	notes    map[string]string
 
@@ -105,13 +106,21 @@ func (e *Engine) torbox() *backend.TorBox {
 	e.bmu.Lock()
 	defer e.bmu.Unlock()
 	if e.tcache == nil || e.tkey != key {
+		// Usenet and torrents each have their own hourly create allowance at
+		// TorBox. Both share TorBox's 300 calls a minute, so each paces its
+		// other calls at most 150 a minute.
 		e.lim = backend.NewLimiter(filepath.Join(e.Cfg.Env.ConfigDir, "torbox-limiter.json"), s.CreatePerHour,
 			time.Duration(s.LinkGapSeconds)*time.Second)
 		e.lim.Now = func() time.Time { return e.Now() }
+		e.lim.APIGap = 400 * time.Millisecond
+		e.tlim = backend.NewLimiter(filepath.Join(e.Cfg.Env.ConfigDir, "torbox-limiter-torrents.json"), s.CreatePerHour,
+			time.Duration(s.LinkGapSeconds)*time.Second)
+		e.tlim.Now = e.lim.Now
+		e.tlim.APIGap = 400 * time.Millisecond
 		e.tcache = backend.NewTorBox(s.BaseURL, string(s.Token), e.lim)
 		e.tcache.Now = func() time.Time { return e.Now() }
 		e.tcache.Logf = e.Log.Printf
-		e.ttcache = backend.NewTorBoxTorrents(s.BaseURL, string(s.Token), e.lim)
+		e.ttcache = backend.NewTorBoxTorrents(s.BaseURL, string(s.Token), e.tlim)
 		e.ttcache.Now = e.tcache.Now
 		e.ttcache.Logf = e.Log.Printf
 		e.tkey = key
