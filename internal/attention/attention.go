@@ -24,6 +24,7 @@ import (
 
 	"github.com/z354prance/undermynd/internal/arr"
 	"github.com/z354prance/undermynd/internal/config"
+	"github.com/z354prance/undermynd/internal/mediaserver"
 	"github.com/z354prance/undermynd/internal/state"
 	"github.com/z354prance/undermynd/internal/tracearr"
 )
@@ -60,6 +61,13 @@ type Arr interface {
 	LookupMovie(ctx context.Context, tmdb int64) (arr.MovieLookup, error)
 	RootFolders(ctx context.Context) ([]arr.Folder, error)
 	AddMovie(ctx context.Context, m arr.MovieLookup, profileID int64, path, root string, search bool) (arr.Item, error)
+}
+
+// Media is the media server's view of the library (Emby or Jellyfin), used to
+// tell anime from other shows when Tracearr only knows "a show".
+type Media interface {
+	Libraries(ctx context.Context) ([]mediaserver.Library, error)
+	ItemPath(ctx context.Context, id string) (string, error)
 }
 
 // Action is one switch to the upgrade profile, kept for the admin to see.
@@ -136,6 +144,7 @@ type Service struct {
 	Now     func() time.Time
 	History func(config.Playback) History // nil: Tracearr from the settings
 	Arr     func(config.Category) Arr     // nil: arr.New from the category
+	Media   func(config.Settings) Media   // nil: the media server from the settings
 
 	mu    sync.Mutex
 	st    saved
@@ -253,7 +262,7 @@ func (s *Service) Check(ctx context.Context) {
 	s.st.LastRun, s.st.LastError = now, ""
 	defer s.save()
 
-	s.revertAnime(ctx, set, now)
+	ac := s.animeCheck(ctx, set)
 	s.handoffs(ctx, set, now)
 
 	if set.Playback.TracearrURL == "" || set.Playback.TracearrKey == "" {
@@ -261,7 +270,7 @@ func (s *Service) Check(ctx context.Context) {
 		return
 	}
 	h := s.history(set.Playback)
-	cands, err := s.candidates(ctx, h, now)
+	cands, animeShows, err := s.candidates(ctx, h, now, ac)
 	if err != nil {
 		s.st.LastError = "reading Tracearr's history: " + err.Error()
 		s.Log.Printf("attention: %s", s.st.LastError)
@@ -279,7 +288,17 @@ func (s *Service) Check(ctx context.Context) {
 			budget[a.Kind]--
 		}
 	}
+	s.revertAnime(ctx, set, now, animeShows)
 	s.enqueue(cands, now)
+	// Anime found since it was queued leaves the queue.
+	var q2 []Queued
+	for _, q := range s.st.Queue {
+		if !(q.Kind == "show" && animeShows[q.TVDB]) {
+			q2 = append(q2, q)
+		}
+	}
+	s.st.Queue = q2
+	s.screenQueue(ctx, set, now)
 	var keep []Queued
 	for _, q := range s.st.Queue {
 		if budget[q.Kind] <= 0 {
@@ -337,11 +356,12 @@ const (
 )
 
 // candidates reads the plays and picks what qualifies, most recent first.
-func (s *Service) candidates(ctx context.Context, h History, now time.Time) ([]candidate, error) {
+func (s *Service) candidates(ctx context.Context, h History, now time.Time, ac *animeCheck) ([]candidate, map[int64]bool, error) {
 	var out []candidate
+	animeShows := map[int64]bool{}
 	movies, err := h.History(ctx, "movie", now.AddDate(0, 0, -movieDays))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	type mv struct {
 		title string
@@ -351,7 +371,7 @@ func (s *Service) candidates(ctx context.Context, h History, now time.Time) ([]c
 	}
 	byMovie := map[int64]*mv{}
 	for _, p := range movies {
-		if p.TMDB == 0 || !counts(p) {
+		if p.TMDB == 0 || !counts(p) || ac.library(p) {
 			continue
 		}
 		m := byMovie[p.TMDB]
@@ -373,7 +393,7 @@ func (s *Service) candidates(ctx context.Context, h History, now time.Time) ([]c
 
 	eps, err := h.History(ctx, "episode", now.AddDate(0, 0, -showDays))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	type watch struct {
 		show, user, name string
@@ -381,6 +401,7 @@ func (s *Service) candidates(ctx context.Context, h History, now time.Time) ([]c
 		season           int
 		when             time.Time
 		anime            bool
+		item             string // one episode's media-server id
 	}
 	byWatch := map[[2]string]*watch{}
 	for _, p := range eps {
@@ -394,8 +415,11 @@ func (s *Service) candidates(ctx context.Context, h History, now time.Time) ([]c
 			byWatch[k] = w
 		}
 		w.eps[[2]int{p.Season, p.Episode}] = true
-		if hasAnime(p.Genres) {
+		if hasAnime(p.Genres) || ac.library(p) {
 			w.anime = true
+		}
+		if w.item == "" {
+			w.item = p.RatingKey
 		}
 		if p.StartedAt != nil && p.StartedAt.After(w.when) {
 			w.when, w.season = *p.StartedAt, p.Season
@@ -414,14 +438,15 @@ func (s *Service) candidates(ctx context.Context, h History, now time.Time) ([]c
 		if title == "" {
 			title = w.show
 		}
-		if w.anime {
+		if w.anime || ac.item(ctx, w.item) {
+			animeShows[tvdb] = true
 			continue
 		}
 		out = append(out, candidate{kind: "show", tvdb: tvdb, title: title, season: w.season, when: w.when,
 			reason: fmt.Sprintf("%s watched %d episodes in %d days", w.name, len(w.eps), showDays)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].when.After(out[j].when) })
-	return out, nil
+	return out, animeShows, nil
 }
 
 func names(m map[string]string) string {
@@ -780,6 +805,9 @@ func isAnime(it arr.Item, set config.Settings) bool {
 	if it.Path == "" {
 		return false
 	}
+	if animeSegment(it.Path) {
+		return true
+	}
 	p := strings.ToLower(strings.TrimRight(it.Path, "/")) + "/"
 	for _, c := range set.Categories {
 		if d := c.OwnLibrary(); d != "" && strings.HasPrefix(p, strings.ToLower(strings.TrimRight(d, "/"))+"/") {
@@ -789,12 +817,12 @@ func isAnime(it arr.Item, set config.Settings) bool {
 	return false
 }
 
-// revertAnime looks once at each show already moved and puts anime back on
-// the profile it had.
-func (s *Service) revertAnime(ctx context.Context, set config.Settings, now time.Time) {
+// revertAnime puts anime that was moved back on the profile it had: shows
+// Sonarr or the media server say are anime.
+func (s *Service) revertAnime(ctx context.Context, set config.Settings, now time.Time, animeShows map[int64]bool) {
 	for i := range s.st.Actions {
 		a := &s.st.Actions[i]
-		if a.Kind != "show" || a.Checked || a.Reverted != nil || a.Error != "" {
+		if a.Kind != "show" || a.Reverted != nil || a.Error != "" || now.Sub(a.At) > 60*24*time.Hour {
 			continue
 		}
 		cat, ok := set.Category(a.Category)
@@ -806,14 +834,107 @@ func (s *Service) revertAnime(ctx context.Context, set config.Settings, now time
 		if err != nil {
 			continue
 		}
-		a.Checked = true
-		if !isAnime(it, set) {
+		if !isAnime(it, set) && !animeShows[it.TVDB] {
 			continue
 		}
 		if err := s.moveBack(ctx, ar, a, now, "anime: moved back to its old profile"); err != nil {
 			a.Error = "moving the anime back: " + err.Error()
 		}
 	}
+}
+
+// animeSegment says whether a path has a folder named anime in it.
+func animeSegment(p string) bool {
+	for _, part := range strings.FieldsFunc(strings.ToLower(p), func(r rune) bool { return r == '/' || r == '\\' }) {
+		if part == "anime" {
+			return true
+		}
+	}
+	return false
+}
+
+// animeCheck tells anime apart using the media server: its anime libraries
+// (named anime, or whose folders are anime folders) and, for a show in a
+// mixed library, where its files are.
+type animeCheck struct {
+	ms       Media
+	libs     map[string]bool
+	dirs     []string // HyveMynd's own anime library folders, lower case
+	from, to string   // HyveMynd path prefix and the media server's
+	cache    map[string]bool
+}
+
+func (s *Service) animeCheck(ctx context.Context, set config.Settings) *animeCheck {
+	ac := &animeCheck{libs: map[string]bool{}, cache: map[string]bool{}, from: strings.TrimRight(set.Playback.PathFrom, "/"), to: strings.TrimRight(set.Playback.PathTo, "/")}
+	for _, c := range set.Categories {
+		if d := c.OwnLibrary(); d != "" {
+			ac.dirs = append(ac.dirs, strings.ToLower(strings.TrimRight(d, "/")))
+		}
+	}
+	switch {
+	case s.Media != nil:
+		ac.ms = s.Media(set)
+	case set.Playback.EmbyURL != "" && set.Playback.EmbyKey != "":
+		ac.ms = mediaserver.Server{Kind: set.Access.Provider, URL: set.Playback.EmbyURL, Key: string(set.Playback.EmbyKey)}
+	}
+	if ac.ms == nil {
+		return ac
+	}
+	libs, err := ac.ms.Libraries(ctx)
+	if err != nil {
+		return ac
+	}
+	for _, l := range libs {
+		anime := strings.Contains(strings.ToLower(l.Name), "anime")
+		for _, p := range l.Paths {
+			if ac.path(p) {
+				anime = true
+			}
+		}
+		if anime {
+			ac.libs[l.ID] = true
+		}
+	}
+	return ac
+}
+
+// path says whether a media-server path is in an anime folder.
+func (ac *animeCheck) path(p string) bool {
+	if p == "" {
+		return false
+	}
+	if animeSegment(p) {
+		return true
+	}
+	if ac.to != "" && (p == ac.to || strings.HasPrefix(p, ac.to+"/")) {
+		p = ac.from + strings.TrimPrefix(p, ac.to)
+	}
+	lp := strings.ToLower(strings.TrimRight(p, "/")) + "/"
+	for _, d := range ac.dirs {
+		if strings.HasPrefix(lp, d+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// library says whether a play is from an anime library.
+func (ac *animeCheck) library(p tracearr.Play) bool {
+	return ac != nil && p.LibraryID != "" && ac.libs[p.LibraryID]
+}
+
+// item says whether a media-server item's file is in an anime folder.
+func (ac *animeCheck) item(ctx context.Context, id string) bool {
+	if ac == nil || ac.ms == nil || id == "" {
+		return false
+	}
+	if v, ok := ac.cache[id]; ok {
+		return v
+	}
+	p, err := ac.ms.ItemPath(ctx, id)
+	v := err == nil && ac.path(p)
+	ac.cache[id] = v
+	return v
 }
 
 // moveBack puts a moved title back on its old profile and keeps it from
@@ -855,4 +976,89 @@ func (s *Service) Undo(ctx context.Context, kind, category string, arrID int64) 
 		return s.moveBack(ctx, s.arrFor(cat), a, s.now(), "undone by you")
 	}
 	return fmt.Errorf("nothing to undo for that title")
+}
+
+// screenQueue keeps only queued titles that still need moving: something
+// already on the upgrade profile, a show Sonarr does not have, anime, or a
+// title moved back is dropped before it can wait for a turn.
+func (s *Service) screenQueue(ctx context.Context, set config.Settings, now time.Time) {
+	profiles := map[string]int64{} // category -> upgrade profile id
+	var keep []Queued
+	for _, q := range s.st.Queue {
+		if s.needsMove(ctx, set, q, now, profiles) {
+			keep = append(keep, q)
+		}
+	}
+	s.st.Queue = keep
+}
+
+func (s *Service) needsMove(ctx context.Context, set config.Settings, q Queued, now time.Time, profiles map[string]int64) bool {
+	kind, profile := "sonarr", set.Attention.TVProfile
+	if q.Kind == "movie" {
+		kind, profile = "radarr", set.Attention.MovieProfile
+	}
+	if strings.TrimSpace(profile) == "" {
+		return false
+	}
+	reachable := false
+	for _, cat := range set.Categories {
+		if cat.Kind != kind || cat.ArrURL == "" {
+			continue
+		}
+		if t, ok := s.st.Seen[fmt.Sprintf("%s:%s:%d:%d", kind, cat.Name, q.TVDB, q.TMDB)]; ok && now.Sub(t) < 7*24*time.Hour {
+			return false
+		}
+		a := s.arrFor(cat)
+		var it arr.Item
+		var found bool
+		var err error
+		if q.Kind == "movie" {
+			it, found, err = a.MovieByTMDB(ctx, q.TMDB)
+		} else {
+			it, found, err = a.SeriesByTVDB(ctx, q.TVDB)
+		}
+		if err != nil {
+			continue
+		}
+		reachable = true
+		if !found {
+			continue
+		}
+		if s.st.Skip[skipKey(q.Kind, cat.Name, it.ID)] || (q.Kind == "show" && isAnime(it, set)) {
+			return false
+		}
+		pid, ok := profiles[cat.Name]
+		if !ok {
+			p, err := a.ProfileByName(ctx, profile)
+			if err != nil {
+				return true // decided when its turn comes
+			}
+			pid, profiles[cat.Name] = p.ID, p.ID
+		}
+		if it.ProfileID == pid {
+			if s.st.Seen == nil {
+				s.st.Seen = map[string]time.Time{}
+			}
+			s.st.Seen[fmt.Sprintf("%s:%s:%d:%d", kind, cat.Name, q.TVDB, q.TMDB)] = now
+			return false
+		}
+		return true
+	}
+	if !reachable {
+		return true // no arr answered: check again next time
+	}
+	if q.Kind == "movie" {
+		// Not in Radarr: it may still be added, unless dismissed or waiting
+		// for a decision already.
+		if _, gone := s.st.Dismissed[q.TMDB]; gone {
+			return false
+		}
+		for _, p := range s.st.Decide {
+			if p.TMDB == q.TMDB {
+				return false
+			}
+		}
+		return true
+	}
+	return false // Sonarr does not have the show
 }

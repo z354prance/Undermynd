@@ -77,6 +77,7 @@ type Item struct {
 	Monitored bool   `json:"monitored"`
 	// Sonarr: standard, daily or anime; with the genres and folder, used to
 	// leave anime alone.
+	TVDB       int64    `json:"tvdbId,omitempty"`
 	SeriesType string   `json:"seriesType,omitempty"`
 	Genres     []string `json:"genres,omitempty"`
 	Path       string   `json:"path,omitempty"`

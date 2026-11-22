@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -146,4 +147,21 @@ func MapPath(p, from, to string) string {
 		return p
 	}
 	return to + strings.TrimPrefix(p, from)
+}
+
+// ItemPath is the file or folder path of one library item, as the media
+// server sees it.
+func (s Server) ItemPath(ctx context.Context, id string) (string, error) {
+	var r struct {
+		Items []struct {
+			Path string `json:"Path"`
+		} `json:"Items"`
+	}
+	if err := s.Do(ctx, http.MethodGet, "/Items?Recursive=true&Fields=Path&Ids="+url.QueryEscape(id), nil, &r); err != nil {
+		return "", err
+	}
+	if len(r.Items) == 0 {
+		return "", nil
+	}
+	return r.Items[0].Path, nil
 }

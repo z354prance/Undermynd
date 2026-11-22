@@ -331,6 +331,8 @@ type Play struct {
 	TVDB        int64      `json:"tvdb_id"`
 	ShowMediaID string     `json:"show_media_id"`
 	Genres      []string   `json:"genres"`
+	LibraryID   string     `json:"library_id"`
+	RatingKey   string     `json:"rating_key"`
 	Watched     bool       `json:"watched"`
 	Percent     float64    `json:"percent_complete"`
 	StartedAt   *time.Time `json:"started_at"`
