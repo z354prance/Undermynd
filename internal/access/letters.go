@@ -142,7 +142,7 @@ func embyCompletionNotice(r Request, s Settings) notice {
 		Details: details,
 		Button:  button,
 		Parts: [][2]string{
-			{"Which password to use", "Use your Emby Connect password when you choose Emby Connect sign-in. If an app asks for a local server login instead, use your server username with the password you chose during setup."},
+			{"Which password to use", "Use your Emby Connect password when you choose Emby Connect sign-in. If an app asks for a local server login instead, use your server username with the password you chose."},
 			{"TVs and streaming devices", "Install the Emby app (Roku, Fire TV, Android or Google TV, Apple TV, Samsung or LG) and choose Emby Connect. If a code appears, open the address shown on the TV on your phone or computer, sign in to Emby Connect, and enter the code. Then select the linked server."},
 			{"Web browser", web},
 			{"Phones and tablets", "Install Emby from the Apple App Store or Google Play, choose Emby Connect, sign in, and select the linked server."},
@@ -157,7 +157,7 @@ func jellyfinCompletionNotice(r Request, s Settings) notice {
 	return notice{r.Email, "You're ready to watch", letter{
 		Title:   "Your account is ready",
 		Intro:   []string{"Hi " + r.Name + ", your Jellyfin account is ready to use."},
-		Details: [][2]string{{"Server", s.ServerPublicURL}, {"Username", r.Username}, {"Password", "the one you chose during setup"}},
+		Details: [][2]string{{"Server", s.ServerPublicURL}, {"Username", r.Username}, {"Password", "the one you chose"}},
 		Parts: [][2]string{
 			{"Web browser", "Open the server address above and sign in."},
 			{"Phones and tablets", "Install a Jellyfin app from your app store, add the server address, and sign in."},

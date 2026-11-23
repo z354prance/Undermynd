@@ -80,12 +80,15 @@ func safeLink(s string) string {
 }
 
 func (l letter) html() string {
-	const ink, dim, line, accent = "#1b1f23", "#5b6470", "#e3e6ea", "#2fae96"
+	const ink, dim, line, accent = "#1b1f23", "#5b6470", "#e3e6ea", "#7c5cf0"
 	var b strings.Builder
 	b.WriteString(`<!doctype html><html><body style="margin:0;padding:0;background:#f2f4f6;">`)
 	b.WriteString(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f4f6;padding:24px 12px;"><tr><td align="center">`)
 	b.WriteString(`<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:8px;overflow:hidden;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:` + ink + `;">`)
-	b.WriteString(`<tr><td style="background:#0d0d0d;padding:16px 28px;font:600 15px 'Courier New',monospace;color:#4ec9b0;">undermynd</td></tr>`)
+	// The site's header: the name on graphite, the four media colours under it.
+	b.WriteString(`<tr><td style="background:#1e2022;padding:16px 28px;font:800 19px -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#ffffff;letter-spacing:-0.01em;">HyveMynd</td></tr>`)
+	b.WriteString(`<tr><td style="padding:0;font-size:0;line-height:0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>` +
+		`<td style="height:4px;background:#409cff;"></td><td style="height:4px;background:#d4af37;"></td><td style="height:4px;background:#ad92ec;"></td><td style="height:4px;background:#3fb950;"></td></tr></table></td></tr>`)
 	b.WriteString(`<tr><td style="padding:28px 28px 8px 28px;">`)
 	b.WriteString(`<h1 style="margin:0 0 16px 0;font-size:21px;line-height:1.3;color:` + ink + `;">` + esc(l.Title) + `</h1>`)
 	for _, p := range l.Intro {
@@ -105,12 +108,12 @@ func (l letter) html() string {
 	if len(l.Steps) > 0 {
 		b.WriteString(`<table role="presentation" cellpadding="0" cellspacing="0" style="margin:4px 0 14px 0;">`)
 		for i, s := range l.Steps {
-			b.WriteString(fmt.Sprintf(`<tr><td valign="top" style="padding:0 12px 10px 0;"><div style="width:24px;height:24px;border-radius:12px;background:#e6f6f2;color:#17806d;font:700 13px/24px Arial,sans-serif;text-align:center;">%d</div></td><td style="padding:2px 0 10px 0;font-size:15px;line-height:1.5;">%s</td></tr>`, i+1, esc(s)))
+			b.WriteString(fmt.Sprintf(`<tr><td valign="top" style="padding:0 12px 10px 0;"><div style="width:24px;height:24px;border-radius:12px;background:#efeaff;color:#5b3fd0;font:700 13px/24px Arial,sans-serif;text-align:center;">%d</div></td><td style="padding:2px 0 10px 0;font-size:15px;line-height:1.5;">%s</td></tr>`, i+1, esc(s)))
 		}
 		b.WriteString(`</table>`)
 	}
 	if href := safeLink(l.Button[1]); href != "" {
-		b.WriteString(`<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 8px 0;"><tr><td style="background:` + accent + `;border-radius:6px;"><a href="` + href + `" style="display:inline-block;padding:12px 22px;font:600 15px Arial,sans-serif;color:#06231d;text-decoration:none;">` + esc(l.Button[0]) + `</a></td></tr></table>`)
+		b.WriteString(`<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 8px 0;"><tr><td style="background:` + accent + `;border-radius:6px;"><a href="` + href + `" style="display:inline-block;padding:12px 22px;font:600 15px Arial,sans-serif;color:#ffffff;text-decoration:none;">` + esc(l.Button[0]) + `</a></td></tr></table>`)
 		b.WriteString(`<p style="margin:6px 0 16px 0;font-size:12px;line-height:1.5;color:` + dim + `;">If the button does not work, copy this address into your browser:<br><span style="word-break:break-all;">` + esc(l.Button[1]) + `</span></p>`)
 	}
 	for _, p := range l.Parts {
@@ -120,7 +123,7 @@ func (l letter) html() string {
 		b.WriteString(`<p style="margin:18px 0 6px 0;font-size:14px;line-height:1.7;">`)
 		for _, k := range l.Links {
 			if href := safeLink(k[1]); href != "" {
-				b.WriteString(`<a href="` + href + `" style="color:#17806d;">` + esc(k[0]) + `</a><br>`)
+				b.WriteString(`<a href="` + href + `" style="color:#5b3fd0;">` + esc(k[0]) + `</a><br>`)
 			}
 		}
 		b.WriteString(`</p>`)
