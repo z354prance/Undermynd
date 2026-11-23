@@ -258,7 +258,7 @@
     var data = { email: f.elements.email.value.trim(), name: f.elements.name.value.trim(), username: f.elements.username.value.trim(), password: f.elements.password.value };
     if (!jellyfin) data.connect_username = data.email;
     $("accessMsg").textContent = "Submitting your request…";
-    api("/api/v1/access/request", { method: "POST", body: data }).then(function (r) { f.reset(); f.hidden = true; $("accessMsg").textContent = "Request sent. You'll get an email when it's approved."; }).catch(function (err) { $("accessMsg").textContent = err.message; });
+    api("/api/v1/access/request", { method: "POST", body: data }).then(function (r) { f.reset(); f.hidden = true; $("accessMsg").textContent = "Request sent. Watch your email: we'll write when it's approved" + (jellyfin ? "" : ", and Emby will send one to link your account") + ". If nothing arrives, check your spam or junk folder."; }).catch(function (err) { $("accessMsg").textContent = err.message; });
   };
   document.querySelectorAll(".dlg [data-close]").forEach(function (b) { b.onclick = function () { b.closest("dialog").close(); }; });
   var setupToken = "";
