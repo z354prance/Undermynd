@@ -25,8 +25,11 @@ func receiptNotice(r Request, s Settings) notice {
 		Title:   "We got your request",
 		Intro:   []string{"Hi " + r.Name + ", your request for an account on " + siteName(s) + " is in. An administrator will review it, and no account has been created yet."},
 		Details: [][2]string{{"Requested username", r.Username}, {"Notification email", r.Email}},
-		Parts:   [][2]string{{"What happens next", "You will get another email when the request is approved, with a link to finish setting up your account. If it is declined, we will tell you that too."}},
-		Note:    "You did not need to do anything else. If you did not make this request, you can ignore this email.",
+		Parts: [][2]string{
+			{"What happens next", "You will get another email when the request is approved, and one when your account is ready. If it is declined, we will tell you that too."},
+			{"Check your spam folder", "Our emails, and the one Emby sends to link your account, sometimes land in spam or junk. If you found this one there, mark it as not spam so the next ones reach your inbox."},
+		},
+		Note: "You did not need to do anything else. If you did not make this request, you can ignore this email.",
 	}}
 }
 
