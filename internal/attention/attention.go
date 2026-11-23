@@ -84,6 +84,10 @@ type Action struct {
 	Handoff  *time.Time `json:"handoff,omitempty"` // every season has been searched
 	// Progress is how much of it is at the upgrade quality, from the arr.
 	Progress *Progress `json:"progress,omitempty"`
+	// LastGain is when the upgraded count last went up.
+	LastGain *time.Time `json:"lastGain,omitempty"`
+	// Stalled is set in what the admin sees: no headway for showStall.
+	Stalled bool `json:"stalled,omitempty"`
 	// LastSearch is when the latest season search was sent.
 	LastSearch *time.Time `json:"lastSearch,omitempty"`
 	Error      string     `json:"error,omitempty"`    // last problem with it
@@ -220,8 +224,11 @@ func (s *Service) Snapshot() Status {
 	defer s.mu.Unlock()
 	s.load()
 	out := Status{LastRun: s.st.LastRun, LastError: s.st.LastError, Queue: append([]Queued{}, s.st.Queue...), Decide: append([]Pending{}, s.st.Decide...)}
+	now := s.now()
 	for i := len(s.st.Actions) - 1; i >= 0 && len(out.Actions) < 50; i-- {
-		out.Actions = append(out.Actions, s.st.Actions[i])
+		a := s.st.Actions[i]
+		a.Stalled = a.Kind == "show" && a.Reverted == nil && a.Handoff == nil && len(a.Seasons) > 0 && !showInProgress(a, now)
+		out.Actions = append(out.Actions, a)
 	}
 	return out
 }
@@ -302,16 +309,13 @@ func (s *Service) Check(ctx context.Context) {
 	// Each kind has its own daily limit: shows (Sonarr) and movies (Radarr).
 	// Movies: a daily limit. Shows: one at a time; the next show starts only
 	// when the one in progress has had every season searched.
-	budget := map[string]int{"movie": at.MoviePerDay, "show": 1}
+	budget := map[string]int{"movie": at.MoviePerDay, "show": s.showSlot(ctx, set, now)}
 	if budget["movie"] <= 0 {
 		budget["movie"] = 3
 	}
 	for _, a := range s.st.Actions {
 		if a.Kind == "movie" && now.Sub(a.At) < 24*time.Hour && a.Error == "" && !a.Manual && a.Reverted == nil {
 			budget["movie"]--
-		}
-		if a.Kind == "show" && showInProgress(a, now) {
-			budget["show"] = 0
 		}
 	}
 	s.revertAnime(ctx, set, now, animeShows)
@@ -646,22 +650,74 @@ func (s *Service) handoffs(ctx context.Context, set config.Settings, now time.Ti
 }
 
 // showInProgress says whether a moved show is still being worked through
-// season by season. One that has not moved for showStall is taken as done,
-// so a show stuck in Sonarr cannot hold up the rest.
+// and making headway: an episode upgraded or a season searched within
+// showStall. A show that has gone quiet (downloads stuck in Sonarr's queue,
+// nothing better to find) stops holding the slot, so the next show starts;
+// it keeps going season by season whenever its queue clears.
 func showInProgress(a Action, now time.Time) bool {
 	if a.Reverted != nil || a.Handoff != nil || len(a.Seasons) == 0 {
 		return false
 	}
-	last := a.At
-	if a.LastSearch != nil {
-		last = *a.LastSearch
-	}
-	return now.Sub(last) < showStall
+	return now.Sub(lastActivity(a)) < showStall
 }
 
-// showStall is how long a show may go without a season search before the
-// next show is allowed to start.
-const showStall = 7 * 24 * time.Hour
+const (
+	// feedBelow: another show starts when the shows in progress have fewer
+	// downloads than this waiting in Sonarr's queue together, so a show that
+	// is finishing slowly does not leave the pipeline idle.
+	feedBelow = 10
+	// maxShows is the most shows worked on at once.
+	maxShows = 3
+)
+
+// showSlot says whether a new show may start in this check (1) or not (0):
+// when no show is in progress, or fewer than maxShows are and together they
+// have fewer than feedBelow downloads waiting in Sonarr's queue.
+func (s *Service) showSlot(ctx context.Context, set config.Settings, now time.Time) int {
+	var active []Action
+	for _, a := range s.st.Actions {
+		if a.Kind == "show" && showInProgress(a, now) {
+			active = append(active, a)
+		}
+	}
+	if len(active) == 0 {
+		return 1
+	}
+	if len(active) >= maxShows {
+		return 0
+	}
+	waiting := 0
+	for _, a := range active {
+		cat, ok := set.Category(a.Category)
+		if !ok || cat.ArrURL == "" {
+			return 0
+		}
+		n, err := s.arrFor(cat).QueuedFor(ctx, a.ArrID)
+		if err != nil {
+			return 0 // cannot tell: do not add more
+		}
+		waiting += n
+	}
+	if waiting < feedBelow {
+		return 1
+	}
+	return 0
+}
+
+// lastActivity is the latest of: moved, a season search, an episode upgraded.
+func lastActivity(a Action) time.Time {
+	t := a.At
+	for _, x := range []*time.Time{a.LastSearch, a.LastGain} {
+		if x != nil && x.After(t) {
+			t = *x
+		}
+	}
+	return t
+}
+
+// showStall is how long a show may go without an upgraded episode or a
+// season search before it stops holding up the next show.
+const showStall = 12 * time.Hour
 
 // nextSeason is the next season to search: the first unsearched monitored
 // season after the one being watched (the first searched), else the first
@@ -1221,6 +1277,10 @@ func (s *Service) progress(ctx context.Context, set config.Settings, now time.Ti
 				p.Seasons = append(p.Seasons, *sd)
 			}
 			sort.Slice(p.Seasons, func(i, j int) bool { return p.Seasons[i].Season < p.Seasons[j].Season })
+		}
+		if old := a.Progress; old != nil && p.Done > old.Done {
+			t := now
+			a.LastGain = &t
 		}
 		a.Progress = p
 	}
