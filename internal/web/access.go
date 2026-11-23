@@ -103,18 +103,17 @@ func (s *Server) accessSubmit(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusTooManyRequests, "too many requests; please try again later")
 		return
 	}
-	var in struct{ Name, Email, Username, Connect string }
 	var raw struct {
 		Name     string `json:"name"`
 		Email    string `json:"email"`
 		Username string `json:"username"`
 		Connect  string `json:"connect_username"`
+		Password string `json:"password"`
 	}
 	if !readBody(w, r, &raw) {
 		return
 	}
-	in.Name, in.Email, in.Username, in.Connect = raw.Name, raw.Email, raw.Username, raw.Connect
-	if err := s.Access.Submit(access.Request{Name: in.Name, Email: in.Email, Username: in.Username, Connect: in.Connect}); err != nil {
+	if err := s.Access.Submit(access.Request{Name: raw.Name, Email: raw.Email, Username: raw.Username, Connect: raw.Connect, Password: raw.Password}); err != nil {
 		jsonErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
