@@ -57,7 +57,7 @@ func setupNotice(r Request, s Settings, token string) notice {
 			Title:   "You're approved",
 			Intro:   []string{"Hi " + r.Name + ", your Jellyfin account has been created. It stays switched off until you choose a password."},
 			Details: [][2]string{{"Your username", r.Username}},
-			Steps:   []string{"Open the setup page with the button below.", "Choose a password of at least 12 characters.", "Sign in to Jellyfin with your username and that password."},
+			Steps:   []string{"Open the setup page with the button below.", "Choose a password of at least 8 characters.", "Sign in to Jellyfin with your username and that password."},
 			Button:  [2]string{"Choose your password", link},
 			Note:    "This link works once and expires in 24 hours. Do not share it. If it expires, ask the server owner to send a new one.",
 		}}
@@ -69,11 +69,28 @@ func setupNotice(r Request, s Settings, token string) notice {
 		Steps: []string{
 			"Emby will email you (at the Connect address above) to confirm linking your Emby Connect account. Confirm it first.",
 			"Open the setup page with the button below.",
-			"Choose a password of at least 12 characters. This is separate from your Emby Connect password.",
+			"Choose a password of at least 8 characters. This is separate from your Emby Connect password.",
 			"Sign in with Emby Connect, or with your username and this password.",
 		},
 		Button: [2]string{"Finish setting up", link},
 		Note:   "This link works once and expires in 24 hours. Do not share it. HyveMynd will never ask for your Emby Connect password. If the link expires, ask the server owner to send a new one.",
+	}}
+}
+
+// approvedConnectNotice tells an Emby visitor who chose their password in
+// the request that they are approved and only need to confirm Emby's
+// Connect email; HyveMynd switches the account on by itself after that.
+func approvedConnectNotice(r Request, s Settings) notice {
+	return notice{r.Email, "You're approved - one last step", letter{
+		Title:   "You're approved",
+		Intro:   []string{"Hi " + r.Name + ", your account on " + siteName(s) + " is ready. There is one last step: Emby has sent you an email to link your account."},
+		Details: [][2]string{{"Your username", r.Username}, {"Emby Connect email", r.Connect}},
+		Steps: []string{
+			"Find the email from Emby (check spam too) and confirm linking your account.",
+			"That's all. Your account switches on by itself within a few minutes, and we'll email you when it's ready.",
+			"Then sign in with Emby Connect, or with your username and the password you chose when you asked for access.",
+		},
+		Note: "HyveMynd will never ask for your Emby Connect password.",
 	}}
 }
 

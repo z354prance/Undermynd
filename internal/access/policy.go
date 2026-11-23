@@ -204,7 +204,7 @@ func (m *Manager) ReapplyTemplate(ctx context.Context, id int64) error {
 	if e != nil {
 		return errors.New("request not found")
 	}
-	if r.EmbyID == "" || (r.Status != "active" && r.Status != "awaiting_setup" && r.Status != "incomplete") {
+	if r.EmbyID == "" || (r.Status != "active" && r.Status != "awaiting_setup" && r.Status != "awaiting_connect" && r.Status != "incomplete") {
 		return errors.New("request has no provisioned account to repair")
 	}
 	var user embyUser

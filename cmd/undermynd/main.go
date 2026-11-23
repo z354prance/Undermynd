@@ -188,6 +188,9 @@ func main() {
 	site.Storage.Persist(filepath.Join(env.ConfigDir, "storage-scan.json"))
 	go site.Storage.Run(ctx, func() time.Duration { return time.Duration(cfg.Get().StorageScanMinutes) * time.Minute })
 	go pt.Run(ctx)
+	if site.Access != nil {
+		go site.Access.Run(ctx) // switches on accounts once Emby confirms their Connect link
+	}
 	site.Attention = &attention.Service{Cfg: cfg, Log: logger, State: blobs}
 	go site.Attention.Run(ctx)
 	if dbh != nil {

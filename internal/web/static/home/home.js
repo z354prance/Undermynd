@@ -243,7 +243,7 @@
     if (jellyfin) {
       $("accessHelp").hidden = true; $("accessForm").elements.email.previousSibling.textContent = "Email address";
       $("accessEmailHelp").textContent = "We'll use this address to tell you about your request.";
-      $("accessNote").textContent = "Your request is held for approval. If approved, we'll email a link to finish setting up your server account.";
+      $("accessNote").textContent = "At least 8 characters. Once you're approved, you can sign in with your username and this password. We'll email you when it's ready.";
       $("setupHelp").textContent = "Choose a password for your server account below.";
     }
   }).catch(function () { });
@@ -254,10 +254,11 @@
   $("accessForm").querySelector("[data-back]").onclick = function () { step(1); };
   $("accessForm").onsubmit = function (e) {
     e.preventDefault(); if (!valid(2)) return; var f = e.currentTarget;
-    var data = { email: f.elements.email.value.trim(), name: f.elements.name.value.trim(), username: f.elements.username.value.trim() };
+    if (f.elements.password.value !== f.elements.confirm.value) { $("accessMsg").textContent = "The two passwords don't match. Type the same password in both boxes."; f.elements.confirm.focus(); return; }
+    var data = { email: f.elements.email.value.trim(), name: f.elements.name.value.trim(), username: f.elements.username.value.trim(), password: f.elements.password.value };
     if (!jellyfin) data.connect_username = data.email;
     $("accessMsg").textContent = "Submitting your request…";
-    api("/api/v1/access/request", { method: "POST", body: data }).then(function (r) { f.reset(); f.hidden = true; $("accessMsg").textContent = r.message || "Request sent."; }).catch(function (err) { $("accessMsg").textContent = err.message; });
+    api("/api/v1/access/request", { method: "POST", body: data }).then(function (r) { f.reset(); f.hidden = true; $("accessMsg").textContent = "Request sent. You'll get an email when it's approved."; }).catch(function (err) { $("accessMsg").textContent = err.message; });
   };
   document.querySelectorAll(".dlg [data-close]").forEach(function (b) { b.onclick = function () { b.closest("dialog").close(); }; });
   var setupToken = "";

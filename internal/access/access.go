@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	secretbox "github.com/z354prance/undermynd/internal/secret"
 	"net/mail"
 	"net/url"
 	"regexp"
@@ -52,6 +53,9 @@ type Request struct {
 	MailError string `json:"mail_error,omitempty"`
 	Created   string `json:"created_at"`
 	Updated   string `json:"updated_at"`
+	// Password is only read from a new request; it is never stored or listed
+	// in plain text (see rec.PasswordEnc).
+	Password string `json:"password,omitempty"`
 }
 
 // rec is a request as stored, with its single-use setup link (kept only as a hash).
@@ -59,6 +63,13 @@ type rec struct {
 	Request
 	TokenHash    string `json:"token_hash,omitempty"`
 	TokenExpires int64  `json:"token_expires,omitempty"`
+	// PasswordEnc is the password chosen in the request, encrypted with the
+	// server's secret key, kept only until the account is created (then set
+	// on the media server and deleted) or the request is declined.
+	PasswordEnc string `json:"password_enc,omitempty"`
+	// Chosen marks a request whose visitor chose the password in the
+	// request: it finishes without a setup link.
+	Chosen bool `json:"chosen,omitempty"`
 }
 
 // Manager keeps requests in one JSON file. Settings live in HyveMynd's own config;
@@ -160,6 +171,12 @@ func (m *Manager) RecoverInterrupted() error {
 		case "provisioning":
 			m.recs[i].Status, m.recs[i].Error, changed = "incomplete", "Interrupted by restart; retry to finish setup", true
 		case "setting_up":
+			if m.recs[i].Chosen {
+				// A chosen-password account waiting on Emby's Connect email:
+				// the next check finishes it.
+				m.recs[i].Status, changed = "awaiting_connect", true
+				break
+			}
 			m.recs[i].Status, m.recs[i].Error, changed = "awaiting_setup", "Interrupted by restart; retry to finish setup", true
 		}
 	}
@@ -302,6 +319,18 @@ func (m *Manager) Submit(r Request) error {
 	if len(r.Name) < 1 || len(r.Name) > 100 || strings.ContainsAny(r.Name, "\r\n") || !address(r.Email) || len(r.Email) > 254 || !usernamePattern.MatchString(r.Username) || (!isJellyfin(s) && !address(r.Connect)) || len(r.Connect) > 254 {
 		return errors.New("enter a name, valid email, a username of 3-64 letters/numbers/dots/dashes, and, for Emby, the email address of your Emby Connect account")
 	}
+	var pwEnc string
+	if r.Password != "" {
+		if len(r.Password) < MinPassword || len(r.Password) > 256 {
+			return fmt.Errorf("choose a password of at least %d characters", MinPassword)
+		}
+		enc, err := secretbox.Encrypt(r.Password)
+		if err != nil {
+			return errors.New("the password could not be stored safely; try again later")
+		}
+		pwEnc = enc
+	}
+	r.Password = ""
 	m.fmu.Lock()
 	open := 0
 	for _, x := range m.recs {
@@ -320,7 +349,7 @@ func (m *Manager) Submit(r Request) error {
 	m.next++
 	id := m.next
 	ts := now()
-	m.recs = append(m.recs, rec{Request: Request{ID: id, Name: r.Name, Email: r.Email, Username: r.Username, Connect: r.Connect, Status: "pending", Created: ts, Updated: ts}})
+	m.recs = append(m.recs, rec{Request: Request{ID: id, Name: r.Name, Email: r.Email, Username: r.Username, Connect: r.Connect, Status: "pending", Created: ts, Updated: ts}, PasswordEnc: pwEnc})
 	err := m.persist()
 	m.fmu.Unlock()
 	if err != nil {
@@ -465,8 +494,20 @@ func (m *Manager) Approve(ctx context.Context, id int64) error {
 	if _, _, e = applyTemplate(ctx, s, r, template); e != nil {
 		return m.fail(id, s, e.Error())
 	}
-	if e = emby(ctx, s, "POST", "/Users/"+r.EmbyID+"/Password", map[string]any{"Id": r.EmbyID, "NewPw": secret()}, nil); e != nil {
-		return m.fail(id, s, "Unable to secure the new account with a temporary random password")
+	// The password chosen in the request, when there is one; otherwise a
+	// random one until the visitor sets theirs through the emailed link.
+	pw, chosen := m.chosenPassword(id)
+	if !chosen {
+		pw = secret()
+	}
+	if e = emby(ctx, s, "POST", "/Users/"+r.EmbyID+"/Password", map[string]any{"Id": r.EmbyID, "NewPw": pw}, nil); e != nil {
+		return m.fail(id, s, "Unable to set the new account's password")
+	}
+	if chosen {
+		// Set on the media server: HyveMynd's copy is no longer needed.
+		if e = m.update(id, func(x *rec) { x.PasswordEnc, x.Chosen = "", true }); e != nil {
+			return e
+		}
 	}
 	if !isJellyfin(s) {
 		var link struct{ IsPending *bool }
@@ -474,10 +515,121 @@ func (m *Manager) Approve(ctx context.Context, id int64) error {
 			return m.fail(id, s, "Emby Connect linking failed; check that the Connect email address is right")
 		}
 	}
-	if e = m.setState(id, "awaiting_setup", ""); e != nil {
-		return e
+	if !chosen {
+		if e = m.setState(id, "awaiting_setup", ""); e != nil {
+			return e
+		}
+		return m.sendSetup(r, s)
 	}
-	return m.sendSetup(r, s)
+	if !isJellyfin(s) {
+		// Switched on by FinishConnected once the visitor confirms Emby's
+		// Connect email; nothing else for them to do.
+		if e = m.setState(id, "awaiting_connect", ""); e != nil {
+			return e
+		}
+		m.notify(id, s, []notice{approvedConnectNotice(r, s)})
+		return nil
+	}
+	if !m.claim(id, "setting_up", "provisioning") {
+		return errors.New("request already being handled")
+	}
+	if attempted, e := m.activate(ctx, s, id, r, ""); e != nil {
+		msg := e.Error()
+		if attempted {
+			if err := quarantine(s, r, nil); err != nil {
+				msg = err.Error()
+			}
+		}
+		return m.fail(id, s, msg)
+	}
+	m.notify(id, s, []notice{serverCompletionNotice(r, s)})
+	return nil
+}
+
+// MinPassword is the shortest password a visitor may choose.
+const MinPassword = 8
+
+// chosenPassword returns the password chosen in the request, if any.
+func (m *Manager) chosenPassword(id int64) (string, bool) {
+	m.fmu.Lock()
+	enc := ""
+	for _, x := range m.recs {
+		if x.ID == id {
+			enc = x.PasswordEnc
+		}
+	}
+	m.fmu.Unlock()
+	if enc == "" {
+		return "", false
+	}
+	pw, err := secretbox.Decrypt(enc)
+	if err != nil || pw == "" {
+		return "", false
+	}
+	return pw, true
+}
+
+// FinishConnected switches on Emby accounts whose visitor has confirmed
+// Emby's Connect email since approval (password chosen in the request).
+func (m *Manager) FinishConnected(ctx context.Context) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, e := m.Settings()
+	if e != nil || !s.Enabled {
+		return
+	}
+	var ids []int64
+	m.fmu.Lock()
+	for _, x := range m.recs {
+		if x.Status == "awaiting_connect" {
+			ids = append(ids, x.ID)
+		}
+	}
+	m.fmu.Unlock()
+	for _, id := range ids {
+		r, e := m.get(id)
+		if e != nil {
+			continue
+		}
+		var user embyUser
+		if e = emby(ctx, s, "GET", "/Users/"+r.EmbyID, nil, &user); e != nil || (!isJellyfin(s) && user.ConnectLinkType != "LinkedUser") {
+			continue // not confirmed yet
+		}
+		if !m.claim(id, "setting_up", "awaiting_connect") {
+			continue
+		}
+		attempted, e := m.activate(ctx, s, id, r, "")
+		if e == nil {
+			m.notify(id, s, []notice{serverCompletionNotice(r, s)})
+			continue
+		}
+		msg := e.Error()
+		if attempted {
+			if err := quarantine(s, r, nil); err != nil {
+				msg = err.Error()
+			}
+		}
+		_ = m.setState(id, "awaiting_connect", msg)
+		if attempted {
+			m.notify(id, s, []notice{adminStuckNotice(id, s, msg)})
+		}
+	}
+}
+
+// Run checks every two minutes for confirmed Connect links.
+func (m *Manager) Run(ctx context.Context) {
+	t := time.NewTicker(2 * time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			c, cancel := context.WithTimeout(ctx, time.Minute)
+			m.FinishConnected(c)
+			cancel()
+		}
+	}
 }
 
 func (m *Manager) sendSetup(r Request, s Settings) error {
@@ -503,6 +655,8 @@ func (m *Manager) Resend(id int64) error {
 	switch r.Status {
 	case "awaiting_setup":
 		return m.sendSetup(r, s)
+	case "awaiting_connect":
+		m.notify(id, s, []notice{approvedConnectNotice(r, s)})
 	case "pending":
 		m.notify(id, s, []notice{receiptNotice(r, s), adminPendingNotice(r, s)})
 	case "declined":
@@ -525,6 +679,7 @@ func (m *Manager) Decline(id int64) error {
 	if !m.claim(id, "declined", "pending") {
 		return errors.New("only pending requests can be declined")
 	}
+	_ = m.update(id, func(x *rec) { x.PasswordEnc = "" })
 	r, e := m.get(id)
 	if e != nil {
 		return e
@@ -538,8 +693,8 @@ func (m *Manager) Setup(ctx context.Context, token, password string) error {
 	defer m.mu.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	if len(token) != 64 || len(password) < 12 || len(password) > 256 {
-		return errors.New("a valid setup link and a password of 12-256 characters are required")
+	if len(token) != 64 || len(password) < MinPassword || len(password) > 256 {
+		return fmt.Errorf("a valid setup link and a password of %d-256 characters are required", MinPassword)
 	}
 	var id int64
 	m.fmu.Lock()
@@ -582,47 +737,61 @@ func (m *Manager) Setup(ctx context.Context, token, password string) error {
 			}
 		}
 	}()
-	var user embyUser
-	if e = emby(ctx, s, "GET", "/Users/"+r.EmbyID, nil, &user); e != nil || user.Policy == nil {
-		return errors.New("unable to read your media server account")
-	}
-	if user.ID != r.EmbyID || !strings.EqualFold(user.Name, r.Username) {
-		return errors.New("account identity changed; contact the server owner")
-	}
-	if user.Policy["IsAdministrator"] != false {
-		return errors.New("account permissions changed; contact the server owner")
-	}
-	if user.Policy["IsDisabled"] != true {
-		if e = quarantine(s, r, user.Policy); e != nil {
-			return e
-		}
-	}
-	template, e := readTemplate(ctx, s)
+	attempted, e := m.activate(ctx, s, id, r, password)
+	activationAttempted = attempted
 	if e != nil {
-		return e
-	}
-	desiredPolicy, desiredConfig, e := applyTemplate(ctx, s, r, template)
-	if e != nil {
-		return e
-	}
-	if e = verifyConnect(ctx, s, r, user); e != nil {
-		return e
-	}
-	if e = emby(ctx, s, "POST", "/Users/"+r.EmbyID+"/Password", map[string]any{"Id": r.EmbyID, "NewPw": password}, nil); e != nil {
-		return errors.New("The media server could not set the password; retry or contact the server owner")
-	}
-	desiredPolicy["IsDisabled"] = false
-	activationAttempted = true
-	if e = emby(ctx, s, "POST", "/Users/"+r.EmbyID+"/Policy", desiredPolicy, nil); e != nil {
-		return errors.New("unable to enable your account; contact the server owner")
-	}
-	if e = verifySettings(ctx, s, r, desiredPolicy, desiredConfig); e != nil {
-		return e
-	}
-	if e = m.update(id, func(x *rec) { x.Status, x.Error, x.TokenHash, x.TokenExpires = "active", "", "", 0 }); e != nil {
 		return e
 	}
 	success = true
 	m.notify(id, s, []notice{serverCompletionNotice(r, s)})
 	return nil
+}
+
+// activate checks the media server account, applies the template, confirms
+// the Connect link (Emby), sets the password when one is given, switches the
+// account on and marks the request active. attempted reports whether the
+// account may have been switched on (so a failure must switch it off again).
+func (m *Manager) activate(ctx context.Context, s Settings, id int64, r Request, password string) (attempted bool, e error) {
+	var user embyUser
+	if e = emby(ctx, s, "GET", "/Users/"+r.EmbyID, nil, &user); e != nil || user.Policy == nil {
+		return false, errors.New("unable to read your media server account")
+	}
+	if user.ID != r.EmbyID || !strings.EqualFold(user.Name, r.Username) {
+		return false, errors.New("account identity changed; contact the server owner")
+	}
+	if user.Policy["IsAdministrator"] != false {
+		return false, errors.New("account permissions changed; contact the server owner")
+	}
+	if user.Policy["IsDisabled"] != true {
+		if e = quarantine(s, r, user.Policy); e != nil {
+			return false, e
+		}
+	}
+	template, e := readTemplate(ctx, s)
+	if e != nil {
+		return false, e
+	}
+	desiredPolicy, desiredConfig, e := applyTemplate(ctx, s, r, template)
+	if e != nil {
+		return false, e
+	}
+	if e = verifyConnect(ctx, s, r, user); e != nil {
+		return false, e
+	}
+	if password != "" {
+		if e = emby(ctx, s, "POST", "/Users/"+r.EmbyID+"/Password", map[string]any{"Id": r.EmbyID, "NewPw": password}, nil); e != nil {
+			return false, errors.New("The media server could not set the password; retry or contact the server owner")
+		}
+	}
+	desiredPolicy["IsDisabled"] = false
+	if e = emby(ctx, s, "POST", "/Users/"+r.EmbyID+"/Policy", desiredPolicy, nil); e != nil {
+		return true, errors.New("unable to enable your account; contact the server owner")
+	}
+	if e = verifySettings(ctx, s, r, desiredPolicy, desiredConfig); e != nil {
+		return true, e
+	}
+	if e = m.update(id, func(x *rec) { x.Status, x.Error, x.TokenHash, x.TokenExpires, x.PasswordEnc = "active", "", "", 0, "" }); e != nil {
+		return true, e
+	}
+	return true, nil
 }

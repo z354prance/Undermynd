@@ -50,7 +50,9 @@
     <fieldset data-step="2" hidden>
       <div class="two"><label>Your name<input name="name" autocomplete="name" required maxlength="100"></label>
       <label>Preferred server username<input name="username" autocomplete="off" required minlength="3" maxlength="64" pattern="[a-zA-Z0-9][a-zA-Z0-9_.\-]{2,63}" title="3-64 letters, numbers, dots, underscores, or dashes"></label></div>
-      <p class="help" id="accessNote">Once your request is approved, Emby will email you to link your Connect account to this server. Watch for it and accept it, then we'll email a link to finish setting up your account.</p>
+      <div class="two"><label>Choose a password<input name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="256"></label>
+      <label>Type it again<input name="confirm" type="password" autocomplete="new-password" required minlength="8" maxlength="256"></label></div>
+      <p class="help" id="accessNote">At least 8 characters. Once you're approved, Emby will email you to link your account: confirm that email and you're in. Your account switches on by itself.</p>
       <div class="row"><button type="button" data-back>Back</button><button type="submit" class="primary">Submit for approval</button></div>
     </fieldset>
   </form>
@@ -60,8 +62,8 @@
   <header><h2>Finish your server setup</h2><button type="button" class="x" data-close>Close</button></header>
   <p id="setupHelp">For Emby, confirm any Connect linking email first. Choose a password for your server account below.</p>
   <form id="setupForm">
-    <label>New server password<input name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="256"></label>
-    <label>Confirm password<input name="confirm" type="password" autocomplete="new-password" required minlength="12" maxlength="256"></label>
+    <label>New server password<input name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="256"></label>
+    <label>Confirm password<input name="confirm" type="password" autocomplete="new-password" required minlength="8" maxlength="256"></label>
     <div class="row end"><button type="submit" class="primary">Finish setup</button></div>
   </form>
   <p class="msg" id="setupMsg" role="status"></p>
