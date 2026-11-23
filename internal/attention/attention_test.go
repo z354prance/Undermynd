@@ -56,6 +56,12 @@ func (f *fakeArr) MovieByTMDB(_ context.Context, id int64) (arr.Item, bool, erro
 func (f *fakeArr) SetProfile(_ context.Context, id, p int64) error {
 	f.calls = append(f.calls, "profile")
 	f.lastProfile = p
+	for k, it := range f.items {
+		if it.ID == id {
+			it.ProfileID = p
+			f.items[k] = it
+		}
+	}
 	return nil
 }
 func (f *fakeArr) SearchSeason(_ context.Context, id int64, s int) error {
@@ -523,5 +529,125 @@ func TestProgress(t *testing.T) {
 	p := s.Snapshot().Actions[0].Progress
 	if p == nil || p.Done != 3 || p.Total != 5 || len(p.Seasons) != 2 || p.Seasons[1].Done != 1 || p.Seasons[1].Total != 3 {
 		t.Fatalf("progress %+v", p)
+	}
+}
+
+// A show that upgrades nothing for 12 hours (its downloads stuck in Sonarr's
+// queue) lets the next show start; one still upgrading keeps the slot.
+func TestStalledShowGivesWay(t *testing.T) {
+	secret.SetKeyForTest(make([]byte, 32))
+	dir := t.TempDir()
+	cfg, err := config.Load(config.Env{ConfigDir: filepath.Join(dir, "c"), DataDir: filepath.Join(dir, "d"), TickInterval: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := cfg.Get()
+	st.Playback.TracearrURL, st.Playback.TracearrKey = "http://t", "k"
+	st.Categories = []config.Category{{Name: "tv", Kind: "sonarr", ArrURL: "http://s"}}
+	st.Attention = config.Attention{On: true, TVProfile: "Upgrade"}
+	if err := cfg.Set(st); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC)
+	eps := func(show string, n int) []tracearr.Play {
+		var out []tracearr.Play
+		for e := 1; e <= 3; e++ {
+			e := e
+			out = append(out, play("ann", now.Add(-time.Duration(n*10+e)*time.Minute), func(p *tracearr.Play) { p.ShowMediaID, p.Season, p.Episode = show, 1, e }))
+		}
+		return out
+	}
+	h := &fakeHist{eps: append(eps("show-a", 2), eps("show-b", 1)...)}
+	hist := histIDs{h, map[string]int64{"show-a": 1, "show-b": 2}}
+	son := &fakeArr{items: map[int64]arr.Item{1: withSeasons(arr.Item{ID: 11, Title: "A", ProfileID: 1}, 1, 2, 3, 4), 2: withSeasons(arr.Item{ID: 12, Title: "B", ProfileID: 1}, 1)},
+		files: map[int64][]arr.FileQuality{11: {{Season: 1}, {Season: 1}}}}
+	s := &Service{Cfg: cfg, Log: log.New(io.Discard, "", 0), Now: func() time.Time { return now },
+		History: func(config.Playback) History { return hist }, Arr: func(config.Category) Arr { return son }}
+	s.Check(context.Background())
+	son.items[1] = withProfile(son.items[1], 9)
+	son.queued = 12 // A has plenty waiting in Sonarr's queue
+
+	// Six hours on, A upgraded an episode and its queue is full: it keeps the slot.
+	now = now.Add(6 * time.Hour)
+	son.files[11] = []arr.FileQuality{{Season: 1, CutoffMet: true}, {Season: 1}}
+	s.Check(context.Background())
+	if got := join(son.calls); got != "profile season1 season2" {
+		t.Fatalf("B started while A was upgrading: %q", got)
+	}
+	// Thirteen more hours with nothing upgraded: B starts.
+	now = now.Add(13 * time.Hour)
+	s.Check(context.Background())
+	if got := join(son.calls); got != "profile season1 season2 profile season1" {
+		t.Fatalf("B should start once A stalled: %q", got)
+	}
+	var a Action
+	for _, x := range s.Snapshot().Actions {
+		if x.Title == "A" {
+			a = x
+		}
+	}
+	if !a.Stalled {
+		t.Fatalf("A should show as stalled: %+v", a)
+	}
+	// A's queue clears: it carries on with its next season.
+	son.queued = 0
+	now = now.Add(time.Hour)
+	s.Check(context.Background())
+	if c := son.calls[len(son.calls)-1]; c != "season3" {
+		t.Fatalf("A should carry on: %v", son.calls)
+	}
+}
+
+// A show finishing slowly with only a few downloads left in Sonarr's queue
+// lets the next show start, up to three at once.
+func TestLowQueueStartsNextShow(t *testing.T) {
+	secret.SetKeyForTest(make([]byte, 32))
+	dir := t.TempDir()
+	cfg, err := config.Load(config.Env{ConfigDir: filepath.Join(dir, "c"), DataDir: filepath.Join(dir, "d"), TickInterval: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := cfg.Get()
+	st.Playback.TracearrURL, st.Playback.TracearrKey = "http://t", "k"
+	st.Categories = []config.Category{{Name: "tv", Kind: "sonarr", ArrURL: "http://s"}}
+	st.Attention = config.Attention{On: true, TVProfile: "Upgrade"}
+	if err := cfg.Set(st); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC)
+	var plays []tracearr.Play
+	ids := map[string]int64{}
+	items := map[int64]arr.Item{}
+	for i, name := range []string{"a", "b", "c", "d"} {
+		id := int64(i + 1)
+		ids["show-"+name] = id
+		items[id] = withSeasons(arr.Item{ID: 10 + id, Title: name, ProfileID: 1}, 1, 2, 3)
+		for e := 1; e <= 3; e++ {
+			e, n := e, 4-i
+			plays = append(plays, play("ann", now.Add(-time.Duration(n*10+e)*time.Minute), func(p *tracearr.Play) { p.ShowMediaID, p.Season, p.Episode = "show-"+name, 1, e }))
+		}
+	}
+	son := &fakeArr{items: items, queued: 2}
+	s := &Service{Cfg: cfg, Log: log.New(io.Discard, "", 0), Now: func() time.Time { return now },
+		History: func(config.Playback) History { return histIDs{&fakeHist{eps: plays}, ids} }, Arr: func(config.Category) Arr { return son }}
+	count := func() int {
+		n := 0
+		for _, c := range son.calls {
+			if c == "profile" {
+				n++
+			}
+		}
+		return n
+	}
+	s.Check(context.Background())
+	if count() != 1 {
+		t.Fatalf("one show per check: %v", son.calls)
+	}
+	for i := 0; i < 4; i++ {
+		now = now.Add(time.Hour)
+		s.Check(context.Background())
+	}
+	if count() != 3 {
+		t.Fatalf("up to three shows at once with a short queue: %d %v", count(), son.calls)
 	}
 }
