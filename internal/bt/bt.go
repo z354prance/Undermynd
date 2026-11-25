@@ -34,6 +34,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/z354prance/undermynd/internal/backend"
+	"github.com/z354prance/undermynd/internal/guard"
 	"github.com/z354prance/undermynd/internal/job"
 	"github.com/z354prance/undermynd/internal/state"
 )
@@ -63,6 +64,7 @@ type rec struct {
 	Info    string    `json:"info,omitempty"`    // base64 info dictionary, once known (magnets)
 	Save    string    `json:"save"`
 	Done    bool      `json:"done,omitempty"`
+	Blocked string    `json:"blocked,omitempty"` // why the malicious file guard stopped it
 	Added   time.Time `json:"added"`
 }
 
@@ -171,7 +173,7 @@ func (c *Client) sync() {
 			return
 		}
 		for id, r := range c.recs {
-			if !r.Done {
+			if !r.Done && r.Blocked == "" {
 				if err := c.add(id, r); err != nil {
 					c.logf("job %s: %v", id, err)
 				}
@@ -469,6 +471,9 @@ func (c *Client) Status(ctx context.Context, id string) (backend.Item, error) {
 	if r == nil {
 		return backend.Item{Status: backend.Missing}, nil
 	}
+	if r.Blocked != "" {
+		return backend.Item{Status: backend.Errored, Error: r.Blocked}, nil
+	}
 	if r.Done {
 		return backend.Item{Status: backend.Complete, Progress: 1}, nil
 	}
@@ -479,6 +484,17 @@ func (c *Client) Status(ctx context.Context, id string) (backend.Item, error) {
 	info := t.Info()
 	if info == nil {
 		return backend.Item{Status: backend.Downloading}, nil
+	}
+	// Malicious file guard: stop before downloading a release that carries
+	// a program or script.
+	for _, f := range info.UpvertedFiles() {
+		if why := guard.Name(strings.Join(f.BestPath(), "/")); why != "" {
+			t.Drop()
+			delete(c.tors, id)
+			r.Blocked = "blocked: " + why
+			c.save()
+			return backend.Item{Status: backend.Errored, Error: r.Blocked}, nil
+		}
 	}
 	total := info.TotalLength() // (the library's Length is not safe to read here)
 	if total > 0 && t.BytesMissing() == 0 {
