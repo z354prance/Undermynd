@@ -1,0 +1,802 @@
+package usenet
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"log"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/z354prance/undermynd/internal/backend"
+	"github.com/z354prance/undermynd/internal/config"
+	"github.com/z354prance/undermynd/internal/guard"
+	"github.com/z354prance/undermynd/internal/job"
+	"github.com/z354prance/undermynd/internal/state"
+)
+
+// Name is the backend name jobs record.
+const Name = "usenet"
+
+// Stages of a download.
+const (
+	Queued      = "queued"
+	Downloading = "downloading"
+	Repairing   = "repairing"
+	Unpacking   = "unpacking"
+	Done        = "done"
+	Failed      = "failed"
+)
+
+// task is one NZB.
+type task struct {
+	ID       string    `json:"id"`
+	Save     string    `json:"save"` // the job's folder
+	Stage    string    `json:"stage"`
+	Error    string    `json:"error,omitempty"`
+	Added    time.Time `json:"added"`
+	Total    int64     `json:"total"`
+	Password string    `json:"password,omitempty"`
+
+	done   atomic.Int64 // bytes fetched
+	cancel context.CancelFunc
+}
+
+// progress is what a task has fetched, kept in its folder so a restart
+// carries on.
+type progress struct {
+	Done    map[string]bool `json:"done"` // message ids fetched (or given up on)
+	Missing int             `json:"missing"`
+	Damaged int             `json:"damaged"`
+	Names   map[int]string  `json:"names"`  // file index -> name used on disk
+	Repair  bool            `json:"repair"` // repair volumes wanted
+}
+
+const progressFile = ".hyvemynd-usenet.json"
+const nzbFile = ".hyvemynd.nzb"
+
+// Downloader runs NZBs one at a time, at full speed.
+type Downloader struct {
+	Cfg   func() config.Usenet
+	Dir   string // one folder per job under here
+	State state.Blobs
+	Log   *log.Logger
+	Dial  Dialer // nil: direct connections
+	// RetryWait is the pause when no provider answers (default a minute).
+	RetryWait time.Duration
+
+	mu      sync.Mutex
+	tasks   map[string]*task
+	loaded  bool
+	wake    chan struct{}
+	pools   []*pool
+	poolKey string
+	speed   atomic.Int64 // bytes in the last second
+	once    sync.Once
+}
+
+const stateName = "usenet.json"
+
+func (d *Downloader) init() {
+	d.once.Do(func() { d.wake = make(chan struct{}, 1) })
+}
+
+func (d *Downloader) logf(format string, a ...any) {
+	if d.Log != nil {
+		d.Log.Printf("usenet: "+format, a...)
+	}
+}
+
+func (d *Downloader) load() {
+	if d.loaded {
+		return
+	}
+	d.loaded = true
+	d.tasks = map[string]*task{}
+	if d.State == nil {
+		return
+	}
+	if b, ok, _ := d.State.Load(stateName); ok {
+		var list []*task
+		_ = json.Unmarshal(b, &list)
+		for _, t := range list {
+			if t.Stage == Downloading || t.Stage == Repairing || t.Stage == Unpacking {
+				t.Stage = Queued // carry on after a restart
+			}
+			d.tasks[t.ID] = t
+		}
+	}
+}
+
+func (d *Downloader) save() {
+	if d.State == nil {
+		return
+	}
+	list := make([]*task, 0, len(d.tasks))
+	for _, t := range d.tasks {
+		list = append(list, t)
+	}
+	b, _ := json.Marshal(list)
+	_ = d.State.Save(stateName, b)
+}
+
+func (d *Downloader) poke() {
+	d.init()
+	select {
+	case d.wake <- struct{}{}:
+	default:
+	}
+}
+
+// Name implements backend.Backend.
+func (d *Downloader) Name() string { return Name }
+
+// Ready says whether a provider is set up.
+func (d *Downloader) Ready() bool { return d.Cfg().Ready() }
+
+// Add implements backend.Backend.
+func (d *Downloader) Add(ctx context.Context, j job.Job) (string, string, error) {
+	if !d.Ready() {
+		return "", "", backend.Permanent{Msg: "no usenet provider is set up for the built-in downloader"}
+	}
+	if j.NZBPath == "" {
+		return "", "", backend.Permanent{Msg: "this job has no NZB"}
+	}
+	raw, err := os.ReadFile(j.NZBPath)
+	if err != nil {
+		return "", "", err
+	}
+	nzb, err := ParseNZB(bytes.NewReader(raw))
+	if err != nil {
+		return "", "", backend.Permanent{Msg: err.Error()}
+	}
+	for _, f := range nzb.Files {
+		if why := guard.Name(f.Name); why != "" {
+			return "", "", backend.Permanent{Msg: "blocked: " + why}
+		}
+	}
+	save := filepath.Join(d.Dir, j.ID)
+	os.RemoveAll(save) // a fresh start for a re-submitted job
+	if err := os.MkdirAll(save, 0o755); err != nil {
+		return "", "", err
+	}
+	if err := os.WriteFile(filepath.Join(save, nzbFile), raw, 0o644); err != nil {
+		return "", "", err
+	}
+	t := &task{ID: j.ID, Save: save, Stage: Queued, Added: time.Now(), Password: nzb.Password}
+	for _, f := range nzb.Files {
+		if !isRepairVolume(f.Name) {
+			t.Total += f.Bytes
+		}
+	}
+	d.mu.Lock()
+	d.load()
+	if old := d.tasks[j.ID]; old != nil && old.cancel != nil {
+		old.cancel()
+	}
+	d.tasks[j.ID] = t
+	d.save()
+	d.mu.Unlock()
+	d.poke()
+	return j.ID, save, nil
+}
+
+// Status implements backend.Backend. Waiting in the queue, repairing and
+// unpacking answer ErrBusy with what is happening, so the pipeline does not
+// count them as a stalled download.
+func (d *Downloader) Status(ctx context.Context, id string) (backend.Item, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.load()
+	t := d.tasks[id]
+	if t == nil {
+		return backend.Item{Status: backend.Missing}, nil
+	}
+	switch t.Stage {
+	case Done:
+		return backend.Item{Status: backend.Complete, Progress: 1}, nil
+	case Failed:
+		return backend.Item{Status: backend.Errored, Error: t.Error}, nil
+	case Queued:
+		if t.Error != "" {
+			return backend.Item{}, fmt.Errorf("%w: %s", backend.ErrBusy, t.Error)
+		}
+		return backend.Item{}, fmt.Errorf("%w: waiting for the usenet download before it", backend.ErrBusy)
+	case Repairing:
+		return backend.Item{}, fmt.Errorf("%w: repairing with par2", backend.ErrBusy)
+	case Unpacking:
+		return backend.Item{}, fmt.Errorf("%w: unpacking", backend.ErrBusy)
+	}
+	if t.Error != "" {
+		return backend.Item{}, fmt.Errorf("%w: %s", backend.ErrBusy, t.Error)
+	}
+	p := 0.0
+	if t.Total > 0 {
+		p = float64(t.done.Load()) / float64(t.Total)
+		if p > 0.99 {
+			p = 0.99
+		}
+	}
+	return backend.Item{Status: backend.Downloading, Progress: p}, nil
+}
+
+// Files implements backend.Backend.
+func (d *Downloader) Files(ctx context.Context, id string) ([]backend.File, error) {
+	d.mu.Lock()
+	d.load()
+	t := d.tasks[id]
+	d.mu.Unlock()
+	if t == nil {
+		return nil, backend.Permanent{Msg: "the usenet downloader has no such download"}
+	}
+	var out []backend.File
+	err := filepath.WalkDir(t.Save, func(p string, de fs.DirEntry, err error) error {
+		if err != nil || de.IsDir() || strings.HasPrefix(de.Name(), ".hyvemynd") {
+			return err
+		}
+		info, err := de.Info()
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(t.Save, p)
+		out = append(out, backend.File{Path: filepath.ToSlash(rel), Size: info.Size()})
+		return nil
+	})
+	return out, err
+}
+
+// Remove implements backend.Backend.
+func (d *Downloader) Remove(ctx context.Context, id string, deleteFiles bool) error {
+	d.mu.Lock()
+	d.load()
+	t := d.tasks[id]
+	delete(d.tasks, id)
+	d.save()
+	d.mu.Unlock()
+	if t != nil && t.cancel != nil {
+		t.cancel()
+	}
+	if deleteFiles && id != "" {
+		dir := filepath.Join(d.Dir, id)
+		if filepath.Dir(dir) == filepath.Clean(d.Dir) {
+			return os.RemoveAll(dir)
+		}
+	}
+	return nil
+}
+
+// Stats is what the admin shows.
+type Stats struct {
+	Active   string       `json:"active,omitempty"` // job id
+	Stage    string       `json:"stage,omitempty"`
+	Progress float64      `json:"progress"`
+	Queued   int          `json:"queued"`
+	Speed    int64        `json:"speed"` // bytes a second
+	Servers  []ServerStat `json:"servers"`
+}
+
+// ServerStat is one provider's state.
+type ServerStat struct {
+	Name    string `json:"name"`
+	Problem string `json:"problem,omitempty"`
+}
+
+// Stats reports what the downloader is doing.
+func (d *Downloader) Stats() Stats {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.load()
+	s := Stats{Speed: d.speed.Load()}
+	for _, t := range d.tasks {
+		switch t.Stage {
+		case Queued:
+			s.Queued++
+		case Downloading, Repairing, Unpacking:
+			s.Active, s.Stage = t.ID, t.Stage
+			if t.Total > 0 {
+				s.Progress = float64(t.done.Load()) / float64(t.Total)
+			}
+		}
+	}
+	for _, p := range d.pools {
+		s.Servers = append(s.Servers, ServerStat{Name: p.srv.Label(), Problem: p.problem()})
+	}
+	return s
+}
+
+// Run works through the queue until ctx ends.
+func (d *Downloader) Run(ctx context.Context) {
+	d.init()
+	go d.meter(ctx)
+	for {
+		t := d.next()
+		if t == nil {
+			select {
+			case <-ctx.Done():
+				d.closePools()
+				return
+			case <-d.wake:
+			case <-time.After(30 * time.Second):
+			}
+			continue
+		}
+		tctx, cancel := context.WithCancel(ctx)
+		d.mu.Lock()
+		t.cancel = cancel
+		d.mu.Unlock()
+		err := d.process(tctx, t)
+		removed := tctx.Err() != nil && ctx.Err() == nil
+		cancel()
+		d.mu.Lock()
+		if _, still := d.tasks[t.ID]; still {
+			switch {
+			case err == nil:
+				t.Stage, t.Error = Done, ""
+				d.logf("job %s finished", t.ID)
+			case ctx.Err() != nil:
+				t.Stage = Queued // shutting down: carry on next time
+			case removed:
+				// removed or replaced while running
+			case errors.Is(err, errAllDown):
+				// The providers are unreachable: wait, do not fail the job.
+				t.Stage, t.Error = Queued, err.Error()
+				d.logf("job %s: %v; trying again in a minute", t.ID, err)
+			default:
+				t.Stage, t.Error = Failed, err.Error()
+				d.logf("job %s failed: %v", t.ID, err)
+			}
+			d.save()
+		}
+		d.mu.Unlock()
+		if ctx.Err() != nil {
+			d.closePools()
+			return
+		}
+		if errors.Is(err, errAllDown) {
+			select {
+			case <-ctx.Done():
+				d.closePools()
+				return
+			case <-time.After(d.retryWait()):
+			}
+		}
+	}
+}
+
+// RetryWait is how long to wait when no provider answers. Default a minute.
+func (d *Downloader) retryWait() time.Duration {
+	if d.RetryWait > 0 {
+		return d.RetryWait
+	}
+	return time.Minute
+}
+
+// meter keeps the speed figure.
+func (d *Downloader) meter(ctx context.Context) {
+	tk := time.NewTicker(time.Second)
+	defer tk.Stop()
+	var last int64
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tk.C:
+		}
+		var now int64
+		d.mu.Lock()
+		for _, t := range d.tasks {
+			now += t.done.Load()
+		}
+		d.mu.Unlock()
+		if now >= last {
+			d.speed.Store(now - last)
+		} else {
+			d.speed.Store(0)
+		}
+		last = now
+	}
+}
+
+// next picks the oldest queued task and marks it downloading.
+func (d *Downloader) next() *task {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.load()
+	var q []*task
+	for _, t := range d.tasks {
+		if t.Stage == Queued {
+			q = append(q, t)
+		}
+	}
+	if len(q) == 0 {
+		return nil
+	}
+	sort.Slice(q, func(i, j int) bool { return q[i].Added.Before(q[j].Added) })
+	q[0].Stage = Downloading // Error stays until an article arrives
+	d.save()
+	return q[0]
+}
+
+func (d *Downloader) setStage(t *task, stage string) {
+	d.mu.Lock()
+	t.Stage = stage
+	d.save()
+	d.mu.Unlock()
+}
+
+// providers returns the connection pools, by priority, rebuilt when the
+// settings change.
+func (d *Downloader) providers() [][]*pool {
+	cfg := d.Cfg()
+	key, _ := json.Marshal(cfg.Servers)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if string(key) != d.poolKey {
+		for _, p := range d.pools {
+			p.closeAll()
+		}
+		d.pools, d.poolKey = nil, string(key)
+		for _, s := range cfg.Servers {
+			if s.On && s.Host != "" {
+				d.pools = append(d.pools, newPool(s, d.Dial))
+			}
+		}
+	}
+	byPrio := map[int][]*pool{}
+	var prios []int
+	for _, p := range d.pools {
+		if _, ok := byPrio[p.srv.Priority]; !ok {
+			prios = append(prios, p.srv.Priority)
+		}
+		byPrio[p.srv.Priority] = append(byPrio[p.srv.Priority], p)
+	}
+	sort.Ints(prios)
+	out := make([][]*pool, 0, len(prios))
+	for _, pr := range prios {
+		out = append(out, byPrio[pr])
+	}
+	return out
+}
+
+func (d *Downloader) closePools() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, p := range d.pools {
+		p.closeAll()
+	}
+}
+
+// errAllDown means no provider could be reached for an article.
+var errAllDown = errors.New("no usenet provider could be reached")
+
+// fetch gets one article from the providers: main ones first (spread
+// across them), then each backup level in turn. A provider that lacks it is
+// skipped; a broken connection is retried once.
+func (d *Downloader) fetch(ctx context.Context, tiers [][]*pool, id string, turn int) ([]byte, error) {
+	reached := false
+	for _, tier := range tiers {
+		for k := range tier {
+			p := tier[(turn+k)%len(tier)]
+			for try := 0; try < 2; try++ {
+				c, err := p.get(ctx)
+				if err != nil {
+					if ctx.Err() != nil {
+						return nil, ctx.Err()
+					}
+					break // this provider is down: next one
+				}
+				var buf bytes.Buffer
+				err = c.body(id, &buf)
+				if err == nil {
+					p.put(c, true)
+					return buf.Bytes(), nil
+				}
+				if errors.Is(err, ErrNoArticle) {
+					p.put(c, true)
+					reached = true
+					break
+				}
+				p.put(c, false) // broken connection: drop it and retry
+			}
+		}
+	}
+	if !reached {
+		return nil, errAllDown
+	}
+	return nil, ErrNoArticle
+}
+
+type work struct {
+	file int
+	seg  Segment
+	turn int
+}
+
+// process downloads, repairs and unpacks one task.
+func (d *Downloader) process(ctx context.Context, t *task) error {
+	raw, err := os.ReadFile(filepath.Join(t.Save, nzbFile))
+	if err != nil {
+		return fmt.Errorf("the NZB is gone: %w", err)
+	}
+	nzb, err := ParseNZB(bytes.NewReader(raw))
+	if err != nil {
+		return err
+	}
+	pr := d.loadProgress(t)
+	// Names on disk: the subject's, or file-N until yEnc tells us.
+	used := map[string]bool{}
+	for i, f := range nzb.Files {
+		n := pr.Names[i]
+		if n == "" {
+			n = f.Name
+			if n == "" || used[n] {
+				n = fmt.Sprintf("file-%03d", i+1)
+			}
+			pr.Names[i] = n
+		}
+		used[n] = true
+	}
+	var already int64
+	for i, f := range nzb.Files {
+		if isRepairVolume(pr.Names[i]) && !pr.Repair {
+			continue
+		}
+		for _, s := range f.Segments {
+			if pr.Done[s.ID] {
+				already += s.Bytes
+			}
+		}
+	}
+	t.done.Store(already)
+
+	repairWanted := func(i int) bool { return !isRepairVolume(pr.Names[i]) || pr.Repair }
+	if err := d.download(ctx, t, nzb, pr, repairWanted); err != nil {
+		return err
+	}
+	if pr.Missing+pr.Damaged > 0 {
+		// Get the repair volumes and repair.
+		if !pr.Repair {
+			pr.Repair = true
+			d.saveProgress(t, pr)
+			d.mu.Lock()
+			for i, f := range nzb.Files {
+				if isRepairVolume(pr.Names[i]) {
+					t.Total += f.Bytes
+				}
+			}
+			d.mu.Unlock()
+			if err := d.download(ctx, t, nzb, pr, func(i int) bool { return isRepairVolume(pr.Names[i]) }); err != nil {
+				return err
+			}
+		}
+		restoreNames(t.Save)
+		d.setStage(t, Repairing)
+		d.logf("job %s: %d articles missing, %d damaged: repairing", t.ID, pr.Missing, pr.Damaged)
+		if err := repair(t.Save); err != nil {
+			return err
+		}
+	} else {
+		restoreNames(t.Save)
+	}
+	d.setStage(t, Unpacking)
+	if _, err := unpack(t.Save, t.Password); err != nil {
+		if errors.Is(err, errPassword) {
+			return errors.New("the release is password protected and the NZB gives no password")
+		}
+		return err
+	}
+	// Leave only what was released: no par2, NZB or progress files.
+	ents, _ := os.ReadDir(t.Save)
+	for _, e := range ents {
+		n := strings.ToLower(e.Name())
+		if strings.HasSuffix(n, ".par2") || strings.HasSuffix(n, ".sfv") || strings.HasPrefix(n, ".hyvemynd") {
+			os.Remove(filepath.Join(t.Save, e.Name()))
+		}
+	}
+	return nil
+}
+
+// download fetches the wanted files' remaining articles.
+func (d *Downloader) download(ctx context.Context, t *task, nzb NZB, pr *progress, want func(int) bool) error {
+	tiers := d.providers()
+	if len(tiers) == 0 {
+		return errors.New("no usenet provider is switched on")
+	}
+	workers := 0
+	for _, tier := range tiers {
+		for _, p := range tier {
+			workers += cap(p.slot)
+		}
+	}
+	files := make([]*os.File, len(nzb.Files))
+	defer func() {
+		for _, f := range files {
+			if f != nil {
+				f.Close()
+			}
+		}
+	}()
+	var fmu sync.Mutex
+	open := func(i int, yname string, size int64) (*os.File, error) {
+		fmu.Lock()
+		defer fmu.Unlock()
+		if files[i] != nil {
+			return files[i], nil
+		}
+		name := pr.Names[i]
+		if yn := safeName(yname); yn != "" && strings.HasPrefix(name, "file-") {
+			// The subject had no name: use yEnc's, if no other file has it.
+			taken := false
+			for k, n := range pr.Names {
+				if k != i && n == yn {
+					taken = true
+				}
+			}
+			if !taken {
+				name = yn
+				pr.Names[i] = yn
+			}
+		}
+		f, err := os.OpenFile(filepath.Join(t.Save, name), os.O_RDWR|os.O_CREATE, 0o644)
+		if err != nil {
+			return nil, err
+		}
+		if size > 0 {
+			if st, err := f.Stat(); err == nil && st.Size() < size {
+				f.Truncate(size)
+			}
+		}
+		files[i] = f
+		return f, nil
+	}
+
+	jobs := make(chan work)
+	var pmu sync.Mutex
+	var firstErr error
+	var wg sync.WaitGroup
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for it := range jobs {
+				body, err := d.fetch(ctx, tiers, it.seg.ID, it.turn)
+				missing, damaged := false, false
+				switch {
+				case errors.Is(err, ErrNoArticle):
+					missing = true
+				case err != nil:
+					pmu.Lock()
+					if firstErr == nil && ctx.Err() == nil {
+						firstErr = err
+					}
+					pmu.Unlock()
+					cancel()
+					continue
+				default:
+					p, derr := decodeYEnc(body)
+					if derr != nil {
+						damaged = true
+						break
+					}
+					f, ferr := open(it.file, p.Name, p.Size)
+					if ferr != nil {
+						pmu.Lock()
+						if firstErr == nil {
+							firstErr = ferr
+						}
+						pmu.Unlock()
+						cancel()
+						continue
+					}
+					if _, werr := f.WriteAt(p.Data, p.Begin-1); werr != nil {
+						pmu.Lock()
+						if firstErr == nil {
+							firstErr = werr
+						}
+						pmu.Unlock()
+						cancel()
+						continue
+					}
+					damaged = !p.CRCOK
+				}
+				if !missing {
+					d.mu.Lock()
+					t.Error = "" // a provider answers again
+					d.mu.Unlock()
+				}
+				pmu.Lock()
+				pr.Done[it.seg.ID] = true
+				if missing {
+					pr.Missing++
+				}
+				if damaged {
+					pr.Damaged++
+				}
+				pmu.Unlock()
+				t.done.Add(it.seg.Bytes)
+			}
+		}()
+	}
+	// Keep progress on disk as it goes.
+	stopSave := make(chan struct{})
+	go func() {
+		tk := time.NewTicker(5 * time.Second)
+		defer tk.Stop()
+		for {
+			select {
+			case <-stopSave:
+				return
+			case <-tk.C:
+				pmu.Lock()
+				d.saveProgress(t, pr)
+				pmu.Unlock()
+			}
+		}
+	}()
+	turn := 0
+feed:
+	for i, f := range nzb.Files {
+		if !want(i) {
+			continue
+		}
+		for _, s := range f.Segments {
+			pmu.Lock()
+			skip := pr.Done[s.ID]
+			pmu.Unlock()
+			if skip {
+				continue
+			}
+			select {
+			case jobs <- work{file: i, seg: s, turn: turn}:
+				turn++
+			case <-ctx.Done():
+				break feed
+			}
+		}
+	}
+	close(jobs)
+	wg.Wait()
+	close(stopSave)
+	pmu.Lock()
+	d.saveProgress(t, pr)
+	err := firstErr
+	pmu.Unlock()
+	if err == nil {
+		err = ctx.Err()
+	}
+	return err
+}
+
+func (d *Downloader) loadProgress(t *task) *progress {
+	pr := &progress{Done: map[string]bool{}, Names: map[int]string{}}
+	if b, err := os.ReadFile(filepath.Join(t.Save, progressFile)); err == nil {
+		_ = json.Unmarshal(b, pr)
+		if pr.Done == nil {
+			pr.Done = map[string]bool{}
+		}
+		if pr.Names == nil {
+			pr.Names = map[int]string{}
+		}
+	}
+	return pr
+}
+
+func (d *Downloader) saveProgress(t *task, pr *progress) {
+	b, _ := json.Marshal(pr)
+	tmp := filepath.Join(t.Save, progressFile+".tmp")
+	if os.WriteFile(tmp, b, 0o644) == nil {
+		os.Rename(tmp, filepath.Join(t.Save, progressFile))
+	}
+}
+
+var _ backend.Backend = (*Downloader)(nil)

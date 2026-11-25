@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -23,11 +24,19 @@ type fakeLocal struct {
 	dir   string
 	added []string
 	busy  bool
+	name  string
+	extra map[string][]byte // more files in the download (name -> content)
+	video []byte            // the video's content (default: zeros)
 	done  bool
 	down  bool // the VPN is not connected
 }
 
-func (f *fakeLocal) Name() string { return "local" }
+func (f *fakeLocal) Name() string {
+	if f.name != "" {
+		return f.name
+	}
+	return "local"
+}
 func (f *fakeLocal) Ready() bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -39,7 +48,14 @@ func (f *fakeLocal) Add(ctx context.Context, j job.Job) (string, string, error) 
 	f.added = append(f.added, j.ID)
 	save := filepath.Join(f.dir, j.ID)
 	os.MkdirAll(filepath.Join(save, j.Name), 0o755)
-	os.WriteFile(filepath.Join(save, j.Name, j.Name+".mkv"), make([]byte, 1000), 0o644)
+	v := f.video
+	if v == nil {
+		v = make([]byte, 1000)
+	}
+	os.WriteFile(filepath.Join(save, j.Name, j.Name+".mkv"), v, 0o644)
+	for n, b := range f.extra {
+		os.WriteFile(filepath.Join(save, j.Name, n), b, 0o644)
+	}
 	return j.ID, save, nil
 }
 func (f *fakeLocal) Status(ctx context.Context, id string) (backend.Item, error) {
@@ -200,5 +216,62 @@ func TestAlwaysTorBoxNeverFallsOver(t *testing.T) {
 	r.tick(2)
 	if j, _ := r.st.Get(id); j.Backend == "local" || len(loc.added) != 0 {
 		t.Fatal("went to the built-in client")
+	}
+}
+
+func TestMaliciousFilesAreBlocked(t *testing.T) {
+	secret.SetKeyForTest(make([]byte, 32))
+	for name, loc := range map[string]*fakeLocal{
+		"program":   {extra: map[string][]byte{"Codec.Installer.exe": []byte("MZ")}, done: true},
+		"disguised": {video: []byte("MZ\x90\x00 not a video"), done: true},
+	} {
+		r := newRig(t)
+		loc.dir = t.TempDir()
+		r.eng.Local = loc
+		s := r.cfg.Get()
+		s.VPN = config.VPN{On: true, User: "p1", Pass: "pw"}
+		r.cfg.Set(s)
+		id := r.addTorrent("Movie.Bad.2020.1080p", "radarr", 1000)
+		r.tick(4)
+		j, _ := r.st.Get(id)
+		if j.State != job.Failed && j.State != job.Cleaned || !strings.Contains(j.Reason, "blocked") {
+			t.Fatalf("%s: state %s reason %q", name, j.State, j.Reason)
+		}
+		if ents, _ := os.ReadDir(filepath.Join(r.cfg.Env.DataDir)); len(ents) > 0 {
+			// nothing of the release may reach the complete folder
+			if _, err := os.Stat(filepath.Join(r.cfg.Env.Complete(), "radarr")); err == nil {
+				if e2, _ := os.ReadDir(filepath.Join(r.cfg.Env.Complete(), "radarr")); len(e2) > 0 {
+					t.Fatalf("%s: handed to the arr", name)
+				}
+			}
+		}
+	}
+}
+
+func TestUsenetFallsOverToBuiltInWhenTorBoxIsBusy(t *testing.T) {
+	u := newURig(t)
+	news := &fakeLocal{dir: t.TempDir(), name: "usenet", done: true}
+	u.eng.News = news
+	s := u.cfg.Get()
+	s.Usenet = config.Usenet{Servers: []config.NewsServer{{Name: "P", Host: "news.example", On: true}}}
+	u.cfg.Set(s)
+
+	u.tb.mu.Lock()
+	u.tb.busy = true
+	u.tb.mu.Unlock()
+	id := u.addNZB("Show.S01E02.1080p")
+	u.tick(2)
+	if j, _ := u.st.Get(id); j.Backend != "usenet" {
+		t.Fatalf("busy TorBox: backend %q (%s)", j.Backend, j.Reason)
+	}
+
+	// TorBox free again: it takes the next one.
+	u.tb.mu.Lock()
+	u.tb.busy = false
+	u.tb.mu.Unlock()
+	id2 := u.addNZB("Show.S01E03.1080p")
+	u.tick(2)
+	if j, _ := u.st.Get(id2); j.Backend != "torbox" {
+		t.Fatalf("free TorBox: backend %q (%s)", j.Backend, j.Reason)
 	}
 }

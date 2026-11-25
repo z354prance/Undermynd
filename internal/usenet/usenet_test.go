@@ -1,0 +1,497 @@
+package usenet
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"crypto/rand"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"hash/crc32"
+	"net"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/akalin/gopar/par2"
+
+	"github.com/z354prance/undermynd/internal/backend"
+	"github.com/z354prance/undermynd/internal/config"
+	"github.com/z354prance/undermynd/internal/job"
+	"github.com/z354prance/undermynd/internal/secret"
+)
+
+// ---- yEnc and NZB making
+
+func yencode(name string, data []byte, begin, total int64, part, parts int) []byte {
+	var b bytes.Buffer
+	fmt.Fprintf(&b, "=ybegin part=%d total=%d line=128 size=%d name=%s\r\n", part, parts, total, name)
+	fmt.Fprintf(&b, "=ypart begin=%d end=%d\r\n", begin, begin+int64(len(data))-1)
+	col := 0
+	for _, c := range data {
+		e := c + 42
+		if e == 0 || e == '\n' || e == '\r' || e == '=' || (col == 0 && (e == '.' || e == '\t' || e == ' ')) {
+			b.WriteByte('=')
+			e += 64
+			col++
+		}
+		b.WriteByte(e)
+		col++
+		if col >= 128 {
+			b.WriteString("\r\n")
+			col = 0
+		}
+	}
+	if col > 0 {
+		b.WriteString("\r\n")
+	}
+	fmt.Fprintf(&b, "=yend size=%d part=%d pcrc32=%08x\r\n", len(data), part, crc32.ChecksumIEEE(data))
+	return b.Bytes()
+}
+
+type release struct {
+	articles map[string][]byte // id -> body
+	nzb      string
+}
+
+// makeRelease turns files into articles and an NZB; subjectName maps a file
+// to the name in its subject (to scramble it).
+func makeRelease(files map[string][]byte, partSize int, subjectName func(string) string) release {
+	r := release{articles: map[string][]byte{}}
+	var nzb strings.Builder
+	nzb.WriteString(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nzb PUBLIC "-//newzBin//DTD NZB 1.1//EN" "http://www.newzbin.com/DTD/nzb/nzb-1.1.dtd">
+<nzb xmlns="http://www.newzbin.com/DTD/2003/nzb"><head><meta type="title">x</meta></head>`)
+	k := 0
+	for name, data := range files {
+		parts := (len(data) + partSize - 1) / partSize
+		sn := subjectName(name)
+		fmt.Fprintf(&nzb, `<file poster="a" date="1" subject="[1/1] - &quot;%s&quot; yEnc (1/%d)"><groups><group>alt.binaries.x</group></groups><segments>`, sn, parts)
+		for p := 0; p < parts; p++ {
+			lo, hi := p*partSize, (p+1)*partSize
+			if hi > len(data) {
+				hi = len(data)
+			}
+			k++
+			id := fmt.Sprintf("part%d.%d@test", k, p)
+			body := yencode(sn, data[lo:hi], int64(lo+1), int64(len(data)), p+1, parts)
+			r.articles[id] = body
+			fmt.Fprintf(&nzb, `<segment bytes="%d" number="%d">%s</segment>`, len(body), p+1, id)
+		}
+		nzb.WriteString(`</segments></file>`)
+	}
+	nzb.WriteString(`</nzb>`)
+	r.nzb = nzb.String()
+	return r
+}
+
+// ---- a fake NNTP server
+
+type newsServer struct {
+	ln       net.Listener
+	articles map[string][]byte
+	user     string
+	served   atomic.Int32
+	conns    atomic.Int32
+	mu       sync.Mutex
+}
+
+func startNews(t *testing.T, articles map[string][]byte, user string) *newsServer {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &newsServer{ln: ln, articles: articles, user: user}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			s.conns.Add(1)
+			go s.serve(c)
+		}
+	}()
+	return s
+}
+
+func (s *newsServer) serve(c net.Conn) {
+	defer c.Close()
+	r := bufio.NewReader(c)
+	fmt.Fprint(c, "200 welcome\r\n")
+	authed := s.user == ""
+	for {
+		line, err := r.ReadString('\n')
+		if err != nil {
+			return
+		}
+		f := strings.Fields(strings.TrimSpace(line))
+		if len(f) == 0 {
+			continue
+		}
+		switch strings.ToUpper(f[0]) {
+		case "AUTHINFO":
+			if strings.EqualFold(f[1], "USER") {
+				fmt.Fprint(c, "381 more\r\n")
+			} else if len(f) > 2 && f[2] == "secret" {
+				authed = true
+				fmt.Fprint(c, "281 ok\r\n")
+			} else {
+				fmt.Fprint(c, "481 no\r\n")
+			}
+		case "BODY":
+			if !authed {
+				fmt.Fprint(c, "480 auth\r\n")
+				continue
+			}
+			id := strings.Trim(f[1], "<>")
+			s.mu.Lock()
+			body, ok := s.articles[id]
+			s.mu.Unlock()
+			if !ok {
+				fmt.Fprint(c, "430 no such article\r\n")
+				continue
+			}
+			s.served.Add(1)
+			var b bytes.Buffer
+			fmt.Fprintf(&b, "222 0 <%s>\r\n", id)
+			for _, l := range bytes.SplitAfter(body, []byte("\r\n")) {
+				if len(l) == 0 {
+					continue
+				}
+				if l[0] == '.' {
+					b.WriteByte('.')
+				}
+				b.Write(l)
+			}
+			b.WriteString(".\r\n")
+			c.Write(b.Bytes())
+		case "QUIT":
+			fmt.Fprint(c, "205 bye\r\n")
+			return
+		default:
+			fmt.Fprint(c, "500 what\r\n")
+		}
+	}
+}
+
+func (s *newsServer) cfg(name string, prio int) config.NewsServer {
+	h, p, _ := net.SplitHostPort(s.ln.Addr().String())
+	var port int
+	fmt.Sscan(p, &port)
+	ns := config.NewsServer{Name: name, Host: h, Port: port, Conns: 4, Priority: prio, On: true}
+	if s.user != "" {
+		ns.User, ns.Pass = s.user, secret.String("secret")
+	}
+	return ns
+}
+
+// ---- RAR (version 4, stored) for tests
+
+func rarHeader(typ byte, flags uint16, body []byte) []byte {
+	h := make([]byte, 7, 7+len(body))
+	h[2] = typ
+	binary.LittleEndian.PutUint16(h[3:], flags)
+	binary.LittleEndian.PutUint16(h[5:], uint16(7+len(body)))
+	h = append(h, body...)
+	binary.LittleEndian.PutUint16(h[0:], uint16(crc32.ChecksumIEEE(h[2:])))
+	return h
+}
+
+func makeRAR(name string, data []byte) []byte {
+	var b bytes.Buffer
+	b.Write([]byte{0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x00})
+	b.Write(rarHeader(0x73, 0, make([]byte, 6)))
+	fb := make([]byte, 25, 25+len(name))
+	binary.LittleEndian.PutUint32(fb[0:], uint32(len(data))) // packed
+	binary.LittleEndian.PutUint32(fb[4:], uint32(len(data))) // unpacked
+	fb[8] = 3                                                // unix
+	binary.LittleEndian.PutUint32(fb[9:], crc32.ChecksumIEEE(data))
+	binary.LittleEndian.PutUint32(fb[13:], 0x5a000000) // time
+	fb[17] = 20                                        // version
+	fb[18] = 0x30                                      // stored
+	binary.LittleEndian.PutUint16(fb[19:], uint16(len(name)))
+	binary.LittleEndian.PutUint32(fb[21:], 0x81a4)
+	fb = append(fb, name...)
+	b.Write(rarHeader(0x74, 0x8000, fb))
+	b.Write(data)
+	b.Write(rarHeader(0x7b, 0x4000, nil))
+	return b.Bytes()
+}
+
+// ---- helpers
+
+type blobs struct {
+	mu sync.Mutex
+	m  map[string][]byte
+}
+
+func (b *blobs) Load(n string) ([]byte, bool, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	v, ok := b.m[n]
+	return v, ok, nil
+}
+func (b *blobs) Save(n string, v []byte) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.m == nil {
+		b.m = map[string][]byte{}
+	}
+	b.m[n] = append([]byte(nil), v...)
+	return nil
+}
+
+func randBytes(n int) []byte { b := make([]byte, n); rand.Read(b); return b }
+
+func run(t *testing.T, d *Downloader) func() {
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { d.Run(ctx); close(done) }()
+	return func() { cancel(); <-done }
+}
+
+func waitDone(t *testing.T, d *Downloader, id string) backend.Item {
+	t.Helper()
+	end := time.Now().Add(30 * time.Second)
+	for time.Now().Before(end) {
+		it, err := d.Status(context.Background(), id)
+		if err == nil && (it.Status == backend.Complete || it.Status == backend.Errored) {
+			return it
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	it, err := d.Status(context.Background(), id)
+	t.Fatalf("job %s did not finish: %+v %v", id, it, err)
+	return backend.Item{}
+}
+
+func addJob(t *testing.T, d *Downloader, id, nzb string) {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), id+".nzb")
+	os.WriteFile(p, []byte(nzb), 0o644)
+	if _, _, err := d.Add(context.Background(), job.Job{ID: id, Kind: "usenet", NZBPath: p}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// ---- tests
+
+func TestYEncRoundTrip(t *testing.T) {
+	data := randBytes(5000)
+	p, err := decodeYEnc(yencode("a b.mkv", data, 101, 9000, 2, 3))
+	if err != nil || !bytes.Equal(p.Data, data) || !p.CRCOK || p.Begin != 101 || p.Size != 9000 || p.Name != "a b.mkv" {
+		t.Fatalf("decode: %v crc=%v begin=%d name=%q", err, p.CRCOK, p.Begin, p.Name)
+	}
+	bad := yencode("x", data, 1, 5000, 1, 1)
+	bad[len(bad)/2] ^= 1
+	if p, _ := decodeYEnc(bad); p.CRCOK {
+		t.Fatal("damage not noticed")
+	}
+}
+
+// Main provider lacks some articles; the backup has them. A RAR is unpacked.
+func TestDownloadWithBackupProviderAndUnpack(t *testing.T) {
+	secret.SetKeyForTest(make([]byte, 32))
+	video := randBytes(300 << 10)
+	files := map[string][]byte{"Show.S01E01.rar": makeRAR("Show.S01E01.mkv", video), "Show.S01E01.nfo": []byte("about")}
+	rel := makeRelease(files, 20<<10, func(n string) string { return n })
+	mainArts := map[string][]byte{}
+	i := 0
+	for id, b := range rel.articles {
+		if i%3 != 0 {
+			mainArts[id] = b // the main provider lacks every third article
+		}
+		i++
+	}
+	main := startNews(t, mainArts, "me")
+	backup := startNews(t, rel.articles, "")
+	cfg := config.Usenet{Servers: []config.NewsServer{main.cfg("Main", 0), backup.cfg("Backup", 1)}}
+	d := &Downloader{Cfg: func() config.Usenet { return cfg }, Dir: t.TempDir(), State: &blobs{}}
+	stop := run(t, d)
+	defer stop()
+	addJob(t, d, "j1", rel.nzb)
+	it := waitDone(t, d, "j1")
+	if it.Status != backend.Complete {
+		st, _ := d.Status(context.Background(), "j1")
+		t.Fatalf("status %+v %+v", it, st)
+	}
+	got, err := os.ReadFile(filepath.Join(d.Dir, "j1", "Show.S01E01.mkv"))
+	if err != nil || !bytes.Equal(got, video) {
+		t.Fatalf("unpacked video wrong: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(d.Dir, "j1", "Show.S01E01.rar")); err == nil {
+		t.Fatal("archive left behind")
+	}
+	if main.served.Load() == 0 || backup.served.Load() == 0 {
+		t.Fatalf("served main %d backup %d", main.served.Load(), backup.served.Load())
+	}
+	if int(backup.served.Load()) > len(rel.articles)-len(mainArts)+2 {
+		t.Fatalf("backup served %d, want only what main lacks (%d)", backup.served.Load(), len(rel.articles)-len(mainArts))
+	}
+	fs, _ := d.Files(context.Background(), "j1")
+	names := []string{}
+	for _, f := range fs {
+		names = append(names, f.Path)
+	}
+	if strings.Join(names, ",") != "Show.S01E01.mkv,Show.S01E01.nfo" {
+		t.Fatalf("files %v", names)
+	}
+}
+
+// Scrambled names, some articles gone everywhere: names come back from par2
+// and the files are repaired with the repair volumes.
+func TestScrambledNamesAndPar2Repair(t *testing.T) {
+	dir := t.TempDir()
+	a, b := randBytes(200<<10), randBytes(150<<10)
+	os.WriteFile(filepath.Join(dir, "Movie.2020.mkv"), a, 0o644)
+	os.WriteFile(filepath.Join(dir, "Movie.2020.srt"), b, 0o644)
+	if err := par2.Create(filepath.Join(dir, "Movie.2020.par2"), []string{filepath.Join(dir, "Movie.2020.mkv"), filepath.Join(dir, "Movie.2020.srt")},
+		par2.CreateOptions{SliceByteCount: 4096, NumParityShards: 30}); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string][]byte{}
+	ents, _ := os.ReadDir(dir)
+	for _, e := range ents {
+		files[e.Name()], _ = os.ReadFile(filepath.Join(dir, e.Name()))
+	}
+	scramble := map[string]string{"Movie.2020.mkv": "a8f3k2j1", "Movie.2020.srt": "zz91kd0q"}
+	rel := makeRelease(files, 16<<10, func(n string) string {
+		if s, ok := scramble[n]; ok {
+			return s
+		}
+		return n
+	})
+	// Drop one article of the video everywhere.
+	dropped := ""
+	for id, body := range rel.articles {
+		if strings.Contains(string(body[:80]), "a8f3k2j1") && strings.Contains(string(body[:60]), "part=2 ") {
+			dropped = id
+			delete(rel.articles, id)
+			break
+		}
+	}
+	if dropped == "" {
+		t.Fatal("no article dropped")
+	}
+	srv := startNews(t, rel.articles, "")
+	cfg := config.Usenet{Servers: []config.NewsServer{srv.cfg("Only", 0)}}
+	d := &Downloader{Cfg: func() config.Usenet { return cfg }, Dir: t.TempDir(), State: &blobs{}}
+	stop := run(t, d)
+	defer stop()
+	addJob(t, d, "j2", rel.nzb)
+	if it := waitDone(t, d, "j2"); it.Status != backend.Complete {
+		t.Fatalf("status %+v", it)
+	}
+	got, _ := os.ReadFile(filepath.Join(d.Dir, "j2", "Movie.2020.mkv"))
+	if !bytes.Equal(got, a) {
+		t.Fatal("video not repaired or not renamed")
+	}
+	if got, _ := os.ReadFile(filepath.Join(d.Dir, "j2", "Movie.2020.srt")); !bytes.Equal(got, b) {
+		t.Fatal("subtitle not renamed")
+	}
+	left, _ := os.ReadDir(filepath.Join(d.Dir, "j2"))
+	for _, e := range left {
+		if strings.HasSuffix(e.Name(), ".par2") || strings.HasPrefix(e.Name(), ".hyvemynd") {
+			t.Fatalf("left behind: %s", e.Name())
+		}
+	}
+}
+
+func TestTooMuchMissingFails(t *testing.T) {
+	files := map[string][]byte{"x.mkv": randBytes(100 << 10)}
+	rel := makeRelease(files, 10<<10, func(n string) string { return n })
+	n := 0
+	for id := range rel.articles {
+		if n < 3 {
+			delete(rel.articles, id)
+		}
+		n++
+	}
+	srv := startNews(t, rel.articles, "")
+	cfg := config.Usenet{Servers: []config.NewsServer{srv.cfg("Only", 0)}}
+	d := &Downloader{Cfg: func() config.Usenet { return cfg }, Dir: t.TempDir(), State: &blobs{}}
+	stop := run(t, d)
+	defer stop()
+	addJob(t, d, "j3", rel.nzb)
+	it := waitDone(t, d, "j3")
+	if it.Status != backend.Errored || !strings.Contains(it.Error, "no par2") {
+		t.Fatalf("status %+v", it)
+	}
+}
+
+// Providers unreachable: the job waits (busy), then finishes when one is back.
+func TestProvidersDownWaitThenResume(t *testing.T) {
+	files := map[string][]byte{"y.mkv": randBytes(60 << 10)}
+	rel := makeRelease(files, 10<<10, func(n string) string { return n })
+	srv := startNews(t, rel.articles, "")
+	good := srv.cfg("Only", 0)
+	bad := good
+	bad.Port = 1 // nothing listens
+	var mu sync.Mutex
+	cfg := config.Usenet{Servers: []config.NewsServer{bad}}
+	d := &Downloader{Cfg: func() config.Usenet { mu.Lock(); defer mu.Unlock(); return cfg }, Dir: t.TempDir(), State: &blobs{}, RetryWait: 100 * time.Millisecond}
+	stop := run(t, d)
+	defer stop()
+	addJob(t, d, "j4", rel.nzb)
+	time.Sleep(400 * time.Millisecond)
+	if _, err := d.Status(context.Background(), "j4"); !errors.Is(err, backend.ErrBusy) || !strings.Contains(err.Error(), "could be reached") {
+		t.Fatalf("while down: %v", err)
+	}
+	mu.Lock()
+	cfg = config.Usenet{Servers: []config.NewsServer{good}}
+	mu.Unlock()
+	if it := waitDone(t, d, "j4"); it.Status != backend.Complete {
+		t.Fatalf("after: %+v", it)
+	}
+}
+
+func TestBadLoginReported(t *testing.T) {
+	srv := startNews(t, nil, "me")
+	c := srv.cfg("P", 0)
+	c.Pass = "wrong"
+	err := Test(context.Background(), c, nil)
+	if err == nil || !strings.Contains(err.Error(), "refused the login") {
+		t.Fatalf("err = %v", err)
+	}
+	if err := Test(context.Background(), srv.cfg("P", 0), nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRestartCarriesOn(t *testing.T) {
+	files := map[string][]byte{"z.mkv": randBytes(400 << 10)}
+	rel := makeRelease(files, 8<<10, func(n string) string { return n })
+	srv := startNews(t, rel.articles, "")
+	cfg := config.Usenet{Servers: []config.NewsServer{srv.cfg("Only", 0)}}
+	st := &blobs{}
+	dir := t.TempDir()
+	d := &Downloader{Cfg: func() config.Usenet { return cfg }, Dir: dir, State: st}
+	stop := run(t, d)
+	addJob(t, d, "j5", rel.nzb)
+	for srv.served.Load() < int32(len(rel.articles)/2) {
+		time.Sleep(time.Millisecond)
+	}
+	stop() // HyveMynd stops halfway
+	time.Sleep(5100 * time.Millisecond)
+	before := srv.served.Load()
+	d2 := &Downloader{Cfg: func() config.Usenet { return cfg }, Dir: dir, State: st}
+	stop2 := run(t, d2)
+	defer stop2()
+	if it := waitDone(t, d2, "j5"); it.Status != backend.Complete {
+		t.Fatalf("after restart: %+v", it)
+	}
+	got, _ := os.ReadFile(filepath.Join(dir, "j5", "z.mkv"))
+	if !bytes.Equal(got, files["z.mkv"]) {
+		t.Fatal("file wrong after restart")
+	}
+	if again := srv.served.Load() - before; int(again) >= len(rel.articles) {
+		t.Fatalf("fetched everything again (%d)", again)
+	}
+}

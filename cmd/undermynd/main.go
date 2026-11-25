@@ -35,6 +35,7 @@ import (
 	"github.com/z354prance/undermynd/internal/state"
 	"github.com/z354prance/undermynd/internal/storage"
 	"github.com/z354prance/undermynd/internal/store"
+	"github.com/z354prance/undermynd/internal/usenet"
 	"github.com/z354prance/undermynd/internal/vpn"
 	"github.com/z354prance/undermynd/internal/watch"
 	"github.com/z354prance/undermynd/internal/web"
@@ -199,6 +200,11 @@ func main() {
 	local := &bt.Client{Net: tunnel, Dir: filepath.Join(env.Work(), "torrents"), State: blobs, Log: logger}
 	go local.Run(ctx)
 	eng.Local = local
+	// HyveMynd's own usenet downloader, for the owner's providers.
+	news := &usenet.Downloader{Cfg: func() config.Usenet { return cfg.Get().Usenet }, Dir: filepath.Join(env.Work(), "usenet"), State: blobs, Log: logger}
+	go news.Run(ctx)
+	eng.News = news
+	site.News = news
 	site.VPN = &web.VPN{Tunnel: tunnel, Client: local}
 	site.Attention = &attention.Service{Cfg: cfg, Log: logger, State: blobs}
 	go site.Attention.Run(ctx)

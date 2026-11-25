@@ -147,6 +147,51 @@ type Playback struct {
 	PathTo   string `json:"pathTo,omitempty"`
 }
 
+// Usenet is HyveMynd's own usenet downloader and the providers it uses.
+type Usenet struct {
+	Servers []NewsServer `json:"servers"`
+	// Mode says where NZBs go:
+	//   "" (default): TorBox first; the built-in downloader when TorBox is
+	//                 busy, unreachable or not set up
+	//   "local":  always the built-in downloader
+	//   "torbox": always TorBox (or NZBGet), never the built-in downloader
+	Mode string `json:"mode,omitempty"`
+}
+
+// Ready says whether the built-in downloader has a provider to use.
+func (u Usenet) Ready() bool {
+	for _, s := range u.Servers {
+		if s.On && s.Host != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// NewsServer is one usenet provider.
+type NewsServer struct {
+	Name       string        `json:"name"`
+	Host       string        `json:"host"`
+	Port       int           `json:"port"` // 0: 563 with SSL, 119 without
+	TLS        bool          `json:"tls"`
+	SkipVerify bool          `json:"skipVerify,omitempty"` // accept a certificate that does not match
+	User       string        `json:"user"`
+	Pass       secret.String `json:"password"`
+	Conns      int           `json:"connections"`
+	// Priority 0 is a main provider; 1, 2, 3 are backups, asked in order
+	// only for articles the providers before them lack.
+	Priority int  `json:"priority"`
+	On       bool `json:"on"`
+}
+
+// Label names the provider in messages.
+func (s NewsServer) Label() string {
+	if s.Name != "" {
+		return s.Name
+	}
+	return s.Host
+}
+
 // VPN is the tunnel HyveMynd's own downloads go through (Private Internet
 // Access over WireGuard, run inside HyveMynd: nothing to set up on the host).
 // Only the built-in clients use it; the web pages, arrs and media server do
@@ -256,6 +301,7 @@ type Settings struct {
 	Metadata     Metadata   `json:"metadata"`
 	Attention    Attention  `json:"attention"`
 	VPN          VPN        `json:"vpn"`
+	Usenet       Usenet     `json:"usenet"`
 
 	// Login the arrs use against the fake client API.
 	ClientUser     string        `json:"clientUser"`

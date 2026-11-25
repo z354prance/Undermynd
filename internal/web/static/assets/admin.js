@@ -62,7 +62,7 @@
     // requests from visitors, the library it watches, and its settings.
     var NAV=[
       {id:'overview',label:'Overview',icon:'s_over',pages:[['overview','Overview']]},
-      {id:'downloads',label:'Downloads',icon:'s_dl',pages:[['jobs','On the way'],['rss','Feeds'],['reencode','Re-encode'],['vpn','VPN']]},
+      {id:'downloads',label:'Downloads',icon:'s_dl',pages:[['jobs','On the way'],['rss','Feeds'],['reencode','Re-encode'],['usenet','Usenet'],['vpn','VPN']]},
       {id:'requests',label:'Requests',icon:'s_req',pages:[['requests','Media'],['access','Accounts']]},
       {id:'library',label:'Library',icon:'s_lib',pages:[['missing','Missing'],['anime','Anime'],['upgrades','Upgrades']]},
       {id:'settings',label:'Settings',icon:'s_sys',pages:[['arrs','Arrs'],['clients','Download clients'],['transcode','Tdarr'],['public','Public page'],['playback','Media server'],['system','Server'],['log','Log']]}];
@@ -86,7 +86,7 @@
     if(curPage[2]){var tb=el('div','hv-tabs');tb.setAttribute('role','tablist');curPage[2].forEach(function(q){var b=el('button',q[0]===tab?'on':'',q[1]);b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-selected',q[0]===tab?'true':'false');b.onclick=function(){go(q[0])};tabBtns[q[0]]=b;tb.appendChild(b)});mainCol.appendChild(tb)}
     var bodyWrap=el('div','hv-body');mainCol.appendChild(bodyWrap);
     var main=el('main','main'),body=el('div');main.appendChild(body);bodyWrap.appendChild(main);shell.appendChild(side);shell.appendChild(mainCol);root.appendChild(shell);
-    if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else if(tab==='requests')requestsView(body);else if(tab==='missing')missingView(body);else if(tab==='upgrades')upgradesView(body);else if(tab==='reencode')reencodeView(body);else if(tab==='log')logView(body);else if(tab==='access')accessView(body);else if(tab==='anime')animeView(body);else if(tab==='vpn')vpnView(body);else settingsView(body);
+    if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else if(tab==='requests')requestsView(body);else if(tab==='missing')missingView(body);else if(tab==='upgrades')upgradesView(body);else if(tab==='reencode')reencodeView(body);else if(tab==='log')logView(body);else if(tab==='access')accessView(body);else if(tab==='anime')animeView(body);else if(tab==='vpn')vpnView(body);else if(tab==='usenet')usenetView(body);else settingsView(body);
   }
   function fail(e){if(e.status===401){start()}else{var d=el('div','err',e.message);root.appendChild(d)}}
   function ago(t){var s=Math.max(0,(Date.now()-new Date(t))/1000);if(s<90)return Math.round(s)+'s';if(s<5400)return Math.round(s/60)+'m';if(s<172800)return Math.round(s/3600)+'h';return Math.round(s/86400)+'d'}
@@ -499,6 +499,46 @@
         if(!gs.length)x.grid.appendChild(el('div','hv-empty',ql?'Nothing matches.':'Nothing missing.'));
         x.more.hidden=gs.length<=lim;x.more.textContent='Show all '+gs.length;x.more.onclick=function(){missAll[x.a.category]=true;draw()}})}
       q.oninput=function(){missQ=q.value;draw()};draw();
+    }).catch(fail)}
+  // Usenet: HyveMynd's own usenet downloader and the providers it uses.
+  function usenetView(body){
+    api('GET','/usenet').then(function(d){body.replaceChildren();
+      body.appendChild(head('Built-in usenet','HyveMynd downloads NZBs itself from your providers: it fetches every article from your main providers, asks the backups (in order) for any the main ones lack, repairs damaged files with par2, puts back scrambled file names and unpacks RARs. Releases carrying programs or disguised files are blocked and the arr is told to find another.'));
+      var st=d.stats||{},box=hvBox('Now');var l=el('div','hv-list');
+      function line(k,v){var r=el('div','hv-item');var t=el('div','hv-it');t.appendChild(el('b','',k));r.appendChild(t);r.appendChild(el('span','hv-note',v));l.appendChild(r)}
+      function rate(b){return b>=1048576?(b/1048576).toFixed(1)+' MB/s':b>=1024?Math.round(b/1024)+' KB/s':b+' B/s'}
+      var stages={downloading:'Downloading',repairing:'Repairing',unpacking:'Unpacking'};
+      line('Downloading',st.active?(stages[st.stage]||st.stage)+(st.stage==='downloading'?' · '+Math.round((st.progress||0)*100)+'% · '+rate(st.speed||0):''):'nothing right now');
+      line('Waiting',String(st.queued||0));
+      (st.servers||[]).forEach(function(x){if(x.problem)l.appendChild(el('div','err',x.name+': '+x.problem))});
+      box.appendChild(l);body.appendChild(box);
+      var c=el('div','card');c.appendChild(el('h4','','Where NZBs go'));
+      var mw=el('div','fld');var md=el('select');
+      [['','TorBox first; here when TorBox is busy or not connected (recommended)'],['local','Always here (TorBox not used for usenet)'],['torbox','Always TorBox, never here']].forEach(function(o){md.appendChild(new Option(o[1],o[0]))});md.value=d.mode||'';mw.appendChild(md);
+      mw.appendChild(el('div','fh',d.torbox?'Nothing runs here until a provider below is switched on.':'No TorBox token is set, so NZBs come here once a provider is switched on.'));c.appendChild(mw);body.appendChild(c);
+      var list=el('div');body.appendChild(list);var rows=[];
+      var prios=[[0,'Main'],[1,'Backup 1'],[2,'Backup 2'],[3,'Backup 3']];
+      function addRow(v){v=v||{on:true,tls:true,port:563,connections:20,priority:0};
+        var card=el('div','card');var h=el('h4','',v.name||v.host||'New provider');card.appendChild(h);
+        var f={};f.on=row(card,'Use this provider',{type:'checkbox',value:v.on});
+        f.name=row(card,'Name',{value:v.name,ph:'Newshosting'});f.name.oninput=function(){h.textContent=f.name.value||f.host.value||'New provider'};
+        f.host=row(card,'Server',{value:v.host,ph:'news.example.com'});
+        f.tls=row(card,'SSL',{type:'checkbox',value:v.tls});
+        f.port=row(card,'Port',{type:'number',value:v.port||(v.tls?563:119),help:'Usually 563 with SSL, 119 without.'});
+        f.user=row(card,'Username',{value:v.user});
+        f.pass=row(card,'Password',{type:'password',ph:v.hasPassword?'saved: leave blank to keep':''});
+        f.conns=row(card,'Connections',{type:'number',value:v.connections||20,help:'Up to what your plan allows.'});
+        var pw=el('div','fld');pw.appendChild(el('label','','Priority'));f.prio=el('select');prios.forEach(function(p){f.prio.appendChild(new Option(p[1],p[0]))});f.prio.value=String(v.priority||0);pw.appendChild(f.prio);
+        pw.appendChild(el('div','fh','Main providers share the work. Backups are asked, in order, only for articles the ones before them do not have.'));card.appendChild(pw);
+        var acts=el('div','hv-acts');var msg=el('span','msg');
+        function val(){return {name:f.name.value,host:f.host.value,port:parseInt(f.port.value,10)||0,tls:f.tls.checked,user:f.user.value,password:f.pass.value,connections:parseInt(f.conns.value,10)||8,priority:parseInt(f.prio.value,10)||0,on:f.on.checked}}
+        acts.appendChild(hvBtn('Test','refresh',function(b){b.disabled=true;msg.className='msg';msg.textContent='signing in…';api('POST','/usenet/test',{server:val(),index:rows.indexOf(entry)}).then(function(x){b.disabled=false;msg.className=x.ok?'msg ok':'msg err';msg.textContent=x.ok?'signed in fine':x.error}).catch(function(e){b.disabled=false;msg.className='msg err';msg.textContent=e.message})}));
+        acts.appendChild(hvBtn('Remove','x',function(){if(!confirm('Remove '+(f.name.value||f.host.value||'this provider')+'?'))return;rows.splice(rows.indexOf(entry),1);card.remove()}));
+        acts.appendChild(msg);card.appendChild(acts);list.appendChild(card);var entry={val:val};rows.push(entry)}
+      (d.servers||[]).forEach(addRow);
+      var add=el('div','hv-pagehead');add.appendChild(hvBtn('Add a provider','plus',function(){addRow()}));body.appendChild(add);
+      saveBar(body,function(m){m.className='msg';m.textContent='saving…';
+        api('PUT','/usenet',{mode:md.value,servers:rows.map(function(r){return r.val()})}).then(function(){m.className='msg ok';m.textContent='saved';setTimeout(function(){if(tab==='usenet')usenetView(body)},1200)}).catch(function(e){m.className='msg err';m.textContent=e.message})});
     }).catch(fail)}
   // VPN: the Private Internet Access tunnel inside HyveMynd, and HyveMynd's
   // own torrent client that only goes through it.

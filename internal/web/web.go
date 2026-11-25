@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/z354prance/undermynd/internal/attention"
 	"github.com/z354prance/undermynd/internal/tdarr"
+	"github.com/z354prance/undermynd/internal/usenet"
 	"io/fs"
 	"log"
 	"mime"
@@ -65,7 +66,9 @@ type Server struct {
 	Attention *attention.Service
 	// VPN is the PIA tunnel and HyveMynd's own torrent client.
 	VPN *VPN
-	RSS interface {
+	// News is HyveMynd's own usenet downloader.
+	News *usenet.Downloader
+	RSS  interface {
 		Status() []rss.FeedStatus
 		Download(ctx context.Context, feed string, index int, title, category string) (string, error)
 		CheckNow(context.Context)
@@ -96,6 +99,9 @@ func (s *Server) Handler() http.Handler {
 	s.dashboardRoutes(mux, files)
 	mux.HandleFunc("GET /admin/api/library", s.admin(s.adminLibrary))
 	mux.HandleFunc("GET /admin/api/missing", s.admin(s.adminMissing))
+	mux.HandleFunc("GET /admin/api/usenet", s.admin(s.adminUsenet))
+	mux.HandleFunc("PUT /admin/api/usenet", s.admin(s.adminUsenetSave))
+	mux.HandleFunc("POST /admin/api/usenet/test", s.admin(s.adminUsenetTest))
 	mux.HandleFunc("GET /admin/api/vpn", s.admin(s.adminVPN))
 	mux.HandleFunc("PUT /admin/api/vpn", s.admin(s.adminVPNSave))
 	mux.HandleFunc("GET /admin/api/vpn/regions", s.admin(s.adminVPNRegions))

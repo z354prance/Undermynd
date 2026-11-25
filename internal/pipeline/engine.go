@@ -22,6 +22,7 @@ import (
 	"github.com/z354prance/undermynd/internal/backend"
 	"github.com/z354prance/undermynd/internal/bencode"
 	"github.com/z354prance/undermynd/internal/config"
+	"github.com/z354prance/undermynd/internal/guard"
 	"github.com/z354prance/undermynd/internal/job"
 	"github.com/z354prance/undermynd/internal/store"
 )
@@ -45,6 +46,8 @@ type Engine struct {
 	Override backend.Backend
 	// Local is HyveMynd's own torrent client (through the VPN); nil when not built in.
 	Local backend.Backend
+	// News is HyveMynd's own usenet downloader; nil when not built in.
+	News backend.Backend
 	// ArrFor replaces the arr client lookup (tests).
 	ArrFor func(config.Category) ImportChecker
 
@@ -150,13 +153,24 @@ func (e *Engine) pick(j job.Job) (backend.Backend, error) {
 		return e.Override, nil
 	}
 	if j.Kind == "usenet" {
+		u := e.Cfg.Get().Usenet
+		news := e.News != nil && u.Ready()
+		if news && u.Mode == "local" {
+			return e.News, nil
+		}
 		if tb := e.torbox(); tb != nil {
-			return tb, nil
+			return tb, nil // the built-in downloader steps in when TorBox is busy (doSubmit)
+		}
+		if news && u.Mode == "" {
+			return e.News, nil
 		}
 		if ng := e.nzbget(); ng != nil {
 			return ng, nil
 		}
-		return nil, backend.Permanent{Msg: "no usenet backend is configured: set a TorBox token or an NZBGet address"}
+		if news {
+			return e.News, nil
+		}
+		return nil, backend.Permanent{Msg: "no usenet downloader is set up: add a usenet provider, a TorBox token or an NZBGet address"}
 	}
 	if v := e.Cfg.Get().VPN; e.Local != nil && v.LocalTorrents() {
 		// TorBox first (doSubmit falls over to the built-in client when it is
@@ -201,6 +215,9 @@ func (e *Engine) byName(name string, j job.Job) backend.Backend {
 	}
 	if name == "local" && e.Local != nil {
 		return e.Local
+	}
+	if name == "usenet" && e.News != nil {
+		return e.News
 	}
 	return e.qbit()
 }
@@ -588,11 +605,13 @@ func (e *Engine) doSubmit(ctx context.Context, j job.Job) {
 		return
 	}
 	rid, save, err := b.Add(ctx, j)
-	if err != nil && e.fallOver(b, j, err) {
-		// TorBox is busy or unreachable: download it here through the VPN.
-		e.Log.Printf("job %s: TorBox could not take it (%v); using the built-in client", short(j.ID), err)
-		b = e.Local
-		rid, save, err = b.Add(ctx, j)
+	if err != nil {
+		if alt := e.fallOver(b, j, err); alt != nil {
+			// TorBox is busy or unreachable: download it here instead.
+			e.Log.Printf("job %s: TorBox could not take it (%v); using the built-in %s", short(j.ID), err, alt.Name())
+			b = alt
+			rid, save, err = b.Add(ctx, j)
+		}
 	}
 	if err != nil {
 		e.retry(j, err, 4, "submit to client")
@@ -606,24 +625,32 @@ func (e *Engine) doSubmit(ctx context.Context, j job.Job) {
 	})
 }
 
-// fallOver says whether a torrent TorBox could not take should go to the
-// built-in client: TorBox busy (its limits) or failing, not a bad torrent,
-// and the built-in client connected.
-func (e *Engine) fallOver(b backend.Backend, j job.Job, err error) bool {
-	if j.Kind == "usenet" || e.Local == nil || b == e.Local || b.Name() != "torbox" {
-		return false
-	}
-	if v := e.Cfg.Get().VPN; !v.LocalTorrents() || v.Torrents != "" {
-		return false
+// fallOver picks the built-in downloader for a job TorBox could not take:
+// TorBox busy (its limits) or failing, not a bad release, and the built-in
+// downloader able to run it. Nil: no fall-over.
+func (e *Engine) fallOver(b backend.Backend, j job.Job, err error) backend.Backend {
+	if b.Name() != "torbox" {
+		return nil
 	}
 	var perm backend.Permanent
 	if errors.As(err, &perm) {
-		return false
+		return nil
 	}
-	if r, ok := e.Local.(interface{ Ready() bool }); ok && !r.Ready() {
-		return false // the VPN is not up: keep waiting for TorBox
+	var alt backend.Backend
+	if j.Kind == "usenet" {
+		if u := e.Cfg.Get().Usenet; e.News != nil && u.Ready() && u.Mode == "" {
+			alt = e.News
+		}
+	} else if v := e.Cfg.Get().VPN; e.Local != nil && v.LocalTorrents() && v.Torrents == "" {
+		alt = e.Local
 	}
-	return true
+	if alt == nil {
+		return nil
+	}
+	if r, ok := alt.(interface{ Ready() bool }); ok && !r.Ready() {
+		return nil // e.g. the VPN is not up: keep waiting for TorBox
+	}
+	return alt
 }
 
 // inactiveGrace is how long an inactive, motionless TorBox item is given before it is retried.
@@ -638,7 +665,7 @@ func (e *Engine) doDownload(ctx context.Context, j job.Job) {
 		// The client is paused (the VPN is reconnecting): hold the stall
 		// clock so the wait does not count against the download.
 		_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
-			c.Reason = "paused while the VPN reconnects (retrying)" // cleared by the next good answer
+			c.Reason = strings.TrimPrefix(err.Error(), backend.ErrBusy.Error()+": ") + " (retrying)" // cleared by the next good answer
 			c.LastProgress, c.NextRun, c.Updated = e.Now(), e.Now().Add(30*time.Second), e.Now()
 			return nil
 		})
@@ -753,6 +780,14 @@ func (e *Engine) doDownloaded(ctx context.Context, j job.Job) {
 			e.retry(j, err, 10, "list files")
 			return
 		}
+		// Malicious file guard: a release carrying a program or script is
+		// failed (the arr blocklists it) before anything is staged.
+		for _, f := range files {
+			if why := guard.Name(f.Path); why != "" {
+				e.failStalled(ctx, j, "blocked: "+why)
+				return
+			}
+		}
 		var picked []backend.File
 		for _, f := range files {
 			if wanted(f) {
@@ -774,6 +809,11 @@ func (e *Engine) doDownloaded(ctx context.Context, j job.Job) {
 			dst := filepath.Join(staging, r)
 			if err := moveFile(src, dst); err != nil {
 				e.retry(j, err, 6, "move to staging")
+				return
+			}
+			if why := guard.Content(dst); why != "" {
+				_ = os.RemoveAll(staging)
+				e.failStalled(ctx, j, "blocked: "+why)
 				return
 			}
 			st, err := os.Stat(dst)
