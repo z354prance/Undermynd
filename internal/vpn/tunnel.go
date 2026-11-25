@@ -62,6 +62,7 @@ type Tunnel struct {
 	dev     *device.Device
 	tnet    *netstack.Net
 	gw      Server
+	local   netip.Addr // this end's address in the tunnel
 	sig     Signature
 	status  Status
 	restart chan struct{}
@@ -111,12 +112,17 @@ func (t *Tunnel) Up() bool { return t.Status().State == "up" }
 func (t *Tunnel) Port() int { return t.Status().Port }
 
 func (t *Tunnel) net() (*netstack.Net, error) {
+	n, _, err := t.netAddr()
+	return n, err
+}
+
+func (t *Tunnel) netAddr() (*netstack.Net, netip.Addr, error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	if t.tnet == nil || t.status.State != "up" {
-		return nil, ErrDown
+		return nil, netip.Addr{}, ErrDown
 	}
-	return t.tnet, nil
+	return t.tnet, t.local, nil
 }
 
 // DialContext connects through the tunnel (names are looked up through it too).
@@ -138,20 +144,21 @@ func (t *Tunnel) DialContext(ctx context.Context, network, addr string) (net.Con
 
 // ListenTCP listens on a port of this end of the tunnel.
 func (t *Tunnel) ListenTCP(port int) (net.Listener, error) {
-	n, err := t.net()
+	n, local, err := t.netAddr()
 	if err != nil {
 		return nil, err
 	}
-	return n.ListenTCP(&net.TCPAddr{Port: port})
+	return n.ListenTCPAddrPort(netip.AddrPortFrom(local, uint16(port)))
 }
 
 // ListenUDP opens a UDP socket on a port of this end of the tunnel.
 func (t *Tunnel) ListenUDP(port int) (net.PacketConn, error) {
-	n, err := t.net()
+	n, local, err := t.netAddr()
 	if err != nil {
 		return nil, err
 	}
-	return n.ListenUDP(&net.UDPAddr{Port: port})
+	// The address must be given: the network library panics on an empty one.
+	return n.ListenUDPAddrPort(netip.AddrPortFrom(local, uint16(port)))
 }
 
 func (t *Tunnel) set(f func(*Status)) {
@@ -170,6 +177,32 @@ func (t *Tunnel) logf(format string, a ...any) {
 // failures (30 seconds, doubling to 5 minutes) and when settings change.
 func (t *Tunnel) Run(ctx context.Context) {
 	t.init()
+	for ctx.Err() == nil {
+		if !t.runSafe(ctx) {
+			return
+		}
+		// A crash inside: report it, keep HyveMynd running, try again later.
+		if !t.sleep(ctx, 5*time.Minute) {
+			return
+		}
+	}
+}
+
+// runSafe runs the tunnel, turning a panic into an error on the VPN page.
+// It returns true after a panic.
+func (t *Tunnel) runSafe(ctx context.Context) (crashed bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.logf("crashed: %v (trying again in 5 minutes)", r)
+			t.down("down", fmt.Sprintf("the VPN stopped after an internal error: %v", r))
+			crashed = true
+		}
+	}()
+	t.run(ctx)
+	return false
+}
+
+func (t *Tunnel) run(ctx context.Context) {
 	wait := 30 * time.Second
 	for ctx.Err() == nil {
 		c := t.Cfg()
@@ -236,7 +269,12 @@ func (t *Tunnel) connect(ctx context.Context, c config.VPN) error {
 	if err != nil {
 		return err
 	}
-	region, err := Pick(regions, c.Region)
+	var region Region
+	if c.Region == "" {
+		region, err = t.API.Fastest(ctx, regions)
+	} else {
+		region, err = Pick(regions, c.Region)
+	}
 	if err != nil {
 		return err
 	}
@@ -291,7 +329,7 @@ func (t *Tunnel) connect(ctx context.Context, c config.VPN) error {
 		gw.IP = endpointIP
 	}
 	t.mu.Lock()
-	t.dev, t.tnet, t.gw = dev, tnet, gw
+	t.dev, t.tnet, t.gw, t.local = dev, tnet, gw, local
 	t.status = Status{State: "up", Region: region.ID, RegionName: region.Name, Server: srv.CN, Address: k.PeerIP, Since: time.Now(), Generation: t.status.Generation + 1}
 	t.mu.Unlock()
 	t.logf("connected to PIA %s (%s)", region.Name, srv.CN)

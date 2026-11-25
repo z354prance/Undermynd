@@ -466,7 +466,7 @@ func (d *Downloader) Run(ctx context.Context) {
 		d.mu.Lock()
 		t.cancel = cancel
 		d.mu.Unlock()
-		err := d.process(tctx, t)
+		err := d.processSafe(tctx, t)
 		removed := tctx.Err() != nil && ctx.Err() == nil
 		cancel()
 		d.mu.Lock()
@@ -654,6 +654,18 @@ type work struct {
 	turn int
 }
 
+// processSafe turns a panic into a failed download, so a fault here never
+// takes HyveMynd down.
+func (d *Downloader) processSafe(ctx context.Context, t *task) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			d.logf("job %s crashed: %v", t.ID, r)
+			err = fmt.Errorf("internal error: %v", r)
+		}
+	}()
+	return d.process(ctx, t)
+}
+
 // process downloads, repairs and unpacks one task.
 func (d *Downloader) process(ctx context.Context, t *task) error {
 	raw, err := os.ReadFile(filepath.Join(t.Save, nzbFile))
@@ -802,6 +814,18 @@ func (d *Downloader) download(ctx context.Context, t *task, nzb NZB, pr *progres
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					pmu.Lock()
+					if firstErr == nil {
+						firstErr = fmt.Errorf("internal error: %v", r)
+					}
+					pmu.Unlock()
+					cancel()
+					for range jobs { // let the feeder finish
+					}
+				}
+			}()
 			for it := range jobs {
 				body, tier, err := d.fetch(ctx, tiers, it.seg.ID, it.turn)
 				if err == nil {

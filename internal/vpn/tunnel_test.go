@@ -26,6 +26,7 @@ import (
 	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/tun/netstack"
 
+	"github.com/z354prance/undermynd/internal/bt"
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/secret"
 )
@@ -246,6 +247,19 @@ func TestTunnelEndToEnd(t *testing.T) {
 		t.Fatalf("page said %q", b)
 	}
 
+	// The built-in torrent client starts on the real tunnel (this panicked
+	// once: sockets need the tunnel's address).
+	cl := &bt.Client{Net: tun, Dir: t.TempDir(), State: &memBlobs{}, Every: 20 * time.Millisecond, Log: log.New(testWriter{t}, "", 0)}
+	cctx, ccancel := context.WithCancel(ctx)
+	cdone := make(chan struct{})
+	go func() { cl.Run(cctx); close(cdone) }()
+	waitFor(t, "torrent client running in the tunnel", cl.Ready)
+	if st := cl.Stats(); st.Error != "" {
+		t.Fatalf("client error: %s", st.Error)
+	}
+	ccancel()
+	<-cdone
+
 	// Listening on the forwarded port inside the tunnel, reached from the server side.
 	ln, err := tun.ListenTCP(s.Port)
 	if err != nil {
@@ -268,6 +282,30 @@ func TestTunnelEndToEnd(t *testing.T) {
 	if string(got) != "peer hello" {
 		t.Fatalf("incoming = %q", got)
 	}
+
+	// UDP in the tunnel (the DHT's socket): a datagram from the server side.
+	pc2, err := tun.ListenUDP(s.Port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	any0, err := tun.ListenUDP(0) // trackers ask for any port
+	if err != nil {
+		t.Fatal(err)
+	}
+	any0.Close()
+	sc, err := f.srvNet.DialUDP(nil, &net.UDPAddr{IP: net.ParseIP("10.9.0.2"), Port: s.Port})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc.Write([]byte("dht ping"))
+	pc2.SetReadDeadline(time.Now().Add(5 * time.Second))
+	buf := make([]byte, 64)
+	n, _, err := pc2.ReadFrom(buf)
+	if err != nil || string(buf[:n]) != "dht ping" {
+		t.Fatalf("udp through the tunnel: %q %v", buf[:n], err)
+	}
+	sc.Close()
+	pc2.Close()
 
 	// The port is kept open, and the grant is saved for reuse.
 	waitFor(t, "port kept open", func() bool { return f.binds.Load() >= 3 })
