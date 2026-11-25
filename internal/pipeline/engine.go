@@ -152,6 +152,24 @@ func (e *Engine) pick(j job.Job) (backend.Backend, error) {
 	if e.Override != nil {
 		return e.Override, nil
 	}
+	switch j.Prefer {
+	case "builtin":
+		if j.Kind == "usenet" && e.News != nil && e.Cfg.Get().Usenet.Ready() {
+			return e.News, nil
+		}
+		if j.Kind != "usenet" && e.Local != nil && e.Cfg.Get().VPN.On {
+			return e.Local, nil
+		}
+		return nil, backend.Permanent{Msg: "the built-in client is not set up (Downloads › Usenet or VPN)"}
+	case "torbox":
+		if tb := e.torbox(); tb != nil {
+			if j.Kind == "usenet" {
+				return tb, nil
+			}
+			return e.torboxTorrents(), nil
+		}
+		return nil, backend.Permanent{Msg: "TorBox is not set up"}
+	}
 	if j.Kind == "usenet" {
 		u := e.Cfg.Get().Usenet
 		news := e.News != nil && u.Ready()
@@ -241,6 +259,7 @@ type SubmitRequest struct {
 	Category string
 	Magnet   string
 	Torrent  []byte
+	Prefer   string // "", "torbox" or "builtin"
 }
 
 // Submit creates (or returns) the job for a grab. The job ID is the infohash,
@@ -269,7 +288,7 @@ func (e *Engine) Submit(req SubmitRequest) (job.Job, error) {
 		return cur, nil // the arr asked again; same job
 	}
 	now := e.Now()
-	j := job.Job{ID: id, Name: name, Category: req.Category, Kind: "torrent", State: job.Received,
+	j := job.Job{ID: id, Name: name, Category: req.Category, Kind: "torrent", State: job.Received, Prefer: req.Prefer,
 		Size: size, Created: now, Updated: now, StateChanged: now, LastProgress: now}
 	if c, ok := e.Cfg.Get().Category(req.Category); ok {
 		j.Source = c.Kind
@@ -304,6 +323,7 @@ type SubmitNZBRequest struct {
 	Category string
 	Name     string
 	NZB      []byte
+	Prefer   string // "", "torbox" or "builtin"
 }
 
 // nzo IDs look like SABnzbd's, and are derived from the NZB so a repeated grab is the same job.
@@ -357,7 +377,7 @@ func (e *Engine) SubmitNZB(req SubmitNZBRequest) (job.Job, error) {
 		return job.Job{}, err
 	}
 	now := e.Now()
-	j := job.Job{ID: id, Name: name, Category: req.Category, Kind: "usenet", State: job.Received,
+	j := job.Job{ID: id, Name: name, Category: req.Category, Kind: "usenet", State: job.Received, Prefer: req.Prefer,
 		Size: nzbSize(req.NZB), NZBPath: path, Created: now, Updated: now, StateChanged: now, LastProgress: now}
 	if c, ok := e.Cfg.Get().Category(req.Category); ok {
 		j.Source = c.Kind
@@ -421,6 +441,77 @@ func (e *Engine) Cancel(id string) error {
 		}
 		return nil
 	})
+	return err
+}
+
+// Pauser is a built-in client that can pause a download.
+type Pauser interface {
+	Pause(id string) error
+	Resume(id string) error
+}
+
+// Pause pauses a download in a built-in client.
+func (e *Engine) Pause(id string, on bool) error {
+	j, ok := e.Store.Get(id)
+	if !ok {
+		return errors.New("no such job")
+	}
+	p, ok := e.backend(j).(Pauser)
+	if !ok || (j.State != job.Submitted && j.State != job.Downloading) {
+		return errors.New("only downloads in a built-in client can be paused")
+	}
+	if on {
+		return p.Pause(j.RemoteID)
+	}
+	return p.Resume(j.RemoteID)
+}
+
+// Topper is a client with a queue order.
+type Topper interface{ Top(id string) error }
+
+// MoveToTop puts a waiting usenet download first.
+func (e *Engine) MoveToTop(id string) error {
+	j, ok := e.Store.Get(id)
+	if !ok {
+		return errors.New("no such job")
+	}
+	t, ok := e.backend(j).(Topper)
+	if !ok {
+		return errors.New("only built-in usenet downloads have a queue")
+	}
+	return t.Top(j.RemoteID)
+}
+
+// SendToBuiltIn takes a download away from TorBox and starts it again in
+// HyveMynd's own client.
+func (e *Engine) SendToBuiltIn(ctx context.Context, id string) error {
+	j, ok := e.Store.Get(id)
+	if !ok {
+		return errors.New("no such job")
+	}
+	if j.Backend != "torbox" || (j.State != job.Submitted && j.State != job.Downloading && j.State != job.Received) {
+		return errors.New("only a download still at TorBox can be moved")
+	}
+	if j.Kind == "usenet" && (e.News == nil || !e.Cfg.Get().Usenet.Ready()) {
+		return errors.New("the built-in usenet downloader has no provider set up")
+	}
+	if j.Kind != "usenet" && (e.Local == nil || !e.Cfg.Get().VPN.On) {
+		return errors.New("the built-in torrent client is off (Downloads › VPN)")
+	}
+	_, err := e.Store.Update(id, func(c *job.Job) error {
+		if c.RemoteID != "" {
+			c.PastRemoteIDs = append(c.PastRemoteIDs, c.RemoteID) // TorBox's copy goes at cleanup
+		}
+		c.Prefer, c.Backend, c.RemoteID, c.SavePath, c.Files = "builtin", "", "", "", nil
+		c.Progress, c.LastProgress = 0, e.Now()
+		c.Move(job.Received, "moved to the built-in client by admin", e.Now())
+		return nil
+	})
+	if err == nil && j.RemoteID != "" {
+		if tb := e.byName("torbox", j); tb != nil {
+			_ = tb.Remove(ctx, j.RemoteID, true)
+		}
+	}
 	return err
 }
 
@@ -629,7 +720,7 @@ func (e *Engine) doSubmit(ctx context.Context, j job.Job) {
 // TorBox busy (its limits) or failing, not a bad release, and the built-in
 // downloader able to run it. Nil: no fall-over.
 func (e *Engine) fallOver(b backend.Backend, j job.Job, err error) backend.Backend {
-	if b.Name() != "torbox" {
+	if b.Name() != "torbox" || j.Prefer == "torbox" {
 		return nil
 	}
 	var perm backend.Permanent
@@ -742,6 +833,35 @@ var mediaExt = map[string]bool{
 	".srt": true, ".ass": true, ".ssa": true, ".sub": true, ".idx": true, ".vtt": true, ".sup": true,
 }
 
+// plain says whether the job's category takes downloads as they are.
+func (e *Engine) plain(j job.Job) bool {
+	c, ok := e.Cfg.Get().Category(j.Category)
+	return ok && c.Plain()
+}
+
+// keep says whether a downloaded file is staged: media only, or everything
+// for a plain category.
+func (e *Engine) keep(j job.Job, f backend.File) bool {
+	if e.plain(j) {
+		return !strings.HasPrefix(filepath.Base(f.Path), ".hyvemynd")
+	}
+	return wanted(f)
+}
+
+// screenNames is the malicious file guard on a download's file list (not for
+// plain categories, which may hold software on purpose).
+func (e *Engine) screenNames(j job.Job, files []backend.File) string {
+	if e.plain(j) {
+		return ""
+	}
+	for _, f := range files {
+		if why := guard.Name(f.Path); why != "" {
+			return why
+		}
+	}
+	return ""
+}
+
 func wanted(f backend.File) bool {
 	if !mediaExt[strings.ToLower(filepath.Ext(f.Path))] {
 		return false
@@ -782,15 +902,13 @@ func (e *Engine) doDownloaded(ctx context.Context, j job.Job) {
 		}
 		// Malicious file guard: a release carrying a program or script is
 		// failed (the arr blocklists it) before anything is staged.
-		for _, f := range files {
-			if why := guard.Name(f.Path); why != "" {
-				e.failStalled(ctx, j, "blocked: "+why)
-				return
-			}
+		if why := e.screenNames(j, files); why != "" {
+			e.failStalled(ctx, j, "blocked: "+why)
+			return
 		}
 		var picked []backend.File
 		for _, f := range files {
-			if wanted(f) {
+			if e.keep(j, f) {
 				picked = append(picked, f)
 			}
 		}
@@ -811,11 +929,6 @@ func (e *Engine) doDownloaded(ctx context.Context, j job.Job) {
 				e.retry(j, err, 6, "move to staging")
 				return
 			}
-			if why := guard.Content(dst); why != "" {
-				_ = os.RemoveAll(staging)
-				e.failStalled(ctx, j, "blocked: "+why)
-				return
-			}
 			st, err := os.Stat(dst)
 			if err != nil || (f.Size > 0 && st.Size() != f.Size) {
 				e.fail(j, "incomplete download: size mismatch on "+r)
@@ -829,6 +942,17 @@ func (e *Engine) doDownloaded(ctx context.Context, j job.Job) {
 		})
 		j.StagingDir, j.Files = staging, rel
 	}
+	// Malicious file guard, by content: staged video and audio that is really
+	// a program, archive or document (whichever client delivered it).
+	if !e.plain(j) {
+		for _, f := range j.Files {
+			if why := guard.Content(filepath.Join(j.StagingDir, f)); why != "" {
+				_ = os.RemoveAll(j.StagingDir)
+				e.failStalled(ctx, j, "blocked: "+why)
+				return
+			}
+		}
+	}
 	// The local copy is verified: remove the client item and everything it left.
 	// The files are safe in staging, so a client that is slow to confirm the delete
 	// must not hold the job up or fail it; the final cleanup removes the item and
@@ -841,7 +965,7 @@ func (e *Engine) doDownloaded(ctx context.Context, j job.Job) {
 		return
 	}
 	cat, _ := e.Cfg.Get().Category(j.Category)
-	if cat.Transcode && e.sendToTdarr(j) {
+	if cat.Transcode && !cat.Plain() && e.sendToTdarr(j) {
 		return
 	}
 	e.handBack(j)
@@ -893,6 +1017,54 @@ func (e *Engine) handBack(j job.Job) {
 	e.Log.Printf("job %s ready at %s", short(j.ID), dest)
 }
 
+// deliverPlain moves a plain category's finished download, folders and all,
+// into its folder, never over something already there.
+func (e *Engine) deliverPlain(ctx context.Context, j job.Job, dir string) {
+	src := j.CompleteDir
+	dst := filepath.Join(dir, config.SafeName(j.Name))
+	if _, err := os.Stat(dst); err == nil {
+		dst += "." + short(j.ID)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		e.retry2(j, err)
+		return
+	}
+	if err := moveTree(src, dst); err != nil {
+		e.retry2(j, err)
+		return
+	}
+	if err := e.cleanupExcept(ctx, j, true); err != nil {
+		e.Log.Printf("job %s: cleanup: %v", short(j.ID), err)
+	}
+	_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
+		c.CompleteDir = dst
+		c.Move(job.Cleaned, "delivered to "+dst, e.Now())
+		return nil
+	})
+	e.Log.Printf("job %s delivered to %s", short(j.ID), dst)
+}
+
+// moveTree moves a folder, copying across filesystems.
+func moveTree(src, dst string) error {
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	}
+	err := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(src, p)
+		if d.IsDir() {
+			return os.MkdirAll(filepath.Join(dst, rel), 0o755)
+		}
+		return moveFile(p, filepath.Join(dst, rel))
+	})
+	if err != nil {
+		return err
+	}
+	return os.RemoveAll(src)
+}
+
 // ------------------------------------------------------- import and clean
 
 func (e *Engine) doReady(ctx context.Context, j job.Job) {
@@ -903,8 +1075,13 @@ func (e *Engine) doReady(ctx context.Context, j job.Job) {
 	}
 	// RSS and watch-folder jobs were not grabbed by an arr, so none will import
 	// them: the finished files stay where they were delivered and the job ends.
-	if j.Source == "rss" || j.Source == "watch" {
-		if cat, ok := e.Cfg.Get().Category(j.Category); ok && cat.LibraryDir != "" {
+	cat, _ := e.Cfg.Get().Category(j.Category)
+	if j.Source == "rss" || j.Source == "watch" || j.Source == "manual" || cat.Plain() {
+		if cat.Plain() && cat.LibraryDir != "" {
+			e.deliverPlain(ctx, j, cat.LibraryDir)
+			return
+		}
+		if cat.LibraryDir != "" && !cat.IsArr() {
 			e.placeInLibrary(ctx, j, cat)
 			return
 		}
@@ -927,7 +1104,7 @@ func (e *Engine) doReady(ctx context.Context, j job.Job) {
 		return
 	}
 	s := e.Cfg.Get()
-	cat, _ := s.Category(j.Category)
+	cat, _ = s.Category(j.Category)
 	next := now.Add(time.Duration(s.ReconcileSeconds) * time.Second)
 	if chk := e.arrFor(cat); chk != nil {
 		ok, err := chk.Imported(ctx, j.DownloadID())
@@ -1217,10 +1394,14 @@ func (e *Engine) planPull(ctx context.Context, j job.Job, b backend.Backend) {
 		e.retry(j, err, 10, "list files")
 		return
 	}
+	if why := e.screenNames(j, files); why != "" {
+		e.failStalled(ctx, j, "blocked: "+why)
+		return
+	}
 	var picked []backend.File
 	var total int64
 	for _, f := range files {
-		if wanted(f) {
+		if e.keep(j, f) {
 			picked = append(picked, f)
 			total += f.Size
 		}

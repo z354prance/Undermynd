@@ -50,6 +50,23 @@ type Net interface {
 	Port() int          // the forwarded port, or 0
 }
 
+// applyLimits sets the speed limits from the settings.
+func (c *Client) applyLimits() {
+	if c.Limits == nil || c.down == nil {
+		return
+	}
+	d, u := c.Limits()
+	if d > 0 {
+		c.down.SetLimit(rate.Limit(d << 10))
+	} else {
+		c.down.SetLimit(rate.Inf)
+	}
+	if u <= 0 {
+		u = UploadLimit >> 10
+	}
+	c.up.SetLimit(rate.Limit(u << 10))
+}
+
 // UploadLimit is the most the client sends to other people while it
 // downloads, in bytes a second.
 const UploadLimit = 1 << 20
@@ -65,6 +82,7 @@ type rec struct {
 	Save    string    `json:"save"`
 	Done    bool      `json:"done,omitempty"`
 	Blocked string    `json:"blocked,omitempty"` // why the malicious file guard stopped it
+	Paused  bool      `json:"paused,omitempty"`
 	Added   time.Time `json:"added"`
 }
 
@@ -76,6 +94,9 @@ type Client struct {
 	Log   *log.Logger
 	// Every is how often the client checks the tunnel. Default 2 seconds.
 	Every time.Duration
+	// Limits gives the speed limits in KB a second (0: none for downloads;
+	// uploads default to UploadLimit).
+	Limits func() (downKB, upKB int)
 
 	mu     sync.Mutex
 	recs   map[string]*rec
@@ -85,6 +106,18 @@ type Client struct {
 	pc     storage.PieceCompletion
 	extra  []io.Closer // our listener and DHT socket
 	loaded bool
+	down   *rate.Limiter
+	up     *rate.Limiter
+	rates  map[string]*sample
+}
+
+// sample is a torrent's byte counts at the last check, for its speeds.
+type sample struct {
+	at       time.Time
+	read     int64
+	written  int64
+	downRate int64
+	upRate   int64
 }
 
 const stateName = "bt.json"
@@ -100,7 +133,9 @@ func (c *Client) load() {
 		return
 	}
 	c.loaded = true
-	c.recs, c.tors = map[string]*rec{}, map[string]*torrent.Torrent{}
+	c.recs, c.tors, c.rates = map[string]*rec{}, map[string]*torrent.Torrent{}, map[string]*sample{}
+	c.down = rate.NewLimiter(rate.Inf, 1<<20)
+	c.up = rate.NewLimiter(rate.Limit(UploadLimit), 256<<10)
 	if c.State == nil {
 		return
 	}
@@ -180,6 +215,20 @@ func (c *Client) sync() {
 			}
 		}
 	}
+	c.applyLimits()
+	now := time.Now()
+	for id, t := range c.tors {
+		st := t.Stats()
+		r, w := st.BytesReadData.Int64(), st.BytesWrittenData.Int64()
+		sm := c.rates[id]
+		if sm == nil {
+			sm = &sample{at: now, read: r, written: w}
+			c.rates[id] = sm
+		} else if d := now.Sub(sm.at).Seconds(); d >= 1 {
+			sm.downRate, sm.upRate = int64(float64(r-sm.read)/d), int64(float64(w-sm.written)/d)
+			sm.at, sm.read, sm.written = now, r, w
+		}
+	}
 	changed := false
 	for id, t := range c.tors {
 		r := c.recs[id]
@@ -216,7 +265,8 @@ func (c *Client) start(gen uint64) error {
 	cfg.LocalServiceDiscovery = nil
 	cfg.Seed = false // nothing is shared once a download finishes
 	// While downloading, share only a little (peers favour those who share).
-	cfg.UploadRateLimiter = rate.NewLimiter(rate.Limit(UploadLimit), 256<<10)
+	cfg.UploadRateLimiter = c.up
+	cfg.DownloadRateLimiter = c.down
 	cfg.ListenPort = 0
 	cfg.HTTPProxy = nil
 	cfg.HTTPDialContext = c.Net.DialContext
@@ -367,6 +417,10 @@ func (c *Client) add(id string, r *rec) error {
 		return err
 	}
 	c.tors[id] = t
+	if r.Paused {
+		t.DisallowDataDownload()
+		t.DisallowDataUpload()
+	}
 	go func() {
 		select {
 		case <-t.GotInfo():
@@ -481,6 +535,9 @@ func (c *Client) Status(ctx context.Context, id string) (backend.Item, error) {
 	if c.cl == nil || t == nil {
 		return backend.Item{}, fmt.Errorf("%w: waiting for the VPN", backend.ErrBusy)
 	}
+	if r.Paused {
+		return backend.Item{}, fmt.Errorf("%w: paused", backend.ErrBusy)
+	}
 	info := t.Info()
 	if info == nil {
 		return backend.Item{Status: backend.Downloading}, nil
@@ -563,12 +620,89 @@ func (c *Client) Remove(ctx context.Context, id string, deleteFiles bool) error 
 	return nil
 }
 
+// Pause stops a download until Resume.
+func (c *Client) Pause(id string) error { return c.setPaused(id, true) }
+
+// Resume carries on with a paused download.
+func (c *Client) Resume(id string) error { return c.setPaused(id, false) }
+
+func (c *Client) setPaused(id string, on bool) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.load()
+	r := c.recs[id]
+	if r == nil || r.Done {
+		return errors.New("the built-in torrent client has no such download running")
+	}
+	r.Paused = on
+	if t := c.tors[id]; t != nil {
+		if on {
+			t.DisallowDataDownload()
+			t.DisallowDataUpload()
+		} else {
+			t.AllowDataDownload()
+			t.AllowDataUpload()
+		}
+	}
+	c.save()
+	return nil
+}
+
+// Detail is one download as the admin sees it.
+type Detail struct {
+	Size     int64 `json:"size"`
+	Done     int64 `json:"done"`
+	Down     int64 `json:"down"` // bytes a second
+	Up       int64 `json:"up"`
+	Peers    int   `json:"peers"`
+	Seeds    int   `json:"seeds"`
+	Paused   bool  `json:"paused"`
+	Waiting  bool  `json:"waiting"`  // waiting for the VPN
+	Metadata bool  `json:"metadata"` // still fetching the torrent's file list
+}
+
+// Details reports every download the client has.
+func (c *Client) Details() map[string]Detail {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.load()
+	out := map[string]Detail{}
+	for id, r := range c.recs {
+		d := Detail{Paused: r.Paused}
+		t := c.tors[id]
+		if r.Done {
+			out[id] = d
+			continue
+		}
+		if c.cl == nil || t == nil {
+			d.Waiting = true
+			out[id] = d
+			continue
+		}
+		info := t.Info()
+		if info == nil {
+			d.Metadata = true
+		} else {
+			d.Size = info.TotalLength()
+			d.Done = t.BytesCompleted()
+		}
+		st := t.Stats()
+		d.Peers, d.Seeds = st.ActivePeers, st.ConnectedSeeders
+		if sm := c.rates[id]; sm != nil {
+			d.Down, d.Up = sm.downRate, sm.upRate
+		}
+		out[id] = d
+	}
+	return out
+}
+
 // Stats is what the admin shows.
 type Stats struct {
 	Running    bool  `json:"running"`
 	Active     int   `json:"active"`
 	Peers      int   `json:"peers"`
 	DownRate   int64 `json:"downRate"` // bytes a second, roughly
+	UpRate     int64 `json:"upRate"`
 	Downloaded int64 `json:"downloaded"`
 	Uploaded   int64 `json:"uploaded"`
 	Port       int   `json:"port"`
@@ -585,8 +719,12 @@ func (c *Client) Stats() Stats {
 	cs := c.cl.Stats()
 	s.Downloaded = cs.BytesReadData.Int64()
 	s.Uploaded = cs.BytesWrittenData.Int64()
-	for _, t := range c.tors {
+	for id, t := range c.tors {
 		s.Peers += t.Stats().ActivePeers
+		if sm := c.rates[id]; sm != nil {
+			s.DownRate += sm.downRate
+			s.UpRate += sm.upRate
+		}
 	}
 	return s
 }

@@ -495,3 +495,56 @@ func TestRestartCarriesOn(t *testing.T) {
 		t.Fatalf("fetched everything again (%d)", again)
 	}
 }
+
+func TestPauseResumeAndQueueOrder(t *testing.T) {
+	big := map[string][]byte{"a.mkv": randBytes(600 << 10)}
+	relA := makeRelease(big, 4<<10, func(n string) string { return n })
+	relB := makeRelease(map[string][]byte{"b.mkv": randBytes(20 << 10)}, 4<<10, func(n string) string { return n })
+	relC := makeRelease(map[string][]byte{"c.mkv": randBytes(20 << 10)}, 4<<10, func(n string) string { return n })
+	all := map[string][]byte{}
+	for _, r := range []release{relA, relB, relC} {
+		for k, v := range r.articles {
+			all[k] = v
+		}
+	}
+	srv := startNews(t, all, "")
+	cfg := config.Usenet{Servers: []config.NewsServer{srv.cfg("Only", 0)}}
+	var limit atomic.Int32
+	limit.Store(200) // KB/s
+	d := &Downloader{Cfg: func() config.Usenet { return cfg }, Dir: t.TempDir(), State: &blobs{}, Limit: func() int { return int(limit.Load()) }}
+	stop := run(t, d)
+	defer stop()
+	addJob(t, d, "a", relA.nzb)
+	time.Sleep(50 * time.Millisecond)
+	addJob(t, d, "b", relB.nzb)
+	time.Sleep(10 * time.Millisecond)
+	addJob(t, d, "c", relC.nzb)
+	// a is running (slowly, under the limit); c jumps ahead of b.
+	if err := d.Top("c"); err != nil {
+		t.Fatal(err)
+	}
+	if det := d.Details(); det["c"].Position != 1 || det["b"].Position != 2 || det["a"].Stage != Downloading {
+		t.Fatalf("details %+v", det)
+	}
+	// Pausing a stops it and lets c run.
+	if err := d.Pause("a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Status(context.Background(), "a"); !errors.Is(err, backend.ErrBusy) || !strings.Contains(err.Error(), "paused") {
+		t.Fatalf("paused status: %v", err)
+	}
+	if it := waitDone(t, d, "c"); it.Status != backend.Complete {
+		t.Fatalf("c: %+v", it)
+	}
+	if it, _ := d.Status(context.Background(), "a"); it.Status == backend.Complete {
+		t.Fatal("paused download finished")
+	}
+	limit.Store(0)
+	d.Resume("a")
+	if it := waitDone(t, d, "a"); it.Status != backend.Complete {
+		t.Fatalf("a: %+v", it)
+	}
+	if det := d.Details(); det["a"].FromMain == 0 {
+		t.Fatalf("no article counted: %+v", det["a"])
+	}
+}

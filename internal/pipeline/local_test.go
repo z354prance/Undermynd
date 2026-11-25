@@ -15,6 +15,7 @@ import (
 	"github.com/z354prance/undermynd/internal/backend"
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/job"
+	"github.com/z354prance/undermynd/internal/pipeline"
 	"github.com/z354prance/undermynd/internal/secret"
 )
 
@@ -273,5 +274,82 @@ func TestUsenetFallsOverToBuiltInWhenTorBoxIsBusy(t *testing.T) {
 	u.tick(2)
 	if j, _ := u.st.Get(id2); j.Backend != "torbox" {
 		t.Fatalf("free TorBox: backend %q (%s)", j.Backend, j.Reason)
+	}
+}
+
+// A program in a release that TorBox delivers is blocked too.
+func TestTorBoxDeliveryIsGuarded(t *testing.T) {
+	u := newURig(t)
+	id := u.addNZB("Show.S01E04.1080p")
+	u.tick(2)
+	u.tb.finish("101", map[string]string{
+		"Show.S01E04.1080p/Show.S01E04.1080p.mkv": strings.Repeat("v", 5000),
+		"Show.S01E04.1080p/Codec.exe":             "MZ",
+	})
+	u.tick(4)
+	j, _ := u.st.Get(id)
+	if (j.State != job.Failed && j.State != job.Cleaned) || !strings.Contains(j.Reason, "blocked") {
+		t.Fatalf("state %s reason %q", j.State, j.Reason)
+	}
+	// And disguised media from TorBox.
+	id2 := u.addNZB("Show.S01E05.1080p")
+	u.tick(2)
+	u.tb.finish("102", map[string]string{"Show.S01E05.1080p/Show.S01E05.1080p.mkv": "MZ\x90\x00" + strings.Repeat("x", 5000)})
+	u.tick(4)
+	if j, _ := u.st.Get(id2); !strings.Contains(j.Reason, "blocked") {
+		t.Fatalf("disguised: %s %q", j.State, j.Reason)
+	}
+}
+
+// Software in a plain-files category: every file kept as released, no guard,
+// delivered to the category's folder.
+func TestPlainFilesCategoryKeepsSoftware(t *testing.T) {
+	secret.SetKeyForTest(make([]byte, 32))
+	r := newRig(t)
+	loc := &fakeLocal{dir: t.TempDir(), done: true, extra: map[string][]byte{"setup.exe": []byte("MZ program"), "docs/readme.txt": []byte("hi")}}
+	r.eng.Local = loc
+	dest := t.TempDir()
+	s := r.cfg.Get()
+	s.VPN = config.VPN{On: true, User: "p1", Pass: "pw"}
+	s.Categories = append(s.Categories, config.Category{Name: "software", Kind: "files", LibraryDir: dest, Transcode: true})
+	r.cfg.Set(s)
+	os.MkdirAll(filepath.Join(loc.dir), 0o755)
+	j, err := r.eng.Submit(pipeline.SubmitRequest{Source: "manual", Category: "software", Torrent: torrentBytes("Some.App.v2", 1000), Prefer: "builtin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the fake writes docs/readme.txt under a folder that must exist
+	os.MkdirAll(filepath.Join(loc.dir, j.ID, "Some.App.v2", "docs"), 0o755)
+	r.tick(6)
+	j, _ = r.st.Get(j.ID)
+	if j.State != job.Cleaned || j.Backend != "local" {
+		t.Fatalf("state %s backend %s (%s)", j.State, j.Backend, j.Reason)
+	}
+	for _, f := range []string{"setup.exe", "docs/readme.txt", "Some.App.v2.mkv"} {
+		if !exists(filepath.Join(dest, "Some.App.v2", f)) {
+			t.Fatalf("%s not delivered (%s)", f, j.Reason)
+		}
+	}
+}
+
+func TestSendToBuiltIn(t *testing.T) {
+	u := newURig(t)
+	news := &fakeLocal{dir: t.TempDir(), name: "usenet"}
+	u.eng.News = news
+	s := u.cfg.Get()
+	s.Usenet = config.Usenet{Servers: []config.NewsServer{{Name: "P", Host: "news.example", On: true}}}
+	u.cfg.Set(s)
+	id := u.addNZB("Show.S01E06.1080p")
+	u.tick(2)
+	if j, _ := u.st.Get(id); j.Backend != "torbox" {
+		t.Fatalf("backend %q", j.Backend)
+	}
+	if err := u.eng.SendToBuiltIn(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	u.tick(2)
+	j, _ := u.st.Get(id)
+	if j.Backend != "usenet" || len(news.added) != 1 || len(u.tb.deleted) == 0 {
+		t.Fatalf("backend %q added %d torbox deletes %d", j.Backend, len(news.added), len(u.tb.deleted))
 	}
 }

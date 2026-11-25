@@ -77,6 +77,9 @@ type Job struct {
 	ArrNotified   bool     `json:"arrNotified,omitempty"`   // the arr was told to blocklist the release
 	FailCleaned   bool     `json:"failCleaned,omitempty"`   // files and backend item removed after a failure
 	Flag          string   `json:"flag,omitempty"`          // reconciler note shown in the UI
+	// Prefer is where the admin wants it downloaded: "" (the usual order),
+	// "torbox" (TorBox only) or "builtin" (HyveMynd's own client).
+	Prefer string `json:"prefer,omitempty"`
 
 	// Re-encode jobs (Source "reencode") work on a file already in the library.
 	Original     string `json:"original,omitempty"`     // the library file being re-encoded

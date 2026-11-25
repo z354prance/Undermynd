@@ -22,7 +22,7 @@ type ResolutionLooker interface {
 // arr does not say, cannot be reached, or the file's size cannot be read. A check that
 // cannot run never holds a download up.
 func (e *Engine) qualityMismatch(ctx context.Context, j job.Job) string {
-	if e.Cfg.Get().SkipQualityCheck || j.Source == "reencode" || j.Source == "rss" || j.Source == "watch" {
+	if e.Cfg.Get().SkipQualityCheck || j.Source == "reencode" || j.Source == "rss" || j.Source == "watch" || j.Source == "manual" {
 		return ""
 	}
 	cat, _ := e.Cfg.Get().Category(j.Category)
