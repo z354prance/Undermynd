@@ -2,18 +2,18 @@
 <Container version="2">
   <Name>hyvemynd</Name>
   <Repository>ghcr.io/z354prance/hyvemynd:latest</Repository>
-  <Registry>https://github.com/z354prance/hyvemynd/pkgs/container/hyvemynd</Registry>
+  <Registry>https://github.com/users/z354prance/packages/container/package/hyvemynd</Registry>
   <Network>bridge</Network>
   <MyIP/>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
-  <Support>https://github.com/z354prance/hyvemynd/issues</Support>
-  <Project>https://github.com/z354prance/hyvemynd</Project>
+  <Support>https://github.com/z354prance/Undermynd/issues</Support>
+  <Project>https://github.com/z354prance/Undermynd</Project>
   <Overview>One app for your media: it searches indexers, decides what to grab, downloads through TorBox (or qBittorrent / NZBGet), sends video through Tdarr, and imports movies, TV, anime and music into your library. It replaces Radarr, Sonarr, Lidarr, Prowlarr, Seerr, Houndarr and Recyclarr category by category, and still works as their download client while they run. Includes public requests with admin approval and a public status page. The public pages are open, the admin pages sit behind a password and second factor on the same address, and the machine port is for your arrs only and must never be exposed outside your LAN. Moving from the Undermynd template: point the Configuration and Data paths at the folders Undermynd used; everything carries over.</Overview>
   <Category>MediaApp:Other Downloaders:</Category>
-  <Icon>https://raw.githubusercontent.com/z354prance/hyvemynd/main/unraid/hyvemynd-icon.png</Icon>
+  <Icon>https://raw.githubusercontent.com/z354prance/Undermynd/main/unraid/hyvemynd-icon.png</Icon>
   <WebUI>http://[IP]:[PORT:8080]</WebUI>
-  <TemplateURL>https://raw.githubusercontent.com/z354prance/hyvemynd/main/unraid/hyvemynd.xml</TemplateURL>
+  <TemplateURL>https://raw.githubusercontent.com/z354prance/Undermynd/main/unraid/hyvemynd.xml</TemplateURL>
   <ExtraParams/>
   <PostArgs/>
   <Config Name="Web port" Target="8080" Default="18080" Mode="tcp" Description="Public status page for your users, and the admin interface under /admin behind a password and second factor. Publish through your reverse proxy." Type="Port" Display="always" Required="true" Mask="false">18080</Config>
