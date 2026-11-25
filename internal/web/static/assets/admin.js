@@ -612,16 +612,19 @@
   function vpnView(body){
     api('GET','/vpn').then(function(d){body.replaceChildren();
       body.appendChild(head('VPN and built-in torrents','HyveMynd connects to Private Internet Access by itself and runs its own torrent client through that connection, downloading straight into its own folders. Nothing to set up on the server or in the arrs. Only these downloads use the VPN; the rest of HyveMynd does not. If the VPN drops, the client stops at once and carries on when it reconnects.'));
-      var s=d.status||{},names={off:'Off',connecting:'Connecting…',up:'Connected',down:'Not connected'};
-      var box=hvBox('Status');var l=el('div','hv-list');
-      function line(k,v){var r=el('div','hv-item');var t=el('div','hv-it');t.appendChild(el('b','',k));r.appendChild(t);r.appendChild(el('span','hv-note',v));l.appendChild(r)}
-      var pill=hvPill(names[s.state]||s.state,s.state==='up'?'var(--ok)':s.state==='down'?'var(--bad)':'',s.state==='up');
-      var top=el('div','hv-item');var tt=el('div','hv-it');tt.appendChild(el('b','','VPN'));top.appendChild(tt);top.appendChild(pill);l.appendChild(top);
-      if(s.state==='up'){line('Location',(s.regionName||s.region)+(s.since&&s.since[0]!=='0'?' · connected '+ago(s.since)+' ago':''));
-        line('Incoming port',s.port?String(s.port)+' (forwarded, so other people can connect: faster downloads)':'none');
-        var c=d.client||{};line('Torrent client',c.running?(c.active+' downloading · '+c.peers+' peers'):'starting…')}
-      if(s.error)l.appendChild(el('div','err',s.error));
-      box.appendChild(l);body.appendChild(box);
+      var names={off:'Off',connecting:'Connecting…',up:'Connected',down:'Not connected'};
+      var box=hvBox('Status');var l=el('div','hv-list');box.appendChild(l);body.appendChild(box);
+      function drawStatus(d){var s=d.status||{};l.replaceChildren();
+        function line(k,v){var r=el('div','hv-item');var t=el('div','hv-it');t.appendChild(el('b','',k));r.appendChild(t);r.appendChild(el('span','hv-note',v));l.appendChild(r)}
+        var pill=hvPill(names[s.state]||s.state,s.state==='up'?'var(--ok)':s.state==='down'?'var(--bad)':'',s.state==='up');
+        var top=el('div','hv-item');var tt=el('div','hv-it');tt.appendChild(el('b','','VPN'));top.appendChild(tt);top.appendChild(pill);l.appendChild(top);
+        if(s.state==='up'){line('Location',(s.regionName||s.region)+(s.since&&s.since[0]!=='0'?' · connected '+ago(s.since)+' ago':''));
+          line('Incoming port',s.port?String(s.port)+' (forwarded, so other people can connect: faster downloads)':'none yet');
+          var c=d.client||{};line('Torrent client',c.error?'stopped: '+c.error:c.running?(c.active+' downloading · '+c.peers+' peers'):'starting…')}
+        else if(s.state==='connecting')line('Location',d.region?'connecting to the chosen location':'finding the fastest port-forwarding location');
+        if(s.error)l.appendChild(el('div',s.state==='up'&&s.port===0?'hv-note':'err',s.error))}
+      drawStatus(d);
+      timer=setInterval(function(){if(tab!=='vpn')return;api('GET','/vpn').then(drawStatus).catch(function(){})},3000);
       var c=el('div','card');c.appendChild(el('h4','','Private Internet Access'));
       var on=row(c,'Use the VPN and the built-in torrent client',{type:'checkbox',value:d.on});
       var user=row(c,'PIA username',{value:d.user,ph:'p1234567',help:'The p-number you sign in to PIA with.'});
@@ -634,7 +637,7 @@
       tw.appendChild(el('div','fh',(d.torbox?'Usenet still goes to TorBox. ':'No TorBox token is set, so all torrents go here. ')+'Torrents here share at most 1 MB/s while downloading and stop sharing as soon as they finish.'));c.appendChild(tw);
       body.appendChild(c);
       saveBar(body,function(m){m.className='msg';m.textContent='saving…';
-        api('PUT','/vpn',{on:on.checked,user:user.value,password:pw.value,region:rg.value,torrents:tr.value}).then(function(){m.className='msg ok';m.textContent='saved: connecting';setTimeout(function(){if(tab==='vpn')vpnView(body)},4000)}).catch(function(e){m.className='msg err';m.textContent=e.message})});
+        api('PUT','/vpn',{on:on.checked,user:user.value,password:pw.value,region:rg.value,torrents:tr.value}).then(function(){m.className='msg ok';m.textContent='saved: reconnecting (the status above updates by itself)'}).catch(function(e){m.className='msg err';m.textContent=e.message})});
     }).catch(fail)}
   // Upgrades: much-watched shows and movies are moved to an upgrade profile in
   // Sonarr or Radarr and searched (watch history from Tracearr).

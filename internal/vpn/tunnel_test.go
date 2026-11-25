@@ -109,7 +109,7 @@ func newFakePIA(t *testing.T) *fakePIA {
 			t.Error(err)
 		}
 		json.NewEncoder(w).Encode(Key{Status: "OK", ServerKey: base64.StdEncoding.EncodeToString(f.srvPub), ServerPort: f.wgPort,
-			ServerIP: "127.0.0.1", ServerVIP: "10.9.0.1", PeerIP: "10.9.0.2", DNSServers: []string{"10.9.0.1"}})
+			ServerIP: "127.0.0.1", ServerVIP: "10.9.0.99" /* nothing answers port forwarding on the VIP, as at PIA */, PeerIP: "10.9.0.2", DNSServers: []string{"10.9.0.1"}})
 	})
 	mux.HandleFunc("/getSignature", func(w http.ResponseWriter, r *http.Request) {
 		f.sigs.Add(1)
@@ -157,8 +157,8 @@ func newFakePIA(t *testing.T) *fakePIA {
 			}
 			io.WriteString(w, `{"token":"tok"}`)
 		case "/servers":
-			io.WriteString(w, `{"regions":[{"id":"nopf","name":"A Place","port_forward":false,"servers":{"wg":[{"ip":"127.0.0.1","cn":"example.com"}]}},`+
-				`{"id":"pf","name":"Port Place","port_forward":true,"servers":{"wg":[{"ip":"127.0.0.1","cn":"example.com"}]}},`+
+			io.WriteString(w, `{"regions":[{"id":"nopf","name":"A Place","port_forward":false,"servers":{"wg":[{"ip":"10.9.0.1","cn":"example.com"}]}},`+
+				`{"id":"pf","name":"Port Place","port_forward":true,"servers":{"wg":[{"ip":"10.9.0.1","cn":"example.com"}]}},`+
 				`{"id":"gone","name":"Gone","offline":true,"servers":{"wg":[{"ip":"1.1.1.1","cn":"x"}]}}]}`+"\nSIGNATURE\n")
 		}
 	}))
@@ -207,6 +207,7 @@ func TestTunnelEndToEnd(t *testing.T) {
 	tun := &Tunnel{
 		Log:       log.New(testWriter{t}, "", 0),
 		Cfg:       func() config.VPN { mu.Lock(); defer mu.Unlock(); return cfg },
+		PFRetry:   20 * time.Millisecond,
 		API:       f.api,
 		State:     blobs,
 		Check:     50 * time.Millisecond,
