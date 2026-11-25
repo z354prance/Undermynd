@@ -481,6 +481,9 @@ func (t *TorBox) Fetch(ctx context.Context, id string, f File, dst string, progr
 
 // cached asks TorBox whether it already has a torrent (by its info hash);
 // any doubt counts as not cached.
+// Cached says whether TorBox already has this torrent (it finishes at once).
+func (t *TorBox) Cached(ctx context.Context, j job.Job) bool { return t.cached(ctx, j) }
+
 func (t *TorBox) cached(ctx context.Context, j job.Job) bool {
 	h := magnetHash(j.Magnet)
 	if h == "" && j.TorrentPath != "" {

@@ -19,6 +19,7 @@ import (
 	_ "time/tzdata" // so TZ works in a minimal image
 
 	"github.com/z354prance/undermynd/internal/auth"
+	"github.com/z354prance/undermynd/internal/bt"
 	"github.com/z354prance/undermynd/internal/catalog"
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/db"
@@ -34,6 +35,7 @@ import (
 	"github.com/z354prance/undermynd/internal/state"
 	"github.com/z354prance/undermynd/internal/storage"
 	"github.com/z354prance/undermynd/internal/store"
+	"github.com/z354prance/undermynd/internal/vpn"
 	"github.com/z354prance/undermynd/internal/watch"
 	"github.com/z354prance/undermynd/internal/web"
 )
@@ -191,6 +193,13 @@ func main() {
 	if site.Access != nil {
 		go site.Access.Run(ctx) // switches on accounts once Emby confirms their Connect link
 	}
+	// The PIA tunnel and HyveMynd's own torrent client, which only uses it.
+	tunnel := &vpn.Tunnel{Cfg: func() config.VPN { return cfg.Get().VPN }, Log: logger, State: blobs}
+	go tunnel.Run(ctx)
+	local := &bt.Client{Net: tunnel, Dir: filepath.Join(env.Work(), "torrents"), State: blobs, Log: logger}
+	go local.Run(ctx)
+	eng.Local = local
+	site.VPN = &web.VPN{Tunnel: tunnel, Client: local}
 	site.Attention = &attention.Service{Cfg: cfg, Log: logger, State: blobs}
 	go site.Attention.Run(ctx)
 	if dbh != nil {

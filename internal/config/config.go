@@ -156,6 +156,17 @@ type VPN struct {
 	User   string        `json:"user"`     // PIA username (p1234567)
 	Pass   secret.String `json:"password"` // PIA password
 	Region string        `json:"region"`   // PIA region id; "" = the first port-forwarding region
+	// Torrents says where torrents go while the VPN is on:
+	//   "" (auto): TorBox when it already has the torrent cached (instant),
+	//              otherwise HyveMynd's own client through the VPN
+	//   "local":  always HyveMynd's own client (TorBox not used for torrents)
+	//   "torbox": always TorBox, as before
+	Torrents string `json:"torrents,omitempty"`
+}
+
+// LocalTorrents says whether HyveMynd's own client takes torrents at all.
+func (v VPN) LocalTorrents() bool {
+	return v.On && v.User != "" && v.Pass != "" && v.Torrents != "torbox"
 }
 
 // Attention moves what people watch a lot to an upgrade profile in the arr and

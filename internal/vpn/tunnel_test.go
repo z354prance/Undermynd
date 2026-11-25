@@ -123,7 +123,9 @@ func newFakePIA(t *testing.T) *fakePIA {
 		}
 		json.NewEncoder(w).Encode(map[string]string{"status": st})
 	})
-	mux.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "through the tunnel from "+r.RemoteAddr) })
+	mux.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "through the tunnel from "+r.RemoteAddr)
+	})
 
 	outside := httptest.NewTLSServer(mux)
 	t.Cleanup(outside.Close)
@@ -180,7 +182,10 @@ func newFakePIA(t *testing.T) *fakePIA {
 
 type testWriter struct{ t *testing.T }
 
-func (w testWriter) Write(p []byte) (int, error) { w.t.Log(strings.TrimSpace(string(p))); return len(p), nil }
+func (w testWriter) Write(p []byte) (int, error) {
+	w.t.Log(strings.TrimSpace(string(p)))
+	return len(p), nil
+}
 
 func waitFor(t *testing.T, what string, ok func() bool) {
 	t.Helper()

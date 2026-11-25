@@ -301,7 +301,9 @@ func (t *Tunnel) connect(ctx context.Context, c config.VPN) error {
 			t.set(func(s *Status) { s.Error = err.Error() })
 		}
 	} else {
-		t.set(func(s *Status) { s.Error = "this region has no port forwarding; downloads work, but fewer peers can connect" })
+		t.set(func(s *Status) {
+			s.Error = "this region has no port forwarding; downloads work, but fewer peers can connect"
+		})
 	}
 	return nil
 }
@@ -476,3 +478,16 @@ func randInt(n int) int {
 	_, _ = rand.Read(b[:])
 	return int(b[0]) % n
 }
+
+// LookupHost resolves a name through the tunnel (PIA's DNS), never the host's.
+func (t *Tunnel) LookupHost(ctx context.Context, host string) ([]string, error) {
+	n, err := t.net()
+	if err != nil {
+		return nil, err
+	}
+	return n.LookupContextHost(ctx, host)
+}
+
+// Generation goes up each time the tunnel comes up (sockets from an earlier
+// one no longer work).
+func (t *Tunnel) Generation() uint64 { return t.Status().Generation }

@@ -62,7 +62,7 @@
     // requests from visitors, the library it watches, and its settings.
     var NAV=[
       {id:'overview',label:'Overview',icon:'s_over',pages:[['overview','Overview']]},
-      {id:'downloads',label:'Downloads',icon:'s_dl',pages:[['jobs','On the way'],['rss','Feeds'],['reencode','Re-encode']]},
+      {id:'downloads',label:'Downloads',icon:'s_dl',pages:[['jobs','On the way'],['rss','Feeds'],['reencode','Re-encode'],['vpn','VPN']]},
       {id:'requests',label:'Requests',icon:'s_req',pages:[['requests','Media'],['access','Accounts']]},
       {id:'library',label:'Library',icon:'s_lib',pages:[['missing','Missing'],['anime','Anime'],['upgrades','Upgrades']]},
       {id:'settings',label:'Settings',icon:'s_sys',pages:[['arrs','Arrs'],['clients','Download clients'],['transcode','Tdarr'],['public','Public page'],['playback','Media server'],['system','Server'],['log','Log']]}];
@@ -86,7 +86,7 @@
     if(curPage[2]){var tb=el('div','hv-tabs');tb.setAttribute('role','tablist');curPage[2].forEach(function(q){var b=el('button',q[0]===tab?'on':'',q[1]);b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-selected',q[0]===tab?'true':'false');b.onclick=function(){go(q[0])};tabBtns[q[0]]=b;tb.appendChild(b)});mainCol.appendChild(tb)}
     var bodyWrap=el('div','hv-body');mainCol.appendChild(bodyWrap);
     var main=el('main','main'),body=el('div');main.appendChild(body);bodyWrap.appendChild(main);shell.appendChild(side);shell.appendChild(mainCol);root.appendChild(shell);
-    if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else if(tab==='requests')requestsView(body);else if(tab==='missing')missingView(body);else if(tab==='upgrades')upgradesView(body);else if(tab==='reencode')reencodeView(body);else if(tab==='log')logView(body);else if(tab==='access')accessView(body);else if(tab==='anime')animeView(body);else settingsView(body);
+    if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else if(tab==='requests')requestsView(body);else if(tab==='missing')missingView(body);else if(tab==='upgrades')upgradesView(body);else if(tab==='reencode')reencodeView(body);else if(tab==='log')logView(body);else if(tab==='access')accessView(body);else if(tab==='anime')animeView(body);else if(tab==='vpn')vpnView(body);else settingsView(body);
   }
   function fail(e){if(e.status===401){start()}else{var d=el('div','err',e.message);root.appendChild(d)}}
   function ago(t){var s=Math.max(0,(Date.now()-new Date(t))/1000);if(s<90)return Math.round(s)+'s';if(s<5400)return Math.round(s/60)+'m';if(s<172800)return Math.round(s/3600)+'h';return Math.round(s/86400)+'d'}
@@ -499,6 +499,35 @@
         if(!gs.length)x.grid.appendChild(el('div','hv-empty',ql?'Nothing matches.':'Nothing missing.'));
         x.more.hidden=gs.length<=lim;x.more.textContent='Show all '+gs.length;x.more.onclick=function(){missAll[x.a.category]=true;draw()}})}
       q.oninput=function(){missQ=q.value;draw()};draw();
+    }).catch(fail)}
+  // VPN: the Private Internet Access tunnel inside HyveMynd, and HyveMynd's
+  // own torrent client that only goes through it.
+  function vpnView(body){
+    api('GET','/vpn').then(function(d){body.replaceChildren();
+      body.appendChild(head('VPN and built-in torrents','HyveMynd connects to Private Internet Access by itself and runs its own torrent client through that connection, downloading straight into its own folders. Nothing to set up on the server or in the arrs. Only these downloads use the VPN; the rest of HyveMynd does not. If the VPN drops, the client stops at once and carries on when it reconnects.'));
+      var s=d.status||{},names={off:'Off',connecting:'Connecting…',up:'Connected',down:'Not connected'};
+      var box=hvBox('Status');var l=el('div','hv-list');
+      function line(k,v){var r=el('div','hv-item');var t=el('div','hv-it');t.appendChild(el('b','',k));r.appendChild(t);r.appendChild(el('span','hv-note',v));l.appendChild(r)}
+      var pill=hvPill(names[s.state]||s.state,s.state==='up'?'var(--ok)':s.state==='down'?'var(--bad)':'',s.state==='up');
+      var top=el('div','hv-item');var tt=el('div','hv-it');tt.appendChild(el('b','','VPN'));top.appendChild(tt);top.appendChild(pill);l.appendChild(top);
+      if(s.state==='up'){line('Location',(s.regionName||s.region)+(s.since&&s.since[0]!=='0'?' · connected '+ago(s.since)+' ago':''));
+        line('Incoming port',s.port?String(s.port)+' (forwarded, so other people can connect: faster downloads)':'none');
+        var c=d.client||{};line('Torrent client',c.running?(c.active+' downloading · '+c.peers+' peers'):'starting…')}
+      if(s.error)l.appendChild(el('div','err',s.error));
+      box.appendChild(l);body.appendChild(box);
+      var c=el('div','card');c.appendChild(el('h4','','Private Internet Access'));
+      var on=row(c,'Use the VPN and the built-in torrent client',{type:'checkbox',value:d.on});
+      var user=row(c,'PIA username',{value:d.user,ph:'p1234567',help:'The p-number you sign in to PIA with.'});
+      var pw=row(c,'PIA password',{type:'password',ph:d.hasPassword?'saved: leave blank to keep':'',help:''});
+      var rw=el('div','fld');rw.appendChild(el('label','','Location'));var rg=el('select');rg.appendChild(new Option('Best port-forwarding location (recommended)',''));if(d.region)rg.appendChild(new Option(d.region,d.region));rg.value=d.region||'';rw.appendChild(rg);
+      rw.appendChild(el('div','fh','Locations marked “port forwarding” let other people connect to you, which makes downloads faster.'));c.appendChild(rw);
+      api('GET','/vpn/regions').then(function(list){var keep=rg.value;while(rg.options.length>1)rg.remove(1);list.forEach(function(g){rg.appendChild(new Option(g.name+(g.portForward?' · port forwarding':''),g.id))});rg.value=keep}).catch(function(){});
+      var tw=el('div','fld');tw.appendChild(el('label','','Where torrents go'));var tr=el('select');
+      [['','TorBox when it already has it (instant), otherwise here (recommended)'],['local','Always here (TorBox not used for torrents)'],['torbox','Always TorBox, as before']].forEach(function(o){tr.appendChild(new Option(o[1],o[0]))});tr.value=d.torrents||'';tw.appendChild(tr);
+      tw.appendChild(el('div','fh',d.torbox?'Usenet still goes to TorBox.':'No TorBox token is set, so all torrents go here.'));c.appendChild(tw);
+      body.appendChild(c);
+      saveBar(body,function(m){m.className='msg';m.textContent='saving…';
+        api('PUT','/vpn',{on:on.checked,user:user.value,password:pw.value,region:rg.value,torrents:tr.value}).then(function(){m.className='msg ok';m.textContent='saved: connecting';setTimeout(function(){if(tab==='vpn')vpnView(body)},4000)}).catch(function(e){m.className='msg err';m.textContent=e.message})});
     }).catch(fail)}
   // Upgrades: much-watched shows and movies are moved to an upgrade profile in
   // Sonarr or Radarr and searched (watch history from Tracearr).
