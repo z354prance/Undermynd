@@ -159,9 +159,9 @@ func (e *Engine) pick(j job.Job) (backend.Backend, error) {
 		return nil, backend.Permanent{Msg: "no usenet backend is configured: set a TorBox token or an NZBGet address"}
 	}
 	if v := e.Cfg.Get().VPN; e.Local != nil && v.LocalTorrents() {
-		// TorBox only for what it already has (instant, outside the hourly
-		// allowance); everything else through the VPN here.
-		if tb := e.torboxTorrents(); tb != nil && v.Torrents == "" && tb.Cached(context.Background(), j) {
+		// TorBox first (doSubmit falls over to the built-in client when it is
+		// busy); the built-in client when TorBox is not set up or not wanted.
+		if tb := e.torboxTorrents(); tb != nil && v.Torrents == "" {
 			return tb, nil
 		}
 		return e.Local, nil
@@ -588,6 +588,12 @@ func (e *Engine) doSubmit(ctx context.Context, j job.Job) {
 		return
 	}
 	rid, save, err := b.Add(ctx, j)
+	if err != nil && e.fallOver(b, j, err) {
+		// TorBox is busy or unreachable: download it here through the VPN.
+		e.Log.Printf("job %s: TorBox could not take it (%v); using the built-in client", short(j.ID), err)
+		b = e.Local
+		rid, save, err = b.Add(ctx, j)
+	}
 	if err != nil {
 		e.retry(j, err, 4, "submit to client")
 		return
@@ -598,6 +604,26 @@ func (e *Engine) doSubmit(ctx context.Context, j job.Job) {
 		c.Move(job.Submitted, "sent to "+c.Backend, e.Now())
 		return nil
 	})
+}
+
+// fallOver says whether a torrent TorBox could not take should go to the
+// built-in client: TorBox busy (its limits) or failing, not a bad torrent,
+// and the built-in client connected.
+func (e *Engine) fallOver(b backend.Backend, j job.Job, err error) bool {
+	if j.Kind == "usenet" || e.Local == nil || b == e.Local || b.Name() != "torbox" {
+		return false
+	}
+	if v := e.Cfg.Get().VPN; !v.LocalTorrents() || v.Torrents != "" {
+		return false
+	}
+	var perm backend.Permanent
+	if errors.As(err, &perm) {
+		return false
+	}
+	if r, ok := e.Local.(interface{ Ready() bool }); ok && !r.Ready() {
+		return false // the VPN is not up: keep waiting for TorBox
+	}
+	return true
 }
 
 // inactiveGrace is how long an inactive, motionless TorBox item is given before it is retried.

@@ -31,6 +31,7 @@ import (
 	"github.com/anacrolix/torrent/dialer"
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/anacrolix/torrent/storage"
+	"golang.org/x/time/rate"
 
 	"github.com/z354prance/undermynd/internal/backend"
 	"github.com/z354prance/undermynd/internal/job"
@@ -47,6 +48,10 @@ type Net interface {
 	Generation() uint64 // changes when the tunnel reconnects
 	Port() int          // the forwarded port, or 0
 }
+
+// UploadLimit is the most the client sends to other people while it
+// downloads, in bytes a second.
+const UploadLimit = 1 << 20
 
 // Name is the backend name jobs record.
 const Name = "local"
@@ -207,7 +212,9 @@ func (c *Client) start(gen uint64) error {
 	cfg.DisableIPv6 = true
 	cfg.DisableWebtorrent = true // WebRTC would go around the tunnel
 	cfg.LocalServiceDiscovery = nil
-	cfg.Seed = false
+	cfg.Seed = false // nothing is shared once a download finishes
+	// While downloading, share only a little (peers favour those who share).
+	cfg.UploadRateLimiter = rate.NewLimiter(rate.Limit(UploadLimit), 256<<10)
 	cfg.ListenPort = 0
 	cfg.HTTPProxy = nil
 	cfg.HTTPDialContext = c.Net.DialContext

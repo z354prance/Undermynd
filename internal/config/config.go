@@ -157,10 +157,10 @@ type VPN struct {
 	Pass   secret.String `json:"password"` // PIA password
 	Region string        `json:"region"`   // PIA region id; "" = the first port-forwarding region
 	// Torrents says where torrents go while the VPN is on:
-	//   "" (auto): TorBox when it already has the torrent cached (instant),
-	//              otherwise HyveMynd's own client through the VPN
+	//   "" (default): TorBox first; HyveMynd's own client (through the VPN)
+	//                 when TorBox is busy, unreachable or not set up
 	//   "local":  always HyveMynd's own client (TorBox not used for torrents)
-	//   "torbox": always TorBox, as before
+	//   "torbox": always TorBox, never the built-in client
 	Torrents string `json:"torrents,omitempty"`
 }
 
