@@ -2,7 +2,7 @@
 <Container version="2">
   <Name>hyvemynd</Name>
   <Repository>ghcr.io/z354prance/hyvemynd:latest</Repository>
-  <Registry>https://github.com/z354prance/hyvemynd/pkgs/container/hyvemynd</Registry>
+  <Registry>https://github.com/users/z354prance/packages/container/package/hyvemynd</Registry>
   <Network>bridge</Network>
   <MyIP/>
   <Shell>sh</Shell>
