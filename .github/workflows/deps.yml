@@ -1,0 +1,33 @@
+# Temporary, for the deps/vpn-downloads branch only: the machine that writes
+# this code cannot reach the Go module proxy, so CI resolves go.mod/go.sum and
+# commits the module sources (vendor/) to this branch. Never merged.
+name: Resolve Go modules
+on:
+  push:
+    branches: ["deps/vpn-downloads"]
+permissions:
+  contents: write
+jobs:
+  vendor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.x"
+      - name: Resolve
+        env:
+          GOTOOLCHAIN: local
+        run: |
+          go get golang.zx2c4.com/wireguard@latest github.com/anacrolix/torrent@latest github.com/akalin/gopar@latest github.com/nwaples/rardecode/v2@latest
+          go mod tidy
+          go mod vendor
+          go build ./...
+          grep -E 'wireguard|anacrolix/torrent |gopar|rardecode|gvisor' go.mod
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f go.mod go.sum vendor
+          git commit -qm "deps: resolved modules and vendor (CI)" || exit 0
+          git push
