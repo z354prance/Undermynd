@@ -1,4 +1,4 @@
-# Roadmap: folding the arr stack into Undermynd (v51, Nov 25, 2026)
+# Roadmap: folding the arr stack into Undermynd (v52, Nov 25, 2026)
 
 Goal: one app that does what Radarr, Sonarr, Lidarr, Prowlarr, Seerr, Houndarr and Recyclarr do today, so nothing else has to run or be configured. It will be renamed HyveMynd at the end.
 
@@ -246,6 +246,7 @@ The earlier plan below listed screens each UI milestone needed; parts 1 to 5 cov
 
 ## 11. Change log
 
+- v52: fixed a crash that took HyveMynd down when the VPN was switched on (the torrent client's UDP socket in the tunnel had no address; the network library panics on that). Sockets in the tunnel now use its address, tested against the real WireGuard tunnel with the real torrent client; a fault in the VPN, the torrent client or the usenet downloader now stops only that feature (shown on its page, retried after 5 minutes). With no location chosen, the VPN picks the port-forwarding location that answers fastest from the server (it had picked the first by name). Downloads › Clients had opened Settings › Download clients (same page name).
 - v51: Downloads › Clients (every download in one list with controls, manual adds, speed limits); plain-files categories for software; the malicious file guard now also covers what TorBox delivers.
 - v50: built-in usenet with several providers (main and backups), par2 repair, scrambled names restored, RAR unpacking; TorBox first with the built-in downloader as fall-over. Malicious file guard on every download.
 - v49: torrents go to TorBox first, the built-in client only when TorBox is busy, failing or not set up; built-in uploads capped at 1 MB/s while downloading, no seeding after.

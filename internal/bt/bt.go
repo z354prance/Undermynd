@@ -98,17 +98,19 @@ type Client struct {
 	// uploads default to UploadLimit).
 	Limits func() (downKB, upKB int)
 
-	mu     sync.Mutex
-	recs   map[string]*rec
-	tors   map[string]*torrent.Torrent
-	cl     *torrent.Client
-	gen    uint64
-	pc     storage.PieceCompletion
-	extra  []io.Closer // our listener and DHT socket
-	loaded bool
-	down   *rate.Limiter
-	up     *rate.Limiter
-	rates  map[string]*sample
+	mu      sync.Mutex
+	recs    map[string]*rec
+	tors    map[string]*torrent.Torrent
+	cl      *torrent.Client
+	gen     uint64
+	pc      storage.PieceCompletion
+	extra   []io.Closer // our listener and DHT socket
+	loaded  bool
+	down    *rate.Limiter
+	up      *rate.Limiter
+	rates   map[string]*sample
+	crash   string // the last internal error, shown on the page
+	crashAt time.Time
 }
 
 // sample is a torrent's byte counts at the last check, for its speeds.
@@ -174,7 +176,7 @@ func (c *Client) Run(ctx context.Context) {
 	tk := time.NewTicker(every)
 	defer tk.Stop()
 	for {
-		c.sync()
+		c.safeSync()
 		select {
 		case <-ctx.Done():
 			c.mu.Lock()
@@ -187,6 +189,26 @@ func (c *Client) Run(ctx context.Context) {
 			return
 		case <-tk.C:
 		}
+	}
+}
+
+// safeSync runs sync, turning a panic into a stopped client with the error
+// shown, so a fault here never takes HyveMynd down.
+func (c *Client) safeSync() {
+	defer func() {
+		if r := recover(); r != nil {
+			c.logf("crashed: %v (stopped; trying again in 5 minutes)", r)
+			c.mu.Lock() // sync's own deferred unlock has already run
+			c.stop()
+			c.crash, c.crashAt = fmt.Sprint(r), time.Now()
+			c.mu.Unlock()
+		}
+	}()
+	c.mu.Lock()
+	wait := c.crash != "" && time.Since(c.crashAt) < 5*time.Minute
+	c.mu.Unlock()
+	if !wait {
+		c.sync()
 	}
 }
 
@@ -294,6 +316,7 @@ func (c *Client) start(gen uint64) error {
 			c.extra = append(c.extra, closer(ds.Close))
 		}
 	}
+	c.crash = ""
 	c.logf("started (incoming port %d)", port)
 	return nil
 }
@@ -698,21 +721,22 @@ func (c *Client) Details() map[string]Detail {
 
 // Stats is what the admin shows.
 type Stats struct {
-	Running    bool  `json:"running"`
-	Active     int   `json:"active"`
-	Peers      int   `json:"peers"`
-	DownRate   int64 `json:"downRate"` // bytes a second, roughly
-	UpRate     int64 `json:"upRate"`
-	Downloaded int64 `json:"downloaded"`
-	Uploaded   int64 `json:"uploaded"`
-	Port       int   `json:"port"`
+	Running    bool   `json:"running"`
+	Active     int    `json:"active"`
+	Peers      int    `json:"peers"`
+	DownRate   int64  `json:"downRate"` // bytes a second, roughly
+	UpRate     int64  `json:"upRate"`
+	Error      string `json:"error,omitempty"`
+	Downloaded int64  `json:"downloaded"`
+	Uploaded   int64  `json:"uploaded"`
+	Port       int    `json:"port"`
 }
 
 // Stats reports the client's activity.
 func (c *Client) Stats() Stats {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := Stats{Running: c.cl != nil, Active: len(c.tors), Port: c.Net.Port()}
+	s := Stats{Running: c.cl != nil, Active: len(c.tors), Port: c.Net.Port(), Error: c.crash}
 	if c.cl == nil {
 		return s
 	}

@@ -62,7 +62,7 @@
     // requests from visitors, the library it watches, and its settings.
     var NAV=[
       {id:'overview',label:'Overview',icon:'s_over',pages:[['overview','Overview']]},
-      {id:'downloads',label:'Downloads',icon:'s_dl',pages:[['jobs','On the way'],['clients','Clients'],['rss','Feeds'],['reencode','Re-encode'],['usenet','Usenet'],['vpn','VPN']]},
+      {id:'downloads',label:'Downloads',icon:'s_dl',pages:[['jobs','On the way'],['downloaders','Clients'],['rss','Feeds'],['reencode','Re-encode'],['usenet','Usenet'],['vpn','VPN']]},
       {id:'requests',label:'Requests',icon:'s_req',pages:[['requests','Media'],['access','Accounts']]},
       {id:'library',label:'Library',icon:'s_lib',pages:[['missing','Missing'],['anime','Anime'],['upgrades','Upgrades']]},
       {id:'settings',label:'Settings',icon:'s_sys',pages:[['arrs','Arrs'],['clients','Download clients'],['transcode','Tdarr'],['public','Public page'],['playback','Media server'],['system','Server'],['log','Log']]}];
@@ -86,7 +86,7 @@
     if(curPage[2]){var tb=el('div','hv-tabs');tb.setAttribute('role','tablist');curPage[2].forEach(function(q){var b=el('button',q[0]===tab?'on':'',q[1]);b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-selected',q[0]===tab?'true':'false');b.onclick=function(){go(q[0])};tabBtns[q[0]]=b;tb.appendChild(b)});mainCol.appendChild(tb)}
     var bodyWrap=el('div','hv-body');mainCol.appendChild(bodyWrap);
     var main=el('main','main'),body=el('div');main.appendChild(body);bodyWrap.appendChild(main);shell.appendChild(side);shell.appendChild(mainCol);root.appendChild(shell);
-    if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else if(tab==='requests')requestsView(body);else if(tab==='missing')missingView(body);else if(tab==='upgrades')upgradesView(body);else if(tab==='reencode')reencodeView(body);else if(tab==='log')logView(body);else if(tab==='access')accessView(body);else if(tab==='anime')animeView(body);else if(tab==='vpn')vpnView(body);else if(tab==='usenet')usenetView(body);else if(tab==='clients')clientsView(body);else settingsView(body);
+    if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else if(tab==='requests')requestsView(body);else if(tab==='missing')missingView(body);else if(tab==='upgrades')upgradesView(body);else if(tab==='reencode')reencodeView(body);else if(tab==='log')logView(body);else if(tab==='access')accessView(body);else if(tab==='anime')animeView(body);else if(tab==='vpn')vpnView(body);else if(tab==='usenet')usenetView(body);else if(tab==='downloaders')clientsView(body);else settingsView(body);
   }
   function fail(e){if(e.status===401){start()}else{var d=el('div','err',e.message);root.appendChild(d)}}
   function ago(t){var s=Math.max(0,(Date.now()-new Date(t))/1000);if(s<90)return Math.round(s)+'s';if(s<5400)return Math.round(s/60)+'m';if(s<172800)return Math.round(s/3600)+'h';return Math.round(s/86400)+'d'}
@@ -565,7 +565,7 @@
     addBox=hvBox('');body.appendChild(addBox);
     var b2=hvBox('Last three days');hist=el('div','hv-list');b2.appendChild(hist);body.appendChild(b2);
     limBox=hvBox('');body.appendChild(limBox);
-    load();timer=setInterval(function(){if(tab==='clients')load()},3000);
+    load();timer=setInterval(function(){if(tab==='downloaders')load()},3000);
   }
   // Usenet: HyveMynd's own usenet downloader and the providers it uses.
   function usenetView(body){

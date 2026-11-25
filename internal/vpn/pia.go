@@ -264,3 +264,49 @@ func (a *API) serverGet(ctx context.Context, dial func(context.Context, string, 
 	}
 	return json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(out)
 }
+
+// Fastest picks the port-forwarding region answering quickest from here (a
+// TCP connection to one of its WireGuard servers), as PIA's own app does.
+func (a *API) Fastest(ctx context.Context, regions []Region) (Region, error) {
+	type res struct {
+		g Region
+		d time.Duration
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	dial := a.Dial
+	if dial == nil {
+		d := &net.Dialer{}
+		dial = d.DialContext
+	}
+	out := make(chan res, len(regions))
+	n := 0
+	for _, g := range regions {
+		if !g.PortForward || len(g.Servers.WG) == 0 {
+			continue
+		}
+		n++
+		go func(g Region) {
+			start := time.Now()
+			c, err := dial(ctx, "tcp", net.JoinHostPort(g.Servers.WG[0].IP, "1337"))
+			if err != nil {
+				out <- res{g, -1}
+				return
+			}
+			c.Close()
+			out <- res{g, time.Since(start)}
+		}(g)
+	}
+	var best *res
+	for i := 0; i < n; i++ {
+		r := <-out
+		if r.d >= 0 && (best == nil || r.d < best.d) {
+			rr := r
+			best = &rr
+		}
+	}
+	if best == nil {
+		return Pick(regions, "") // nothing answered: the first one
+	}
+	return best.g, nil
+}
