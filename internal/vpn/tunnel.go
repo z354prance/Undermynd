@@ -57,16 +57,21 @@ type Tunnel struct {
 	Check     time.Duration
 	Stale     time.Duration
 	BindEvery time.Duration
+	// PFRetry is the gap between port-forward tries right after connecting
+	// (later tries are 40 times further apart). Default 3 seconds.
+	PFRetry time.Duration
 
-	mu      sync.RWMutex
-	dev     *device.Device
-	tnet    *netstack.Net
-	gw      Server
-	local   netip.Addr // this end's address in the tunnel
-	sig     Signature
-	status  Status
-	restart chan struct{}
-	once    sync.Once
+	mu       sync.RWMutex
+	dev      *device.Device
+	tnet     *netstack.Net
+	gw       Server
+	local    netip.Addr // this end's address in the tunnel
+	pfWanted bool       // the region forwards ports
+	token    string
+	sig      Signature
+	status   Status
+	restart  chan struct{}
+	once     sync.Once
 }
 
 func (t *Tunnel) init() {
@@ -80,6 +85,9 @@ func (t *Tunnel) init() {
 		}
 		if t.Stale == 0 {
 			t.Stale = 5 * time.Minute
+		}
+		if t.PFRetry == 0 {
+			t.PFRetry = 3 * time.Second
 		}
 		if t.BindEvery == 0 {
 			t.BindEvery = 15 * time.Minute
@@ -213,7 +221,7 @@ func (t *Tunnel) run(ctx context.Context) {
 			}
 			continue
 		}
-		t.set(func(s *Status) { s.State, s.Error = "connecting", "" })
+		t.set(func(s *Status) { s.State, s.Error, s.Region, s.RegionName = "connecting", "", c.Region, "" })
 		if err := t.connect(ctx, c); err != nil {
 			t.logf("%v", err)
 			t.down("down", err.Error())
@@ -324,19 +332,29 @@ func (t *Tunnel) connect(ctx context.Context, c config.VPN) error {
 		dev.Close()
 		return fmt.Errorf("starting the tunnel: %w", err)
 	}
-	gw := Server{IP: k.ServerVIP, CN: srv.CN}
-	if gw.IP == "" {
-		gw.IP = endpointIP
-	}
+	// Port forwarding is asked of the server's public address, through the
+	// tunnel (as PIA's own scripts do), not of its address inside the tunnel.
+	gw := Server{IP: srv.IP, CN: srv.CN}
 	t.mu.Lock()
-	t.dev, t.tnet, t.gw, t.local = dev, tnet, gw, local
+	t.dev, t.tnet, t.gw, t.local, t.pfWanted = dev, tnet, gw, local, region.PortForward
 	t.status = Status{State: "up", Region: region.ID, RegionName: region.Name, Server: srv.CN, Address: k.PeerIP, Since: time.Now(), Generation: t.status.Generation + 1}
 	t.mu.Unlock()
 	t.logf("connected to PIA %s (%s)", region.Name, srv.CN)
 	if region.PortForward {
-		if err := t.forward(ctx, token); err != nil {
-			t.logf("%v", err)
-			t.set(func(s *Status) { s.Error = err.Error() })
+		// The server may need a moment after the handshake: a few tries now,
+		// then again every couple of minutes while connected (maintain).
+		var err error
+		for try := 0; try < 3; try++ {
+			if err = t.forward(ctx, token); err == nil {
+				break
+			}
+			if !sleepCtx(ctx, t.PFRetry) {
+				break
+			}
+		}
+		if err != nil {
+			t.logf("%v (trying again in a couple of minutes)", err)
+			t.set(func(s *Status) { s.Error = "no forwarded port yet, trying again: " + err.Error() })
 		}
 	} else {
 		t.set(func(s *Status) {
@@ -371,7 +389,7 @@ func (t *Tunnel) forward(ctx context.Context, token string) error {
 	}
 	t.mu.Lock()
 	t.sig = sg
-	t.status.Port, t.status.PortExpires = sg.Port, sg.Expires
+	t.status.Port, t.status.PortExpires, t.status.Error = sg.Port, sg.Expires, ""
 	t.mu.Unlock()
 	t.logf("forwarded port %d", sg.Port)
 	return nil
@@ -383,6 +401,8 @@ func (t *Tunnel) maintain(ctx context.Context, c config.VPN) string {
 	defer check.Stop()
 	bind := time.NewTicker(t.BindEvery)
 	defer bind.Stop()
+	retry := time.NewTicker(t.PFRetry * 40)
+	defer retry.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -392,6 +412,24 @@ func (t *Tunnel) maintain(ctx context.Context, c config.VPN) string {
 		case <-check.C:
 			if !t.healthy() {
 				return "the tunnel stopped answering"
+			}
+		case <-retry.C:
+			t.mu.RLock()
+			need := t.pfWanted && t.sig.Payload == ""
+			t.mu.RUnlock()
+			if !need {
+				continue
+			}
+			rctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			token, err := t.API.Token(rctx, c.User, string(c.Pass))
+			if err == nil {
+				err = t.forward(rctx, token)
+			}
+			cancel()
+			if err != nil {
+				t.set(func(s *Status) { s.Error = "no forwarded port yet, trying again: " + err.Error() })
+			} else {
+				t.set(func(s *Status) { s.Error = "" })
 			}
 		case <-bind.C:
 			t.mu.RLock()
@@ -453,6 +491,17 @@ func lastHandshake(dev *device.Device) time.Time {
 		return time.Time{}
 	}
 	return time.Unix(sec, nsec)
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	tm := time.NewTimer(d)
+	defer tm.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-tm.C:
+		return true
+	}
 }
 
 // forgetSig drops the saved grant so forward asks for a new one.
