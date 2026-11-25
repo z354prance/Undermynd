@@ -523,8 +523,8 @@
       rw.appendChild(el('div','fh','Locations marked “port forwarding” let other people connect to you, which makes downloads faster.'));c.appendChild(rw);
       api('GET','/vpn/regions').then(function(list){var keep=rg.value;while(rg.options.length>1)rg.remove(1);list.forEach(function(g){rg.appendChild(new Option(g.name+(g.portForward?' · port forwarding':''),g.id))});rg.value=keep}).catch(function(){});
       var tw=el('div','fld');tw.appendChild(el('label','','Where torrents go'));var tr=el('select');
-      [['','TorBox when it already has it (instant), otherwise here (recommended)'],['local','Always here (TorBox not used for torrents)'],['torbox','Always TorBox, as before']].forEach(function(o){tr.appendChild(new Option(o[1],o[0]))});tr.value=d.torrents||'';tw.appendChild(tr);
-      tw.appendChild(el('div','fh',d.torbox?'Usenet still goes to TorBox.':'No TorBox token is set, so all torrents go here.'));c.appendChild(tw);
+      [['','TorBox first; here when TorBox is busy or not connected (recommended)'],['local','Always here (TorBox not used for torrents)'],['torbox','Always TorBox, never here']].forEach(function(o){tr.appendChild(new Option(o[1],o[0]))});tr.value=d.torrents||'';tw.appendChild(tr);
+      tw.appendChild(el('div','fh',(d.torbox?'Usenet still goes to TorBox. ':'No TorBox token is set, so all torrents go here. ')+'Torrents here share at most 1 MB/s while downloading and stop sharing as soon as they finish.'));c.appendChild(tw);
       body.appendChild(c);
       saveBar(body,function(m){m.className='msg';m.textContent='saving…';
         api('PUT','/vpn',{on:on.checked,user:user.value,password:pw.value,region:rg.value,torrents:tr.value}).then(function(){m.className='msg ok';m.textContent='saved: connecting';setTimeout(function(){if(tab==='vpn')vpnView(body)},4000)}).catch(function(e){m.className='msg err';m.textContent=e.message})});
