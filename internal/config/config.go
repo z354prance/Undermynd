@@ -147,6 +147,17 @@ type Playback struct {
 	PathTo   string `json:"pathTo,omitempty"`
 }
 
+// VPN is the tunnel HyveMynd's own downloads go through (Private Internet
+// Access over WireGuard, run inside HyveMynd: nothing to set up on the host).
+// Only the built-in clients use it; the web pages, arrs and media server do
+// not.
+type VPN struct {
+	On     bool          `json:"on"`
+	User   string        `json:"user"`     // PIA username (p1234567)
+	Pass   secret.String `json:"password"` // PIA password
+	Region string        `json:"region"`   // PIA region id; "" = the first port-forwarding region
+}
+
 // Attention moves what people watch a lot to an upgrade profile in the arr and
 // starts the upgrade search: a movie two or more people watched in 30 days, a
 // show someone watched three or more episodes of in 14 days (from Tracearr's
@@ -233,6 +244,7 @@ type Settings struct {
 	QBit         QBit       `json:"qbit"`
 	Metadata     Metadata   `json:"metadata"`
 	Attention    Attention  `json:"attention"`
+	VPN          VPN        `json:"vpn"`
 
 	// Login the arrs use against the fake client API.
 	ClientUser     string        `json:"clientUser"`
