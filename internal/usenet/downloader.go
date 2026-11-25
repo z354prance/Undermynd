@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/time/rate"
+
 	"github.com/z354prance/undermynd/internal/backend"
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/guard"
@@ -45,9 +47,12 @@ type task struct {
 	Added    time.Time `json:"added"`
 	Total    int64     `json:"total"`
 	Password string    `json:"password,omitempty"`
+	Paused   bool      `json:"paused,omitempty"`
 
-	done   atomic.Int64 // bytes fetched
-	cancel context.CancelFunc
+	done       atomic.Int64 // bytes fetched
+	fromMain   atomic.Int64 // articles from main providers
+	fromBackup atomic.Int64 // articles from backups
+	cancel     context.CancelFunc
 }
 
 // progress is what a task has fetched, kept in its folder so a restart
@@ -72,6 +77,8 @@ type Downloader struct {
 	Dial  Dialer // nil: direct connections
 	// RetryWait is the pause when no provider answers (default a minute).
 	RetryWait time.Duration
+	// Limit gives the speed limit in KB a second (0: none).
+	Limit func() int
 
 	mu      sync.Mutex
 	tasks   map[string]*task
@@ -81,12 +88,41 @@ type Downloader struct {
 	poolKey string
 	speed   atomic.Int64 // bytes in the last second
 	once    sync.Once
+	lim     *rate.Limiter
 }
 
 const stateName = "usenet.json"
 
 func (d *Downloader) init() {
-	d.once.Do(func() { d.wake = make(chan struct{}, 1) })
+	d.once.Do(func() {
+		d.wake = make(chan struct{}, 1)
+		d.lim = rate.NewLimiter(rate.Inf, 16<<20)
+	})
+}
+
+// throttle waits for n bytes of the speed limit.
+func (d *Downloader) throttle(ctx context.Context, n int) {
+	d.init()
+	kb := 0
+	if d.Limit != nil {
+		kb = d.Limit()
+	}
+	if kb <= 0 {
+		d.lim.SetLimit(rate.Inf)
+		return
+	}
+	burst := max(kb<<10, 64<<10) // one second's worth
+	if d.lim.Limit() != rate.Limit(kb<<10) {
+		d.lim.SetLimit(rate.Limit(kb << 10))
+		d.lim.SetBurst(burst)
+	}
+	for n > 0 {
+		k := min(n, burst)
+		if d.lim.WaitN(ctx, k) != nil {
+			return
+		}
+		n -= k
+	}
 }
 
 func (d *Downloader) logf(format string, a ...any) {
@@ -206,6 +242,9 @@ func (d *Downloader) Status(ctx context.Context, id string) (backend.Item, error
 	case Failed:
 		return backend.Item{Status: backend.Errored, Error: t.Error}, nil
 	case Queued:
+		if t.Paused {
+			return backend.Item{}, fmt.Errorf("%w: paused", backend.ErrBusy)
+		}
 		if t.Error != "" {
 			return backend.Item{}, fmt.Errorf("%w: %s", backend.ErrBusy, t.Error)
 		}
@@ -271,6 +310,101 @@ func (d *Downloader) Remove(ctx context.Context, id string, deleteFiles bool) er
 		}
 	}
 	return nil
+}
+
+// Pause holds a download: it stops if running and is skipped until Resume.
+func (d *Downloader) Pause(id string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.load()
+	t := d.tasks[id]
+	if t == nil || (t.Stage != Queued && t.Stage != Downloading) {
+		return errors.New("only a waiting or downloading usenet download can be paused")
+	}
+	t.Paused = true
+	if t.Stage == Downloading && t.cancel != nil {
+		t.Stage = Queued
+		t.cancel() // what was fetched is kept; it carries on from there
+	}
+	d.save()
+	return nil
+}
+
+// Resume lets a paused download carry on.
+func (d *Downloader) Resume(id string) error {
+	d.mu.Lock()
+	t := d.tasks[id]
+	if t == nil {
+		d.mu.Unlock()
+		return errors.New("no such usenet download")
+	}
+	t.Paused = false
+	d.save()
+	d.mu.Unlock()
+	d.poke()
+	return nil
+}
+
+// Top puts a waiting download first in the queue.
+func (d *Downloader) Top(id string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.load()
+	t := d.tasks[id]
+	if t == nil || t.Stage != Queued {
+		return errors.New("only a waiting usenet download can be moved")
+	}
+	first := t.Added
+	for _, o := range d.tasks {
+		if o.Added.Before(first) {
+			first = o.Added
+		}
+	}
+	t.Added = first.Add(-time.Second)
+	d.save()
+	return nil
+}
+
+// Detail is one download as the admin sees it.
+type Detail struct {
+	Stage      string  `json:"stage"`
+	Progress   float64 `json:"progress"`
+	Speed      int64   `json:"speed"`              // while it is the one downloading
+	Position   int     `json:"position,omitempty"` // in the waiting queue, from 1
+	Paused     bool    `json:"paused"`
+	Size       int64   `json:"size"`
+	Note       string  `json:"note,omitempty"`
+	FromMain   int64   `json:"fromMain"`
+	FromBackup int64   `json:"fromBackup"`
+}
+
+// Details reports every download the downloader has.
+func (d *Downloader) Details() map[string]Detail {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.load()
+	var q []*task
+	out := map[string]Detail{}
+	for id, t := range d.tasks {
+		x := Detail{Stage: t.Stage, Paused: t.Paused, Size: t.Total, Note: t.Error, FromMain: t.fromMain.Load(), FromBackup: t.fromBackup.Load()}
+		if t.Total > 0 {
+			x.Progress = min(1, float64(t.done.Load())/float64(t.Total))
+		}
+		if t.Stage == Downloading {
+			x.Speed = d.speed.Load()
+		}
+		if t.Stage == Queued && !t.Paused {
+			q = append(q, t)
+		}
+		out[id] = x
+	}
+	sort.Slice(q, func(i, j int) bool { return q[i].Added.Before(q[j].Added) })
+	for i, t := range q {
+		x := out[t.ID]
+		x.Position = i + 1
+		out[t.ID] = x
+	}
+	return out
 }
 
 // Stats is what the admin shows.
@@ -412,7 +546,7 @@ func (d *Downloader) next() *task {
 	d.load()
 	var q []*task
 	for _, t := range d.tasks {
-		if t.Stage == Queued {
+		if t.Stage == Queued && !t.Paused {
 			q = append(q, t)
 		}
 	}
@@ -480,16 +614,16 @@ var errAllDown = errors.New("no usenet provider could be reached")
 // fetch gets one article from the providers: main ones first (spread
 // across them), then each backup level in turn. A provider that lacks it is
 // skipped; a broken connection is retried once.
-func (d *Downloader) fetch(ctx context.Context, tiers [][]*pool, id string, turn int) ([]byte, error) {
+func (d *Downloader) fetch(ctx context.Context, tiers [][]*pool, id string, turn int) ([]byte, int, error) {
 	reached := false
-	for _, tier := range tiers {
+	for ti, tier := range tiers {
 		for k := range tier {
 			p := tier[(turn+k)%len(tier)]
 			for try := 0; try < 2; try++ {
 				c, err := p.get(ctx)
 				if err != nil {
 					if ctx.Err() != nil {
-						return nil, ctx.Err()
+						return nil, 0, ctx.Err()
 					}
 					break // this provider is down: next one
 				}
@@ -497,7 +631,7 @@ func (d *Downloader) fetch(ctx context.Context, tiers [][]*pool, id string, turn
 				err = c.body(id, &buf)
 				if err == nil {
 					p.put(c, true)
-					return buf.Bytes(), nil
+					return buf.Bytes(), ti, nil
 				}
 				if errors.Is(err, ErrNoArticle) {
 					p.put(c, true)
@@ -509,9 +643,9 @@ func (d *Downloader) fetch(ctx context.Context, tiers [][]*pool, id string, turn
 		}
 	}
 	if !reached {
-		return nil, errAllDown
+		return nil, 0, errAllDown
 	}
-	return nil, ErrNoArticle
+	return nil, 0, ErrNoArticle
 }
 
 type work struct {
@@ -669,7 +803,15 @@ func (d *Downloader) download(ctx context.Context, t *task, nzb NZB, pr *progres
 		go func() {
 			defer wg.Done()
 			for it := range jobs {
-				body, err := d.fetch(ctx, tiers, it.seg.ID, it.turn)
+				body, tier, err := d.fetch(ctx, tiers, it.seg.ID, it.turn)
+				if err == nil {
+					d.throttle(ctx, len(body))
+					if tier == 0 {
+						t.fromMain.Add(1)
+					} else {
+						t.fromBackup.Add(1)
+					}
+				}
 				missing, damaged := false, false
 				switch {
 				case errors.Is(err, ErrNoArticle):

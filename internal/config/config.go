@@ -54,7 +54,7 @@ func LoadEnv() Env {
 // Category maps a download-client category (what the arr sends) to behaviour.
 type Category struct {
 	Name      string        `json:"name"`
-	Kind      string        `json:"kind"` // radarr | sonarr | lidarr | rss
+	Kind      string        `json:"kind"` // radarr | sonarr | lidarr | rss | files
 	ArrURL    string        `json:"arrUrl"`
 	ArrAPIKey secret.String `json:"arrApiKey"`
 	Transcode bool          `json:"transcode"`
@@ -68,6 +68,11 @@ type Category struct {
 	// OnTranscodeFail is "fail" (default: the arr blocklists and searches again) or "passthrough" (hand back the original).
 	OnTranscodeFail string `json:"onTranscodeFail"`
 }
+
+// Plain says whether the category takes downloads as they are (software and
+// other non-media): every file kept in its folders, no malicious file guard,
+// no Tdarr, delivered to LibraryDir (or the complete folder).
+func (c Category) Plain() bool { return c.Kind == "files" }
 
 // IsArr says whether an arr (Sonarr, Radarr, Lidarr) handles the category.
 func (c Category) IsArr() bool {
@@ -145,6 +150,14 @@ type Playback struct {
 	// they differ ("/media" here is "/mnt/user/media" there).
 	PathFrom string `json:"pathFrom,omitempty"`
 	PathTo   string `json:"pathTo,omitempty"`
+}
+
+// Speed holds the built-in clients' speed limits in KB a second (0: none;
+// torrent uploads default to 1024).
+type Speed struct {
+	TorrentDownKB int `json:"torrentDownKb,omitempty"`
+	TorrentUpKB   int `json:"torrentUpKb,omitempty"`
+	UsenetKB      int `json:"usenetKb,omitempty"`
 }
 
 // Usenet is HyveMynd's own usenet downloader and the providers it uses.
@@ -302,6 +315,7 @@ type Settings struct {
 	Attention    Attention  `json:"attention"`
 	VPN          VPN        `json:"vpn"`
 	Usenet       Usenet     `json:"usenet"`
+	Speed        Speed      `json:"speed"`
 
 	// Login the arrs use against the fake client API.
 	ClientUser     string        `json:"clientUser"`

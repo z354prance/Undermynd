@@ -197,11 +197,13 @@ func main() {
 	// The PIA tunnel and HyveMynd's own torrent client, which only uses it.
 	tunnel := &vpn.Tunnel{Cfg: func() config.VPN { return cfg.Get().VPN }, Log: logger, State: blobs}
 	go tunnel.Run(ctx)
-	local := &bt.Client{Net: tunnel, Dir: filepath.Join(env.Work(), "torrents"), State: blobs, Log: logger}
+	local := &bt.Client{Net: tunnel, Dir: filepath.Join(env.Work(), "torrents"), State: blobs, Log: logger,
+		Limits: func() (int, int) { sp := cfg.Get().Speed; return sp.TorrentDownKB, sp.TorrentUpKB }}
 	go local.Run(ctx)
 	eng.Local = local
 	// HyveMynd's own usenet downloader, for the owner's providers.
-	news := &usenet.Downloader{Cfg: func() config.Usenet { return cfg.Get().Usenet }, Dir: filepath.Join(env.Work(), "usenet"), State: blobs, Log: logger}
+	news := &usenet.Downloader{Cfg: func() config.Usenet { return cfg.Get().Usenet }, Dir: filepath.Join(env.Work(), "usenet"), State: blobs, Log: logger,
+		Limit: func() int { return cfg.Get().Speed.UsenetKB }}
 	go news.Run(ctx)
 	eng.News = news
 	site.News = news

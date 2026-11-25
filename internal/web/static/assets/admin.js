@@ -62,7 +62,7 @@
     // requests from visitors, the library it watches, and its settings.
     var NAV=[
       {id:'overview',label:'Overview',icon:'s_over',pages:[['overview','Overview']]},
-      {id:'downloads',label:'Downloads',icon:'s_dl',pages:[['jobs','On the way'],['rss','Feeds'],['reencode','Re-encode'],['usenet','Usenet'],['vpn','VPN']]},
+      {id:'downloads',label:'Downloads',icon:'s_dl',pages:[['jobs','On the way'],['clients','Clients'],['rss','Feeds'],['reencode','Re-encode'],['usenet','Usenet'],['vpn','VPN']]},
       {id:'requests',label:'Requests',icon:'s_req',pages:[['requests','Media'],['access','Accounts']]},
       {id:'library',label:'Library',icon:'s_lib',pages:[['missing','Missing'],['anime','Anime'],['upgrades','Upgrades']]},
       {id:'settings',label:'Settings',icon:'s_sys',pages:[['arrs','Arrs'],['clients','Download clients'],['transcode','Tdarr'],['public','Public page'],['playback','Media server'],['system','Server'],['log','Log']]}];
@@ -86,7 +86,7 @@
     if(curPage[2]){var tb=el('div','hv-tabs');tb.setAttribute('role','tablist');curPage[2].forEach(function(q){var b=el('button',q[0]===tab?'on':'',q[1]);b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-selected',q[0]===tab?'true':'false');b.onclick=function(){go(q[0])};tabBtns[q[0]]=b;tb.appendChild(b)});mainCol.appendChild(tb)}
     var bodyWrap=el('div','hv-body');mainCol.appendChild(bodyWrap);
     var main=el('main','main'),body=el('div');main.appendChild(body);bodyWrap.appendChild(main);shell.appendChild(side);shell.appendChild(mainCol);root.appendChild(shell);
-    if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else if(tab==='requests')requestsView(body);else if(tab==='missing')missingView(body);else if(tab==='upgrades')upgradesView(body);else if(tab==='reencode')reencodeView(body);else if(tab==='log')logView(body);else if(tab==='access')accessView(body);else if(tab==='anime')animeView(body);else if(tab==='vpn')vpnView(body);else if(tab==='usenet')usenetView(body);else settingsView(body);
+    if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else if(tab==='requests')requestsView(body);else if(tab==='missing')missingView(body);else if(tab==='upgrades')upgradesView(body);else if(tab==='reencode')reencodeView(body);else if(tab==='log')logView(body);else if(tab==='access')accessView(body);else if(tab==='anime')animeView(body);else if(tab==='vpn')vpnView(body);else if(tab==='usenet')usenetView(body);else if(tab==='clients')clientsView(body);else settingsView(body);
   }
   function fail(e){if(e.status===401){start()}else{var d=el('div','err',e.message);root.appendChild(d)}}
   function ago(t){var s=Math.max(0,(Date.now()-new Date(t))/1000);if(s<90)return Math.round(s)+'s';if(s<5400)return Math.round(s/60)+'m';if(s<172800)return Math.round(s/3600)+'h';return Math.round(s/86400)+'d'}
@@ -500,6 +500,73 @@
         x.more.hidden=gs.length<=lim;x.more.textContent='Show all '+gs.length;x.more.onclick=function(){missAll[x.a.category]=true;draw()}})}
       q.oninput=function(){missQ=q.value;draw()};draw();
     }).catch(fail)}
+  // Clients: everything being downloaded, in TorBox, the built-in torrent
+  // client and the built-in usenet downloader, with their controls.
+  function clientsView(body){
+    function rate(b){b=b||0;return b>=1048576?(b/1048576).toFixed(1)+' MB/s':b>=1024?Math.round(b/1024)+' KB/s':b+' B/s'}
+    function size(b){b=b||0;return b>=1073741824?(b/1073741824).toFixed(2)+' GB':b>=1048576?Math.round(b/1048576)+' MB':Math.round(b/1024)+' KB'}
+    function eta(s){if(!s)return '';if(s<60)return s+'s';if(s<3600)return Math.round(s/60)+'m';return Math.floor(s/3600)+'h '+Math.round(s%3600/60)+'m'}
+    var colors={TorBox:'var(--accent)',Torrent:'var(--tv)',Usenet:'var(--movie)',qBittorrent:'var(--tv)',NZBGet:'var(--movie)'};
+    var labels={pause:['Pause','x'],resume:['Resume','refresh'],top:['Move to top','up'],builtin:['Download here instead','dl'],remove:['Remove','x'],retry:['Retry','refresh']};
+    var first=true,tops,list,hist,addBox,limBox,msg=el('span','msg');
+    function act(id,a,name,b){if(a==='remove'&&!confirm('Remove '+name+'? Its files are deleted.'))return;b.disabled=true;
+      api('POST','/clients/'+encodeURIComponent(id)+'/'+a).then(load).catch(function(e){b.disabled=false;alertMsg(e.message)})}
+    function item(x,past){var r=el('div','hv-item');r.appendChild(hvPill(x.where||'Waiting',colors[x.where]||'',!!x.where));
+      var t=el('div','hv-it');t.appendChild(el('b','',x.name));var bits=[];
+      if(!past){bits.push(Math.round((x.progress||0)*100)+'%'+(x.size?' of '+size(x.size):''));
+        if(x.paused)bits.push('paused');else if(x.stage)bits.push(x.stage);
+        if(x.down)bits.push('↓ '+rate(x.down));if(x.up)bits.push('↑ '+rate(x.up));
+        if(x.where==='Torrent'&&(x.peers||x.seeds))bits.push(x.peers+' peers, '+x.seeds+' seeds');
+        if(x.position)bits.push('#'+x.position+' in queue');
+        if(x.fromBackup)bits.push(x.fromBackup+' articles from backups');
+        if(x.eta)bits.push(eta(x.eta)+' left')}
+      else bits.push(({cleaned:'finished',imported:'imported',ready:'ready',failed:'failed'}[x.state]||x.state)+' '+ago(x.when)+' ago');
+      bits.push(x.category);t.appendChild(el('span','hv-note',bits.join(' · ')));
+      if(x.note&&(past?x.state==='failed':true))t.appendChild(el('div',past?'err':'hv-note',x.note));
+      if(!past){var bar=el('div','hv-bar');var fill=el('span');fill.style.width=Math.round((x.progress||0)*100)+'%';fill.style.background=colors[x.where]||'var(--dim)';bar.appendChild(fill);t.appendChild(bar)}
+      r.appendChild(t);var acts=el('div','hv-acts');(x.can||[]).forEach(function(a){var L=labels[a];if(L)acts.appendChild(hvBtn(L[0],L[1],function(b){act(x.id,a,x.name,b)}))});r.appendChild(acts);return r}
+    function draw(d){
+      tops.replaceChildren();
+      function card(name,color,lines){var c=el('div','hv-box');c.style.flex='1';c.style.minWidth='180px';var h=el('h3','',name);h.style.color=color;c.appendChild(h);lines.forEach(function(l){c.appendChild(el('div','hv-note',l))});tops.appendChild(c)}
+      card('TorBox','var(--accent)',[d.torbox.set?d.torbox.active+' at TorBox':'not connected']);
+      card('Torrent','var(--tv)',d.builtin.torrent?['↓ '+rate(d.torrent.downRate)+'  ↑ '+rate(d.torrent.upRate),(d.torrent.active||0)+' active · '+(d.torrent.running?'VPN up':'waiting for the VPN')]:['off (Downloads › VPN)']);
+      card('Usenet','var(--movie)',d.builtin.usenet?['↓ '+rate(d.usenet.speed),(d.usenet.active?1:0)+' active · '+(d.usenet.queued||0)+' waiting'].concat((d.usenet.servers||[]).filter(function(s){return s.problem}).map(function(s){return s.name+': '+s.problem})):['no provider (Downloads › Usenet)']);
+      list.replaceChildren();
+      if(!d.items.length)list.appendChild(el('div','hv-empty','Nothing downloading right now.'));
+      d.items.forEach(function(x){list.appendChild(item(x,false))});
+      hist.replaceChildren();
+      if(!d.history.length)hist.appendChild(el('div','hv-empty','Nothing in the last three days.'));
+      d.history.forEach(function(x){hist.appendChild(item(x,true))});
+      if(first){first=false;buildAdd(d);buildLimits(d)}
+    }
+    function buildAdd(d){addBox.replaceChildren();addBox.appendChild(el('h3','','Add a download'));
+      var c=el('div','card');var mg=row(c,'Magnet link',{ph:'magnet:?xt=urn:btih:…'});
+      var fw=el('div','fld');fw.appendChild(el('label','','or a .torrent or .nzb file'));var fi=el('input');fi.type='file';fi.accept='.torrent,.nzb';fw.appendChild(fi);c.appendChild(fw);
+      var cw=el('div','fld');cw.appendChild(el('label','','Category'));var cs=el('select');(d.categories||[]).forEach(function(n){cs.appendChild(new Option(n+((d.plain||[]).indexOf(n)>=0?' (plain files)':''),n))});
+      if((d.plain||[]).length)cs.value=d.plain[0];cw.appendChild(cs);
+      var ch=el('div','fh','');cw.appendChild(ch);function hint(){ch.textContent=(d.plain||[]).indexOf(cs.value)>=0?'Plain files: everything is kept as released (software included), with no malicious-file check and no Tdarr.':(d.plain||[]).length?'A media category: only video, audio and subtitles are kept, and programs are blocked. Use a plain-files category for software.':'A media category: only video, audio and subtitles are kept, and programs are blocked. For software, add a “plain files” category under Settings › Arrs.'}cs.onchange=hint;hint();c.appendChild(cw);
+      var ww=el('div','fld');ww.appendChild(el('label','','Download with'));var wsel=el('select');[['','The usual order (TorBox first)'],['torbox','TorBox only'],['builtin','HyveMynd’s own client']].forEach(function(o){wsel.appendChild(new Option(o[1],o[0]))});ww.appendChild(wsel);c.appendChild(ww);
+      var go=el('button','go','Add');var am=el('span','msg');go.onclick=function(){var fd=new FormData();fd.append('magnet',mg.value);if(fi.files[0])fd.append('file',fi.files[0]);fd.append('category',cs.value);fd.append('prefer',wsel.value);
+        am.className='msg';am.textContent='adding…';go.disabled=true;
+        fetch('/admin/api/clients/add',{method:'POST',headers:{'X-HyveMynd-Request':'1'},body:fd,credentials:'same-origin'}).then(function(r){return r.json().then(function(x){if(!r.ok)throw new Error(x.error||('HTTP '+r.status));return x})})
+          .then(function(x){go.disabled=false;am.className='msg ok';am.textContent='added: '+x.name;mg.value='';fi.value='';load()}).catch(function(e){go.disabled=false;am.className='msg err';am.textContent=e.message})};
+      c.appendChild(go);c.appendChild(am);addBox.appendChild(c)}
+    function buildLimits(d){limBox.replaceChildren();limBox.appendChild(el('h3','','Speed limits'));var sp=d.speed||{};var c=el('div','card');
+      var td=row(c,'Torrent download (KB/s)',{type:'number',value:sp.torrentDownKb||0,help:'0 = no limit'});
+      var tu=row(c,'Torrent upload while downloading (KB/s)',{type:'number',value:sp.torrentUpKb||1024,help:'Nothing is shared after a download finishes.'});
+      var un=row(c,'Usenet download (KB/s)',{type:'number',value:sp.usenetKb||0,help:'0 = no limit'});
+      var sb=el('button','go','Save limits');var lm=el('span','msg');sb.onclick=function(){api('PUT','/clients/limits',{torrentDownKb:parseInt(td.value,10)||0,torrentUpKb:parseInt(tu.value,10)||0,usenetKb:parseInt(un.value,10)||0}).then(function(){lm.className='msg ok';lm.textContent='saved'}).catch(function(e){lm.className='msg err';lm.textContent=e.message})};
+      c.appendChild(sb);c.appendChild(lm);limBox.appendChild(c)}
+    function load(){return api('GET','/clients').then(draw).catch(fail)}
+    body.replaceChildren();
+    body.appendChild(head('Download clients','Everything being downloaded, wherever it is: TorBox, HyveMynd’s own torrent client (through the VPN) and its own usenet downloader.'));
+    tops=el('div');tops.style.display='flex';tops.style.gap='12px';tops.style.flexWrap='wrap';body.appendChild(tops);
+    var b1=hvBox('Downloading');list=el('div','hv-list');b1.appendChild(list);body.appendChild(b1);
+    addBox=hvBox('');body.appendChild(addBox);
+    var b2=hvBox('Last three days');hist=el('div','hv-list');b2.appendChild(hist);body.appendChild(b2);
+    limBox=hvBox('');body.appendChild(limBox);
+    load();timer=setInterval(function(){if(tab==='clients')load()},3000);
+  }
   // Usenet: HyveMynd's own usenet downloader and the providers it uses.
   function usenetView(body){
     api('GET','/usenet').then(function(d){body.replaceChildren();
@@ -721,11 +788,11 @@
     function add(c){
       var card=el('div','card cat kind-'+(c.kind||'none'));var f={};var g=el('div','grid3');f.orig=c.name||'';
       f.name=row(g,'category name',{value:c.name,help:'what the arr sends, e.g. tv'});
-      var w=el('div','fld');w.appendChild(el('label','','arr type'));var k=el('select');[['sonarr','sonarr'],['radarr','radarr'],['lidarr','lidarr'],['rss','no arr (RSS / watch folder)']].forEach(function(p){var x=p[0];var o=el('option','',p[1]);o.value=x;if(c.kind===x)o.selected=true;k.appendChild(o)});w.appendChild(k);g.appendChild(w);f.kind=k;
+      var w=el('div','fld');w.appendChild(el('label','','arr type'));var k=el('select');[['sonarr','sonarr'],['radarr','radarr'],['lidarr','lidarr'],['rss','no arr (RSS / watch folder)'],['files','plain files (software and anything else, kept as it is)']].forEach(function(p){var x=p[0];var o=el('option','',p[1]);o.value=x;if(c.kind===x)o.selected=true;k.appendChild(o)});w.appendChild(k);g.appendChild(w);f.kind=k;
       f.arrUrl=row(g,'arr address',{value:c.arrUrl,ph:'http://10.0.0.5:8989',help:'so HyveMynd can confirm the import'});
       f.arrApiKey=row(g,'arr API key',{type:'password',ph:c.hasArrApiKey?'set — leave blank to keep':'',help:'in the arr: Settings → General'});
       f.transcode=row(g,'transcode with Tdarr',{type:'checkbox',value:c.transcode,help:'off for music'});
-      f.libraryDir=row(g,'library folder',{value:c.libraryDir,ph:'/media/Anime',help:'only for “no arr” categories: finished episodes are matched to a show folder here'});
+      f.libraryDir=row(g,'library folder',{value:c.libraryDir,ph:'/media/Anime',help:'“no arr” categories: finished episodes are matched to a show folder here. Plain files: each download is moved here as its own folder, every file kept, with no malicious-file check and no Tdarr.'});
       f.keepNames=row(g,'keep release names',{type:'checkbox',value:c.keepNames,help:'off (the default): a placed episode is named after its show folder, the way that folder names its files'});
       var pw=el('div','fld');pw.appendChild(el('label','','if the transcode fails'));var pf=el('select');[['fail','fail the grab (the arr blocklists and searches again)'],['passthrough','keep the original file']].forEach(function(x){var o=el('option','',x[1]);o.value=x[0];if((c.onTranscodeFail||'fail')===x[0])o.selected=true;pf.appendChild(o)});pw.appendChild(pf);g.appendChild(pw);f.onFail=pf;
       card.appendChild(g);var tt=el('button','','test arr connection');var tmsg=el('span','msg');tmsg.style.marginLeft='12px';
@@ -733,7 +800,7 @@
       card.appendChild(tt);card.appendChild(tmsg);
       var sw=el('button','','place files already in this category\u2019s folder');sw.style.marginLeft='12px';sw.title='uses the saved library folder; save first if you just changed it';var smsg=el('span','msg');smsg.style.marginLeft='12px';
       sw.onclick=function(){smsg.className='msg';smsg.textContent='placing…';api('POST','/library/sweep',{name:f.orig||f.name.value}).then(function(r){smsg.className='msg ok';smsg.textContent=r.result}).catch(function(e){smsg.className='msg err';smsg.textContent=e.message})};
-      if(c.libraryDir){card.appendChild(sw);card.appendChild(smsg)}card.appendChild(document.createElement('br'));
+      if(c.libraryDir&&c.kind!=='files'){card.appendChild(sw);card.appendChild(smsg)}card.appendChild(document.createElement('br'));
       var rm=el('button','bad','remove category');rm.onclick=function(){card.remove()};card.appendChild(rm);card._f=f;cats.appendChild(card)
     }
     S.categories.forEach(add);
