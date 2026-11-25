@@ -43,6 +43,8 @@ type Engine struct {
 
 	// Override replaces every backend (tests).
 	Override backend.Backend
+	// Local is HyveMynd's own torrent client (through the VPN); nil when not built in.
+	Local backend.Backend
 	// ArrFor replaces the arr client lookup (tests).
 	ArrFor func(config.Category) ImportChecker
 
@@ -156,6 +158,14 @@ func (e *Engine) pick(j job.Job) (backend.Backend, error) {
 		}
 		return nil, backend.Permanent{Msg: "no usenet backend is configured: set a TorBox token or an NZBGet address"}
 	}
+	if v := e.Cfg.Get().VPN; e.Local != nil && v.LocalTorrents() {
+		// TorBox only for what it already has (instant, outside the hourly
+		// allowance); everything else through the VPN here.
+		if tb := e.torboxTorrents(); tb != nil && v.Torrents == "" && tb.Cached(context.Background(), j) {
+			return tb, nil
+		}
+		return e.Local, nil
+	}
 	if tb := e.torboxTorrents(); tb != nil {
 		return tb, nil
 	}
@@ -188,6 +198,9 @@ func (e *Engine) byName(name string, j job.Job) backend.Backend {
 		if ng := e.nzbget(); ng != nil {
 			return ng
 		}
+	}
+	if name == "local" && e.Local != nil {
+		return e.Local
 	}
 	return e.qbit()
 }
@@ -595,6 +608,16 @@ const stuckGrace = 15 * time.Minute
 
 func (e *Engine) doDownload(ctx context.Context, j job.Job) {
 	it, err := e.backend(j).Status(ctx, j.RemoteID)
+	if errors.Is(err, backend.ErrBusy) {
+		// The client is paused (the VPN is reconnecting): hold the stall
+		// clock so the wait does not count against the download.
+		_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
+			c.Reason = "paused while the VPN reconnects (retrying)" // cleared by the next good answer
+			c.LastProgress, c.NextRun, c.Updated = e.Now(), e.Now().Add(30*time.Second), e.Now()
+			return nil
+		})
+		return
+	}
 	if err != nil {
 		e.retry(j, err, 40, "client status")
 		return

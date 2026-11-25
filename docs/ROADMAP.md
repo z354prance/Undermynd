@@ -242,6 +242,7 @@ The earlier plan below listed screens each UI milestone needed; parts 1 to 5 cov
 
 ## 11. Change log
 
+- v48: Built-in downloads through a VPN, part 1 (Downloads › VPN). HyveMynd connects to Private Internet Access over WireGuard by itself (user-space tunnel, nothing on the host), with PIA port forwarding kept open and reused, and runs its own torrent client whose every socket and name lookup goes through the tunnel (kill switch by design). Torrents go to TorBox when it already has them cached, otherwise to the built-in client; "always here" drops TorBox for torrents. Downloads land in HyveMynd's work folder and flow through the pipeline (Tdarr included) like any client's; a VPN drop pauses jobs without counting as a stall. Part 2 (next): built-in usenet (NNTP, yEnc, par2 repair, RAR) with the user's own usenet provider, so TorBox can be dropped entirely.
 - v47: Upgrade what people watch (Library › Upgrades).
 - v46: Library › Missing: per-arr poster grid of what the arrs report missing, artwork from the arr.
 - v45: anime follow, nyaa search and gap filling back; placed files named after their folder; Naming page.

@@ -63,7 +63,9 @@ type Server struct {
 	Shows *shows.Service
 	// Attention moves much-watched titles to an upgrade profile.
 	Attention *attention.Service
-	RSS       interface {
+	// VPN is the PIA tunnel and HyveMynd's own torrent client.
+	VPN *VPN
+	RSS interface {
 		Status() []rss.FeedStatus
 		Download(ctx context.Context, feed string, index int, title, category string) (string, error)
 		CheckNow(context.Context)
@@ -94,6 +96,9 @@ func (s *Server) Handler() http.Handler {
 	s.dashboardRoutes(mux, files)
 	mux.HandleFunc("GET /admin/api/library", s.admin(s.adminLibrary))
 	mux.HandleFunc("GET /admin/api/missing", s.admin(s.adminMissing))
+	mux.HandleFunc("GET /admin/api/vpn", s.admin(s.adminVPN))
+	mux.HandleFunc("PUT /admin/api/vpn", s.admin(s.adminVPNSave))
+	mux.HandleFunc("GET /admin/api/vpn/regions", s.admin(s.adminVPNRegions))
 	mux.HandleFunc("GET /admin/api/attention", s.admin(s.adminAttention))
 	mux.HandleFunc("PUT /admin/api/attention", s.admin(s.adminAttentionSave))
 	mux.HandleFunc("POST /admin/api/attention/run", s.admin(s.adminAttentionRun))
