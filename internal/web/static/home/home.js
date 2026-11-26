@@ -147,6 +147,46 @@
     b.setAttribute("aria-label", imp + " of " + tot + " episodes in the library");
     return b;
   }
+  // The same as a ring: one slice per episode in episode order, a small gap
+  // between seasons, the share in the library written in the middle.
+  function epRing(seasons, size) {
+    var tot = 0, imp = 0, up = 0;
+    seasons.forEach(function (x) { tot += x.total; imp += x.imported; });
+    var svg = svgEl("svg", { viewBox: "0 0 60 60", width: size || 40, height: size || 40, class: "epring", role: "img" });
+    if (!tot) return svg;
+    var R = 24, C = 30, n = seasons.length;
+    var sgap = n > 1 ? Math.min(8, 90 / n) : 0;          // degrees between seasons
+    var egap = tot <= 60 ? Math.min(1.6, 120 / tot) : 0;  // between episodes, when there are few
+    var per = (360 - sgap * (n > 1 ? n : 0)) / tot;
+    function pt(a) { var r = (a - 90) * Math.PI / 180; return (C + R * Math.cos(r)).toFixed(2) + " " + (C + R * Math.sin(r)).toFixed(2); }
+    function arc(g, a0, a1, cls) {
+      if (a1 - a0 <= 0.05) return;
+      var d = a1 - a0 >= 359.9 ? "M " + pt(0) + " A " + R + " " + R + " 0 1 1 " + pt(180) + " A " + R + " " + R + " 0 1 1 " + pt(359.99)
+        : "M " + pt(a0) + " A " + R + " " + R + " 0 " + (a1 - a0 > 180 ? 1 : 0) + " 1 " + pt(a1);
+      g.appendChild(svgEl("path", { d: d, class: cls, fill: "none", "stroke-width": 8 }));
+    }
+    var a = sgap / 2;
+    seasons.forEach(function (x) {
+      var g = svgEl("g", {}); var t = svgEl("title", {}); t.textContent = "Season " + x.season + ": " + x.imported + " / " + x.total; g.appendChild(t);
+      var px = x.pixels || "";
+      function cls(i) { var c = px ? px.charAt(i) : (i < x.imported ? "h" : "."); if (c === "u") up++; return c === "h" ? "h" : c === "u" ? "u" : "m"; }
+      if (egap) {
+        for (var i = 0; i < x.total; i++) { arc(g, a + i * per + egap / 2, a + (i + 1) * per - egap / 2, cls(i)); }
+      } else {
+        var start = 0, cur = x.total ? cls(0) : "m";
+        for (var k = 1; k <= x.total; k++) {
+          var c = k < x.total ? cls(k) : null;
+          if (c !== cur) { arc(g, a + start * per, a + k * per, cur); start = k; cur = c; }
+        }
+      }
+      a += x.total * per + (n > 1 ? sgap : 0);
+      svg.appendChild(g);
+    });
+    var pct = Math.floor(imp * 100 / tot);
+    var tx = svgEl("text", { x: 30, y: 30, class: "rt", "text-anchor": "middle", "dominant-baseline": "central" }); tx.textContent = pct + "%"; svg.appendChild(tx);
+    svg.setAttribute("aria-label", imp + " of " + tot + " episodes in the library" + (up ? ", " + up + " being upgraded" : ""));
+    return svg;
+  }
   function epRow(it) {
     var r = el("div", "ep"); r.appendChild(seg(it.stage, it.state, it.progress, 38, 8));
     r.appendChild(el("span", "code", it.code || ""));
@@ -158,8 +198,8 @@
       var L = $("laneShows"), R = $("laneOther"); L.replaceChildren(); R.replaceChildren();
       if (!d.shows.length && !d.others.length) { L.appendChild(el("p", "empty", "Nothing is on the way.")); return; }
       d.shows.forEach(function (sh) {
-        var c = el("article", "card " + sh.kind); var h = el("div", "card-h"); h.appendChild(el("span", "name", sh.title));
-        if (sh.bar && sh.bar.length) { h.appendChild(bar(sh.bar)); h.appendChild(el("span", "cnt", sh.imported + " / " + sh.total)); }
+        var c = el("article", "card " + sh.kind); var h = el("div", "card-h"); var nm = el("div", "nm"); var tn = el("span", "name", sh.title); tn.title = sh.title; nm.appendChild(tn); h.appendChild(nm);
+        if (sh.bar && sh.bar.length) { nm.appendChild(el("span", "cnt", sh.imported + " / " + sh.total + " episodes")); h.appendChild(epRing(sh.bar, 40)); }
         c.appendChild(h);
         var eps = el("div", "eps"); var key = sh.kind + ":" + sh.title; if (expanded[key]) c.classList.add("open");
         if (!expanded[key]) {

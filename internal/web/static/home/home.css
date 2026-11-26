@@ -71,9 +71,16 @@ a.gear:hover{color:var(--text)}
 .card.anime{--lc:var(--anime)}.card.movie{--lc:var(--movie)}.card.music{--lc:var(--music)}
 /* Title and season bar share the row: both shrink, the title keeps at least
    40% of it, and the bar's pixels narrow evenly (never wrap). */
-.card-h{display:flex;gap:14px;align-items:center}
-.card-h .name{flex:1 1 auto;min-width:min(40%,max-content);font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.card-h .bar{flex:0 1 auto;min-width:0;margin-left:auto}
+.card-h{display:flex;gap:12px;align-items:center}
+.card-h .nm{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+/* The title keeps room for at least ~12 characters; when the season grid
+   does not fit beside it, the grid and count move to a line of their own. */
+.card-h .name{min-width:0;font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card-h .meta{display:flex;gap:14px;align-items:center;flex:0 1 auto;min-width:0;margin-left:auto}
+.card-h .bar{flex:0 1 auto;min-width:0}
+.epring{flex:none;display:block}
+.epring path.h{stroke:#3fb97a}.epring path.u{stroke:#fff}.epring path.m{stroke:#3a3d41}
+.epring .rt{font:600 13px var(--mono);fill:var(--text)}
 .card-h .cnt{flex:none}
 .bar .s{min-width:0;flex:0 1 auto;grid-auto-columns:minmax(0,3px)}
 .card-h .cnt{font:12px var(--mono);color:var(--dim)}
@@ -227,9 +234,7 @@ button.more{border:0;background:none;padding:4px 0 0;color:var(--accent);font-si
   .grid{display:flex;flex-direction:column;padding:14px}
   .panel{overflow:visible}
   .lanes{grid-template-columns:1fr}
-  .card-h{flex-wrap:wrap}
-  .card-h .name{flex-basis:calc(100% - 110px)}
-  .card-h .bar{order:3;margin-left:0}
+
   .bar .s{min-width:0;grid-auto-columns:minmax(0,3px)}
   .eps{grid-template-columns:1fr}
   .card:not(.open) .eps .ep:nth-child(n+5){display:none}
