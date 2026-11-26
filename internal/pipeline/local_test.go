@@ -21,15 +21,16 @@ import (
 
 // fakeLocal stands in for HyveMynd's own torrent client.
 type fakeLocal struct {
-	mu    sync.Mutex
-	dir   string
-	added []string
-	busy  bool
-	name  string
-	extra map[string][]byte // more files in the download (name -> content)
-	video []byte            // the video's content (default: zeros)
-	done  bool
-	down  bool // the VPN is not connected
+	mu      sync.Mutex
+	dir     string
+	added   []string
+	busy    bool
+	name    string
+	extra   map[string][]byte // more files in the download (name -> content)
+	video   []byte            // the video's content (default: zeros)
+	done    bool
+	down    bool // the VPN is not connected
+	removed map[string]bool
 }
 
 func (f *fakeLocal) Name() string {
@@ -62,6 +63,9 @@ func (f *fakeLocal) Add(ctx context.Context, j job.Job) (string, string, error) 
 func (f *fakeLocal) Status(ctx context.Context, id string) (backend.Item, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.removed[id] {
+		return backend.Item{Status: backend.Missing}, nil
+	}
 	if f.busy {
 		return backend.Item{}, fmt.Errorf("%w: waiting for the VPN", backend.ErrBusy)
 	}
@@ -82,7 +86,18 @@ func (f *fakeLocal) Files(ctx context.Context, id string) ([]backend.File, error
 	})
 	return out, nil
 }
-func (f *fakeLocal) Remove(ctx context.Context, id string, del bool) error { return nil }
+func (f *fakeLocal) Remove(ctx context.Context, id string, del bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.removed == nil {
+		f.removed = map[string]bool{}
+	}
+	f.removed[id] = true // the built-in clients forget a removed download
+	if del {
+		os.RemoveAll(filepath.Join(f.dir, id))
+	}
+	return nil
+}
 
 func TestTorrentsGoToTheBuiltInClientWhenTheVPNIsOn(t *testing.T) {
 	secret.SetKeyForTest(make([]byte, 32))
@@ -351,5 +366,34 @@ func TestSendToBuiltIn(t *testing.T) {
 	j, _ := u.st.Get(id)
 	if j.Backend != "usenet" || len(news.added) != 1 || len(u.tb.deleted) == 0 {
 		t.Fatalf("backend %q added %d torbox deletes %d", j.Backend, len(news.added), len(u.tb.deleted))
+	}
+}
+
+// A download from the built-in usenet downloader is cleaned up after the
+// arr imports it: its folder lies in the downloader's own work folder.
+func TestBuiltInDownloadIsCleanedUp(t *testing.T) {
+	u := newURig(t)
+	news := &fakeLocal{dir: filepath.Join(u.cfg.Env.Work(), "usenet"), name: "usenet", done: true}
+	u.eng.News = news
+	s := u.cfg.Get()
+	s.TorBox.Token = "" // only the built-in downloader
+	s.Usenet = config.Usenet{Servers: []config.NewsServer{{Name: "P", Host: "news.example", On: true}}}
+	u.cfg.Set(s)
+	id := u.addNZB("Show.S01E07.1080p")
+	for i := 0; i < 40; i++ {
+		u.tick(1)
+		if j, _ := u.st.Get(id); j.State == job.Cleaned || j.State == job.Failed {
+			break
+		}
+		u.arr.mu.Lock()
+		u.arr.imported[strings.ToLower(id)] = true
+		u.arr.mu.Unlock()
+	}
+	j, _ := u.st.Get(id)
+	if j.State != job.Cleaned || strings.Contains(j.Reason, "refusing") || j.Backend != "usenet" {
+		t.Fatalf("state %s backend %s reason %q", j.State, j.Backend, j.Reason)
+	}
+	if _, err := os.Stat(filepath.Join(news.dir, id)); !os.IsNotExist(err) {
+		t.Fatalf("download folder left behind (state %s, %q)", j.State, j.Reason)
 	}
 }

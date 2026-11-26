@@ -1193,8 +1193,13 @@ func (e *Engine) removeBackendItem(ctx context.Context, j job.Job) error {
 	}
 	if j.SavePath != "" {
 		root := e.Cfg.Get().QBit.SaveDir
-		if j.Backend == "nzbget" {
+		switch j.Backend {
+		case "nzbget":
 			root = e.Cfg.Get().NZBGet.DestRoot
+		case "usenet": // the built-in usenet downloader's folders
+			root = filepath.Join(e.Cfg.Env.Work(), "usenet")
+		case "local": // the built-in torrent client's folders
+			root = filepath.Join(e.Cfg.Env.Work(), "torrents")
 		}
 		if err := e.removeTree(j.SavePath, root); err != nil {
 			return err
