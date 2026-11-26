@@ -35,6 +35,7 @@ type onwaySeason struct {
 	Total    int    `json:"total"`
 	Imported int    `json:"imported"`
 	Pixels   string `json:"pixels,omitempty"` // see progress.Season
+	Moving   []int  `json:"moving,omitempty"`
 }
 
 type onwayShow struct {
@@ -161,7 +162,7 @@ func (s *Server) onway(w http.ResponseWriter, r *http.Request) {
 			if shows[k] == nil || hasSeason(bars[k], x.Season) {
 				continue
 			}
-			bars[k] = append(bars[k], onwaySeason{Season: x.Season, Total: x.Total, Imported: x.Imported, Pixels: x.Pixels})
+			bars[k] = append(bars[k], onwaySeason{Season: x.Season, Total: x.Total, Imported: x.Imported, Pixels: x.Pixels, Moving: x.Moving})
 		}
 	}
 	out := []onwayShow{}

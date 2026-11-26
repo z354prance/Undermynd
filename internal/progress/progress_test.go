@@ -1,6 +1,7 @@
 package progress_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -170,5 +171,26 @@ func TestUpgradeOnlyWhenFilePredatesGrab(t *testing.T) {
 		if got := len(tr.Snapshot().Upgrades) == 1; got != c.want {
 			t.Errorf("file added %s: upgrade %v, want %v", c.added, got, c.want)
 		}
+	}
+}
+
+// Files below the profile's cutoff (a show on its way to the upgrade
+// profile's quality) are marked o, upgraded ones h.
+func TestSeasonPixelsMarkNotYetUpgraded(t *testing.T) {
+	now := time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC)
+	var eps []arr.Episode
+	if err := json.Unmarshal([]byte(`[
+		{"id":1,"seasonNumber":1,"episodeNumber":1,"monitored":true,"hasFile":true,"airDateUtc":"2026-01-01T00:00:00Z","episodeFile":{"qualityCutoffNotMet":false}},
+		{"id":2,"seasonNumber":1,"episodeNumber":2,"monitored":true,"hasFile":true,"airDateUtc":"2026-01-01T00:00:00Z","episodeFile":{"qualityCutoffNotMet":true}},
+		{"id":3,"seasonNumber":1,"episodeNumber":3,"monitored":true,"hasFile":true,"airDateUtc":"2026-01-01T00:00:00Z","episodeFile":{"qualityCutoffNotMet":true}},
+		{"id":4,"seasonNumber":1,"episodeNumber":4,"monitored":true,"airDateUtc":"2026-01-01T00:00:00Z"}
+	]`), &eps); err != nil {
+		t.Fatal(err)
+	}
+	active := map[int64]bool{3: true}
+	c := progress.CountSeasons(eps, nil, now, 30)
+	progress.SeasonPixels(c, eps, nil, active, now, 30)
+	if got := c[1]; got.Pixels != "hou." || got.Imported != 3 || len(got.Moving) != 1 || got.Moving[0] != 3 {
+		t.Fatalf("season 1 = %+v, want pixels hou., 3 imported", got)
 	}
 }

@@ -79,7 +79,7 @@ a.gear:hover{color:var(--text)}
 .card-h .meta{display:flex;gap:14px;align-items:center;flex:0 1 auto;min-width:0;margin-left:auto}
 .card-h .bar{flex:0 1 auto;min-width:0}
 .epring{flex:none;display:block}
-.epring path.h{stroke:#3fb97a}.epring path.u{stroke:#fff}.epring path.m{stroke:#3a3d41}
+.epring path.h{stroke:#3fb97a}.epring path.o{stroke:#1c5a3c}.epring path.n{stroke:#a6ecc6}.epring path.u{stroke:#fff}.epring path.m{stroke:#3a3d41}
 .epring .rt{font:600 13px var(--mono);fill:var(--text)}
 .card-h .cnt{flex:none}
 .bar .s{min-width:0;flex:0 1 auto;grid-auto-columns:minmax(0,3px)}
