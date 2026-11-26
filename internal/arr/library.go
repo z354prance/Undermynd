@@ -101,6 +101,9 @@ type Episode struct {
 	AirDateUTC string `json:"airDateUtc"`
 	File       *struct {
 		DateAdded string `json:"dateAdded"`
+		// CutoffNotMet: the file is below the series profile's cutoff
+		// (for a show on the upgrade profile: not upgraded yet).
+		CutoffNotMet bool `json:"qualityCutoffNotMet"`
 	} `json:"episodeFile,omitempty"`
 }
 

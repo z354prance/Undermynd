@@ -29,9 +29,13 @@ type Season struct {
 	Imported int    `json:"imported"`
 	Total    int    `json:"total"`
 	// Pixels has one letter per counted episode, in episode order: h in the
-	// library, u in the library with a better copy on the way (an upgrade),
-	// w on the way, . still wanted.
+	// library at the profile's cutoff, o in the library below it (not
+	// upgraded yet), u in the library with a better copy on the way (an
+	// upgrade), w on the way, . still wanted.
 	Pixels string `json:"pixels,omitempty"`
+	// Moving is the episode number of each u and w pixel, in order, so a
+	// page can show how far each one has come.
+	Moving []int `json:"moving,omitempty"`
 }
 
 // Recent is a run of imports of one title on one day: "3 episodes of X".
@@ -378,10 +382,16 @@ func SeasonPixels(counts map[int]Season, eps []arr.Episode, queued, active map[i
 	for n, list := range by {
 		sort.Slice(list, func(i, j int) bool { return list[i].Number < list[j].Number })
 		b := make([]byte, 0, len(list))
+		var moving []int
 		for _, ep := range list {
+			if active[ep.ID] {
+				moving = append(moving, ep.Number)
+			}
 			switch {
 			case ep.HasFile && active[ep.ID]:
 				b = append(b, 'u')
+			case ep.HasFile && ep.File != nil && ep.File.CutoffNotMet:
+				b = append(b, 'o')
 			case ep.HasFile:
 				b = append(b, 'h')
 			case active[ep.ID]:
@@ -391,7 +401,7 @@ func SeasonPixels(counts map[int]Season, eps []arr.Episode, queued, active map[i
 			}
 		}
 		c := counts[n]
-		c.Pixels = string(b)
+		c.Pixels, c.Moving = string(b), moving
 		counts[n] = c
 	}
 }

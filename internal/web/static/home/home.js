@@ -149,9 +149,29 @@
   }
   // The same as a ring: one slice per episode in episode order, a small gap
   // between seasons, the share in the library written in the middle.
-  function epRing(seasons, size) {
-    var tot = 0, imp = 0, up = 0;
-    seasons.forEach(function (x) { tot += x.total; imp += x.imported; });
+  // ringStats counts a show's episodes by state: in the library, upgraded
+  // (at the profile's cutoff), not upgraded yet, upgrading now.
+  function ringStats(seasons) {
+    var r = { tot: 0, imp: 0, done: 0, old: 0, up: 0 };
+    seasons.forEach(function (x) { r.tot += x.total; r.imp += x.imported; var px = x.pixels || "";
+      for (var i = 0; i < px.length; i++) { var c = px.charAt(i); if (c === "h") r.done++; else if (c === "o") r.old++; else if (c === "u") r.up++; } });
+    r.upgrading = r.old + r.up > 0;
+    r.pctUp = r.done + r.old + r.up ? Math.floor(r.done * 100 / (r.done + r.old + r.up)) : 0;
+    return r;
+  }
+  // fillFor gives how far an episode on the way has come (0..1) from the
+  // show's items, by its SxxEyy code.
+  function fillFor(items) {
+    var m = {};
+    (items || []).forEach(function (it) {
+      var mm = /^S(\d+)E(\d+)(?:-?E?(\d+))?/.exec(it.code || ""); if (!mm) return;
+      var at = STAGES.indexOf(it.stage), f = it.state === "done" ? 1 : at < 0 ? 0 : (at + Math.min(1, Math.max(0, it.progress || 0))) / STAGES.length;
+      for (var e = +mm[2]; e <= +(mm[3] || mm[2]) && e < +mm[2] + 50; e++) m[+mm[1] + ":" + e] = f; // S01E05-E06 covers both
+    });
+    return function (season, ep) { var f = m[season + ":" + ep]; return f == null ? 0 : f; };
+  }
+  function epRing(seasons, size, items) {
+    var st = ringStats(seasons), tot = st.tot, imp = st.imp, fill = fillFor(items);
     var svg = svgEl("svg", { viewBox: "0 0 60 60", width: size || 40, height: size || 40, class: "epring", role: "img" });
     if (!tot) return svg;
     var R = 24, C = 30, n = seasons.length;
@@ -169,22 +189,37 @@
     seasons.forEach(function (x) {
       var g = svgEl("g", {}); var t = svgEl("title", {}); t.textContent = "Season " + x.season + ": " + x.imported + " / " + x.total; g.appendChild(t);
       var px = x.pixels || "";
-      function cls(i) { var c = px ? px.charAt(i) : (i < x.imported ? "h" : "."); if (c === "u") up++; return c === "h" ? "h" : c === "u" ? "u" : "m"; }
+      function cls(i) { var c = px ? px.charAt(i) : (i < x.imported ? "h" : "."); return c === "h" ? "h" : c === "o" ? "o" : c === "u" ? "u" : "m"; }
+      // An episode on the way fills as it moves through the steps: white over
+      // its old file for an upgrade, green over grey for a new episode.
+      var mv = 0;
+      function moving(i, a0, a1) {
+        var c = px.charAt(i), num = (x.moving || [])[mv++], f = Math.max(0.12, fill(x.season, num));
+        arc(g, a0, a1, c === "u" ? "o" : "m");
+        arc(g, a0, a0 + (a1 - a0) * Math.min(1, f), c === "u" ? "u" : "n");
+      }
+      function isMoving(i) { var c = px.charAt(i); return c === "u" || c === "w"; }
       if (egap) {
-        for (var i = 0; i < x.total; i++) { arc(g, a + i * per + egap / 2, a + (i + 1) * per - egap / 2, cls(i)); }
+        for (var i = 0; i < x.total; i++) {
+          var a0 = a + i * per + egap / 2, a1 = a + (i + 1) * per - egap / 2;
+          if (isMoving(i)) moving(i, a0, a1); else arc(g, a0, a1, cls(i));
+        }
       } else {
-        var start = 0, cur = x.total ? cls(0) : "m";
-        for (var k = 1; k <= x.total; k++) {
-          var c = k < x.total ? cls(k) : null;
-          if (c !== cur) { arc(g, a + start * per, a + k * per, cur); start = k; cur = c; }
+        var start = 0, cur = null;
+        for (var k = 0; k <= x.total; k++) {
+          var c = k < x.total ? (isMoving(k) ? "*" : cls(k)) : null;
+          if (c !== cur) { if (cur && cur !== "*") arc(g, a + start * per, a + k * per, cur); start = k; cur = c; }
+          if (c === "*") { moving(k, a + k * per, a + (k + 1) * per); cur = null; start = k + 1; }
         }
       }
       a += x.total * per + (n > 1 ? sgap : 0);
       svg.appendChild(g);
     });
-    var pct = Math.floor(imp * 100 / tot);
+    // Being upgraded: the middle shows how much is upgraded; otherwise how
+    // much is in the library.
+    var pct = st.upgrading ? st.pctUp : Math.floor(imp * 100 / tot);
     var tx = svgEl("text", { x: 30, y: 30, class: "rt", "text-anchor": "middle", "dominant-baseline": "central" }); tx.textContent = pct + "%"; svg.appendChild(tx);
-    svg.setAttribute("aria-label", imp + " of " + tot + " episodes in the library" + (up ? ", " + up + " being upgraded" : ""));
+    svg.setAttribute("aria-label", imp + " of " + tot + " episodes in the library" + (st.upgrading ? ", " + st.done + " upgraded, " + st.up + " upgrading now" : ""));
     return svg;
   }
   function epRow(it) {
@@ -199,7 +234,9 @@
       if (!d.shows.length && !d.others.length) { L.appendChild(el("p", "empty", "Nothing is on the way.")); return; }
       d.shows.forEach(function (sh) {
         var c = el("article", "card " + sh.kind); var h = el("div", "card-h"); var nm = el("div", "nm"); var tn = el("span", "name", sh.title); tn.title = sh.title; nm.appendChild(tn); h.appendChild(nm);
-        if (sh.bar && sh.bar.length) { nm.appendChild(el("span", "cnt", sh.imported + " / " + sh.total + " episodes")); h.appendChild(epRing(sh.bar, 40)); }
+        if (sh.bar && sh.bar.length) { var rs = ringStats(sh.bar);
+          nm.appendChild(el("span", "cnt", rs.upgrading ? rs.done + " / " + (rs.done + rs.old + rs.up) + " upgraded" + (rs.up ? " · " + rs.up + " now" : "") : sh.imported + " / " + sh.total + " episodes"));
+          h.appendChild(epRing(sh.bar, 40, sh.items)); }
         c.appendChild(h);
         var eps = el("div", "eps"); var key = sh.kind + ":" + sh.title; if (expanded[key]) c.classList.add("open");
         if (!expanded[key]) {
