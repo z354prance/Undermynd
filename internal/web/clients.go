@@ -87,7 +87,7 @@ func (s *Server) adminClients(w http.ResponseWriter, r *http.Request) {
 		news = s.News.Details()
 		out.Usenet = s.News.Stats()
 	}
-	out.TorBox.Set = c.TorBox.Token != ""
+	out.TorBox.Set = c.TorBox.On()
 	out.Speed = c.Speed
 	out.Builtin.Torrent, out.Builtin.Usenet = c.VPN.On && s.VPN != nil, c.Usenet.Ready() && s.News != nil
 	for _, cat := range c.Categories {
