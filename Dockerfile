@@ -13,7 +13,7 @@ RUN apk add --no-cache curl xz \
  && mkdir -p /tmp/7z \
  && (curl -fsSL -o /tmp/7z.tar.xz https://github.com/ip7z/7zip/releases/download/25.01/7z2501-linux-x64.tar.xz \
      || curl -fsSL -o /tmp/7z.tar.xz https://github.com/ip7z/7zip/releases/download/24.09/7z2409-linux-x64.tar.xz) \
- && tar -xJf /tmp/7z.tar.xz -C /tmp/7z \
+ && xz -dc /tmp/7z.tar.xz | tar -x -C /tmp/7z \
  && cp /tmp/7z/7zzs /7zzs \
  && /7zzs i | grep -q -i rar
 
