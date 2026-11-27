@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -114,6 +115,10 @@ type progress struct {
 	Repair  bool            `json:"repair"` // repair volumes wanted
 	// LostBytes is the size of the articles missing everywhere or damaged.
 	LostBytes int64 `json:"lostBytes,omitempty"`
+	// Lost lists those articles, and Tried the providers asked for them, so
+	// they are asked again when a provider is added.
+	Lost  map[string]bool `json:"lost,omitempty"`
+	Tried []string        `json:"tried,omitempty"`
 }
 
 const progressFile = ".hyvemynd-usenet.json"
@@ -910,13 +915,48 @@ func (d *Downloader) fetch(ctx context.Context, t *task) (*progress, error) {
 			}
 		}
 	}
-	t.done.Store(already)
 	var names []string
 	for _, tier := range d.providers() {
 		for _, p := range tier {
 			names = append(names, p.srv.Label())
 		}
 	}
+	// A provider added since articles went missing may have them.
+	if added := newProviders(names, pr.Tried); len(pr.Lost) > 0 && len(added) > 0 {
+		var n int
+		for i, f := range nzb.Files {
+			if _, err := os.Stat(filepath.Join(t.Save, pr.Names[i])); err != nil {
+				continue // renamed or gone since: leave it to par2
+			}
+			for _, s := range f.Segments {
+				if pr.Lost[s.ID] {
+					delete(pr.Lost, s.ID)
+					delete(pr.Done, s.ID)
+					already -= s.Bytes
+					n++
+				}
+			}
+		}
+		if n > 0 {
+			// Counted again as they are fetched.
+			pr.Missing, pr.Damaged, pr.LostBytes = 0, 0, 0
+			for range pr.Lost {
+				pr.Missing++
+			}
+			for _, f := range nzb.Files {
+				for _, s := range f.Segments {
+					if pr.Lost[s.ID] {
+						pr.LostBytes += s.Bytes
+					}
+				}
+			}
+			d.note(t, "asking %s for the %d articles the other providers lacked", strings.Join(added, ", "), n)
+		}
+	}
+	if len(names) > 0 {
+		pr.Tried = names
+	}
+	t.done.Store(already)
 	if already > 0 {
 		d.note(t, "carrying on: %d of %d MB already here; %d files; providers %s", already>>20, total>>20, files, strings.Join(names, ", "))
 	} else {
@@ -928,20 +968,37 @@ func (d *Downloader) fetch(ctx context.Context, t *task) (*progress, error) {
 	}
 	d.note(t, "downloaded: %d articles missing everywhere, %d damaged, %d from main providers, %d from backups",
 		pr.Missing, pr.Damaged, t.fromMain.Load(), t.fromBackup.Load())
+	if pr.Missing+pr.Damaged > 0 {
+		var extra, segs, segBytes int64
+		for i, f := range nzb.Files {
+			if isRepairVolume(pr.Names[i]) {
+				extra += f.Bytes
+				continue
+			}
+			for _, s := range f.Segments {
+				segs++
+				segBytes += s.Bytes
+			}
+		}
+		lost := pr.LostBytes
+		if lost == 0 && segs > 0 { // kept by an older version: estimate
+			lost = int64(pr.Missing+pr.Damaged) * (segBytes / segs)
+		}
+		// par2 can rebuild at most as much as its repair volumes hold: when
+		// more is gone, say so now instead of trying for nothing.
+		if extra == 0 {
+			return nil, fmt.Errorf("%d articles are missing or damaged and the release has no par2 repair files; another release is needed", pr.Missing+pr.Damaged)
+		}
+		if lost > extra {
+			return nil, fmt.Errorf("too much of this release is gone from your providers (%s missing or damaged; its repair files can rebuild at most %s); another release is needed", sizeText(lost), sizeText(extra))
+		}
+	}
 	if pr.Missing+pr.Damaged > 0 && !pr.Repair {
 		var extra int64
 		for i, f := range nzb.Files {
 			if isRepairVolume(pr.Names[i]) {
 				extra += f.Bytes
 			}
-		}
-		// par2 can rebuild at most as much as its repair volumes hold: when
-		// more is gone, say so now instead of fetching them for nothing.
-		if extra == 0 {
-			return nil, fmt.Errorf("%d articles are missing or damaged and the release has no par2 repair files; another release is needed", pr.Missing+pr.Damaged)
-		}
-		if pr.LostBytes > extra {
-			return nil, fmt.Errorf("too much of this release is gone from your providers (%s missing or damaged; its repair files can rebuild at most %s); another release is needed", sizeText(pr.LostBytes), sizeText(extra))
 		}
 		pr.Repair = true
 		d.saveProgress(t, pr)
@@ -976,7 +1033,7 @@ func (d *Downloader) post(ctx context.Context, t *task, pr *progress) error {
 		}
 		t.work.Store(0)
 		t.workTotal.Store(size)
-		if err := repair(t.Save, r); err != nil {
+		if err := repair(ctx, t.Save, r); err != nil {
 			return err
 		}
 	}
@@ -1136,6 +1193,10 @@ func (d *Downloader) download(ctx context.Context, t *task, nzb NZB, pr *progres
 				pmu.Lock()
 				if missing || damaged {
 					pr.LostBytes += it.seg.Bytes
+					if pr.Lost == nil {
+						pr.Lost = map[string]bool{}
+					}
+					pr.Lost[it.seg.ID] = true
 				}
 				pr.Done[it.seg.ID] = true
 				if missing {
@@ -1211,6 +1272,20 @@ func (d *Downloader) loadProgress(t *task) *progress {
 		}
 	}
 	return pr
+}
+
+// newProviders lists the providers in now that were not in before.
+func newProviders(now, before []string) []string {
+	var out []string
+	for _, n := range now {
+		if !slices.Contains(before, n) {
+			out = append(out, n)
+		}
+	}
+	if len(before) == 0 {
+		return nil // never recorded: nothing to compare with
+	}
+	return out
 }
 
 func (d *Downloader) saveProgress(t *task, pr *progress) {

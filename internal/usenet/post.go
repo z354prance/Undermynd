@@ -214,7 +214,7 @@ func (p par2Delegate) OnDataFileWrite(i, n int, path string, byteCount int, err 
 }
 
 // repair verifies the release against its par2 set and repairs it.
-func repair(dir string, r reporter) (err error) {
+func repair(ctx context.Context, dir string, r reporter) (err error) {
 	defer func() {
 		if r := recover(); r != nil { // the par2 library panics on some damaged sets
 			err = fmt.Errorf("par2 repair failed: %v", r)
@@ -223,6 +223,10 @@ func repair(dir string, r reporter) (err error) {
 	idx := mainPar2(dir)
 	if idx == "" {
 		return errors.New("some articles are missing or damaged and the release has no par2 repair files")
+	}
+	if bin := par2Path(); bin != "" {
+		r.Note("par2: checking the release against %s with par2", filepath.Base(idx))
+		return repairPar2(ctx, bin, dir, idx, r)
 	}
 	// The par2 library holds the whole release in memory while it repairs.
 	var size int64

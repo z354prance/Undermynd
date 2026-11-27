@@ -725,3 +725,122 @@ func TestWriteSampleRAR(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func fetchTask(t *testing.T, d *Downloader, nzb string) *task {
+	t.Helper()
+	tk := &task{ID: "f", Save: filepath.Join(d.Dir, "f")}
+	os.MkdirAll(tk.Save, 0o755)
+	os.WriteFile(filepath.Join(tk.Save, nzbFile), []byte(nzb), 0o644)
+	return tk
+}
+
+// Articles missing everywhere are asked for again when a provider is added.
+func TestAddedProviderFillsTheGaps(t *testing.T) {
+	secret.SetKeyForTest(make([]byte, 32))
+	data := randBytes(100 << 10)
+	rel := makeRelease(map[string][]byte{"x.mkv": data}, 10<<10, func(n string) string { return n })
+	partial := map[string][]byte{}
+	n := 0
+	for id, b := range rel.articles {
+		if n%4 != 0 {
+			partial[id] = b
+		}
+		n++
+	}
+	a := startNews(t, partial, "")
+	b := startNews(t, rel.articles, "")
+	var mu sync.Mutex
+	cfg := config.Usenet{Servers: []config.NewsServer{a.cfg("A", 0)}}
+	d := &Downloader{Cfg: func() config.Usenet { mu.Lock(); defer mu.Unlock(); return cfg }, Dir: t.TempDir(), State: &blobs{}}
+	defer d.closePools()
+	tk := fetchTask(t, d, rel.nzb)
+	if _, err := d.fetch(context.Background(), tk); err == nil || !strings.Contains(err.Error(), "no par2") {
+		t.Fatalf("first: %v", err)
+	}
+	mu.Lock()
+	cfg = config.Usenet{Servers: []config.NewsServer{a.cfg("A", 0), b.cfg("B", 1)}}
+	mu.Unlock()
+	pr, err := d.fetch(context.Background(), tk)
+	if err != nil || pr.Missing != 0 || len(pr.Lost) != 0 {
+		t.Fatalf("second: %v %+v", err, pr)
+	}
+	got, _ := os.ReadFile(filepath.Join(tk.Save, "x.mkv"))
+	if !bytes.Equal(got, data) {
+		t.Fatal("gaps not filled")
+	}
+	if !strings.Contains(fmt.Sprint(tk.Log), "asking B for the") {
+		t.Fatalf("log %v", tk.Log)
+	}
+}
+
+// A job an older version left mid-repair, with far more missing than par2
+// can rebuild, fails when it is picked up again.
+func TestOldUnrepairableJobFails(t *testing.T) {
+	secret.SetKeyForTest(make([]byte, 32))
+	rel := makeRelease(map[string][]byte{"x.mkv": randBytes(100 << 10), "x.vol00+01.par2": randBytes(5 << 10)}, 10<<10, func(n string) string { return n })
+	srv := startNews(t, rel.articles, "")
+	cfg := config.Usenet{Servers: []config.NewsServer{srv.cfg("A", 0)}}
+	d := &Downloader{Cfg: func() config.Usenet { return cfg }, Dir: t.TempDir(), State: &blobs{}}
+	defer d.closePools()
+	tk := fetchTask(t, d, rel.nzb)
+	pr := &progress{Done: map[string]bool{}, Names: map[int]string{}, Missing: 6, Repair: true}
+	for id := range rel.articles {
+		pr.Done[id] = true
+	}
+	d.saveProgress(tk, pr)
+	if _, err := d.fetch(context.Background(), tk); err == nil || !strings.Contains(err.Error(), "too much of this release is gone") {
+		t.Fatalf("err %v", err)
+	}
+}
+
+// par2cmdline, when present, repairs from disk (CI installs it).
+func TestRepairWithPar2(t *testing.T) {
+	bin := par2Path()
+	if bin == "" {
+		t.Skip("par2 not installed")
+	}
+	dir := t.TempDir()
+	data := randBytes(400 << 10)
+	os.WriteFile(filepath.Join(dir, "v.mkv"), data, 0o644)
+	if out, err := exec.Command(bin, "c", "-q", "-s4096", "-r10", filepath.Join(dir, "v.par2"), filepath.Join(dir, "v.mkv")).CombinedOutput(); err != nil {
+		t.Fatalf("create: %v %s", err, out)
+	}
+	f, _ := os.OpenFile(filepath.Join(dir, "v.mkv"), os.O_RDWR, 0)
+	f.WriteAt(make([]byte, 20000), 50000)
+	f.Close()
+	var rep recReporter
+	if err := repair(context.Background(), dir, &rep); err != nil {
+		t.Fatalf("repair: %v %v", err, rep.notes)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "v.mkv")); !bytes.Equal(got, data) {
+		t.Fatalf("not repaired: %v", rep.notes)
+	}
+	if rep.work == 0 || !strings.Contains(strings.Join(rep.notes, "\n"), "with par2") {
+		t.Fatalf("progress %d notes %v", rep.work, rep.notes)
+	}
+	// Too much gone: a clear error.
+	exec.Command(bin, "c", "-q", "-s4096", "-r1", filepath.Join(dir, "v.par2"), filepath.Join(dir, "v.mkv")).Run()
+	f, _ = os.OpenFile(filepath.Join(dir, "v.mkv"), os.O_RDWR, 0)
+	f.WriteAt(make([]byte, 200000), 50000)
+	f.Close()
+	if err := repair(context.Background(), dir, &recReporter{}); err == nil || !strings.Contains(err.Error(), "too much is missing") {
+		t.Fatalf("err %v", err)
+	}
+}
+
+// A stuck par2 is stopped when the work is given up.
+func TestStuckPar2IsStopped(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no shell")
+	}
+	dir := t.TempDir()
+	fake := filepath.Join(t.TempDir(), "par2fake")
+	os.WriteFile(fake, []byte("#!"+sh+"\necho 'Scanning: 1.0%'\nsleep 60\n"), 0o755)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if err := repairPar2(ctx, fake, dir, filepath.Join(dir, "x.par2"), &recReporter{}); err == nil || time.Since(start) > 10*time.Second {
+		t.Fatalf("err %v after %s", err, time.Since(start))
+	}
+}

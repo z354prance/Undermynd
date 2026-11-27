@@ -17,10 +17,22 @@ RUN apk add --no-cache curl xz \
  && cp /tmp/7z/7zzs /7zzs \
  && /7zzs i | grep -q -i rar
 
+# par2cmdline-turbo's static build, for repairing usenet downloads from disk
+# (the pure-Go repair holds the whole release in memory).
+FROM alpine:3.20 AS par2
+ARG PAR2_VERSION=1.5.0
+ARG PAR2_SHA256=5a9f64386813456693c2ea1fb7649436fe7544bbdf97fd73b3483dfcc8aca464
+RUN apk add --no-cache curl unzip \
+ && curl -fsSL -o /tmp/par2.zip https://github.com/animetosho/par2cmdline-turbo/releases/download/v${PAR2_VERSION}/par2cmdline-turbo-${PAR2_VERSION}-linux-amd64.zip \
+ && echo "${PAR2_SHA256}  /tmp/par2.zip" | sha256sum -c - \
+ && unzip -o /tmp/par2.zip -d /tmp/p && cp /tmp/p/par2 /par2 && chmod 755 /par2 \
+ && /par2 -V
+
 FROM scratch
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /out/undermynd /undermynd
 COPY --from=sevenzip /7zzs /7zzs
+COPY --from=par2 /par2 /par2
 ENV UNDERMYND_CONFIG=/config UNDERMYND_DATA=/data PUID=99 PGID=100
 EXPOSE 8080 8081
 VOLUME ["/config"]
