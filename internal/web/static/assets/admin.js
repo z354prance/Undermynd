@@ -672,12 +672,13 @@
       var mw=el('div','fld');var md=el('select');
       [['','TorBox first; here when TorBox is busy or not connected (recommended)'],['local','Always here (TorBox not used for usenet)'],['torbox','Always TorBox, never here']].forEach(function(o){md.appendChild(new Option(o[1],o[0]))});md.value=d.mode||'';mw.appendChild(md);
       mw.appendChild(el('div','fh',d.torbox?'Nothing runs here until a provider below is switched on.':'No TorBox token is set, so NZBs come here once a provider is switched on.'));c.appendChild(mw);body.appendChild(c);
-      var list=el('div');body.appendChild(list);var rows=[];
+      body.appendChild(el('h2','hv-grph','PROVIDERS'));body.appendChild(el('p','hv-note','Every download is spread across the Main providers; one that lacks a piece is covered by the others. Backups are asked only for what all Main providers lack.'));
+      var list=el('div','hv-erows');body.appendChild(list);var rows=[];
       var prios=[[0,'Main'],[1,'Backup 1'],[2,'Backup 2'],[3,'Backup 3']];
       function addRow(v){v=v||{on:true,tls:true,port:563,connections:20,priority:0};
-        var card=el('div','card');var h=el('h4','',v.name||v.host||'New provider');card.appendChild(h);
+        var wrapR=el('div','hv-erow');var top=el('div','hv-erow-top');wrapR.appendChild(top);var card=el('div','hv-erow-ed grid3');card.hidden=!!v.host;wrapR.appendChild(card);var h=el('span');
         var f={};f.on=row(card,'Use this provider',{type:'checkbox',value:v.on});
-        f.name=row(card,'Name',{value:v.name,ph:'Newshosting'});f.name.oninput=function(){h.textContent=f.name.value||f.host.value||'New provider'};
+        f.name=row(card,'Name',{value:v.name,ph:'Newshosting'});
         f.host=row(card,'Server',{value:v.host,ph:'news.example.com'});
         f.tls=row(card,'SSL',{type:'checkbox',value:v.tls});
         f.port=row(card,'Port',{type:'number',value:v.port||(v.tls?563:119),help:'Usually 563 with SSL, 119 without.'});
@@ -689,8 +690,15 @@
         var acts=el('div','hv-acts');var msg=el('span','msg');
         function val(){return {name:f.name.value,host:f.host.value,port:parseInt(f.port.value,10)||0,tls:f.tls.checked,user:f.user.value,password:f.pass.value,connections:parseInt(f.conns.value,10)||8,priority:parseInt(f.prio.value,10)||0,on:f.on.checked}}
         acts.appendChild(hvBtn('Test','refresh',function(b){b.disabled=true;msg.className='msg';msg.textContent='signing in…';api('POST','/usenet/test',{server:val(),index:rows.indexOf(entry)}).then(function(x){b.disabled=false;msg.className=x.ok?'msg ok':'msg err';msg.textContent=x.ok?'signed in fine':x.error}).catch(function(e){b.disabled=false;msg.className='msg err';msg.textContent=e.message})}));
-        acts.appendChild(hvBtn('Remove','x',function(){if(!confirm('Remove '+(f.name.value||f.host.value||'this provider')+'?'))return;rows.splice(rows.indexOf(entry),1);card.remove()}));
-        acts.appendChild(msg);card.appendChild(acts);list.appendChild(card);var entry={val:val};rows.push(entry)}
+        acts.appendChild(hvBtn('Remove','x',function(){if(!confirm('Remove '+(f.name.value||f.host.value||'this provider')+'?'))return;rows.splice(rows.indexOf(entry),1);wrapR.remove()}));
+        acts.appendChild(msg);card.appendChild(acts);list.appendChild(wrapR);var entry={val:val};rows.push(entry);
+        var live=(st.servers||[]).filter(function(x){return x.name===(v.name||v.host)})[0];
+        function sum(){top.replaceChildren();var prob=live&&live.problem;top.classList.toggle('bad',!!prob);top.appendChild(el('i','hv-dot2 '+(prob?'bad':f.on.checked?'ok':'off')));
+          var t=el('div','hv-erow-t');t.appendChild(el('b','',f.name.value||f.host.value||'New provider'));t.appendChild(el('span',prob?'':'hv-mono',prob?prob:[f.host.value||'no server',f.port.value,(f.conns.value||20)+' connections'].join(' · ')+(f.on.checked?'':' · off')));top.appendChild(t);
+          var pr=parseInt(f.prio.value,10)||0;top.appendChild(el('span','hv-spill '+(pr?'off':'info'),pr?'Backup '+pr:'Main'));
+          top.appendChild(hvBtn('Test','',function(b){b.disabled=true;msg.className='msg';msg.textContent='signing in…';card.hidden=false;sum();api('POST','/usenet/test',{server:val(),index:rows.indexOf(entry)}).then(function(x){b.disabled=false;msg.className=x.ok?'msg ok':'msg err';msg.textContent=x.ok?'signed in fine':x.error}).catch(function(e){b.disabled=false;msg.className='msg err';msg.textContent=e.message})}));
+          top.appendChild(hvBtn(card.hidden?(prob?'Fix':'Edit'):'Done','',function(){card.hidden=!card.hidden;sum()},!!prob&&card.hidden))}
+        [].forEach.call(card.querySelectorAll('input,select'),function(i){i.addEventListener('input',sum);i.addEventListener('change',sum)});sum()}
       (d.servers||[]).forEach(addRow);
       var add=el('div','hv-pagehead');add.appendChild(hvBtn('Add a provider','plus',function(){addRow()}));body.appendChild(add);
       saveBar(body,function(m){m.className='msg';m.textContent='saving…';
@@ -718,7 +726,11 @@
       var STEPS={proton:'In your Proton account: Downloads › WireGuard configuration. Choose Router, turn on NAT-PMP (port forwarding), pick a P2P server, then download the file.',mullvad:'In your Mullvad account: WireGuard configuration. Generate a key, choose Linux and a location, then download the file.',airvpn:'In the AirVPN Client Area: Config Generator, choose WireGuard and a server, download the file. Add a port under Client Area › Ports and enter it below.',windscribe:'In your Windscribe account: Config Generators › WireGuard, pick a location, download the file. For port forwarding (Pro plan): My Account › Port Forwarding › request an ephemeral port with the same internal and external port, and enter it below. Ephemeral ports last 7 days, so request a new one and enter it again when it runs out.',surfshark:'In your Surfshark account: VPN › Manual setup › Router › WireGuard. Generate a key pair, pick a location, download the file.',ivpn:'In your IVPN account: WireGuard › Config generator. Add a key and download a server’s file.',other:'Download a WireGuard configuration file from your provider. Enter a forwarded port if your provider gives you one.'};
       var c=el('div','card');c.appendChild(el('h4','','VPN provider'));
       var on=row(c,'Use the VPN and the built-in torrent client',{type:'checkbox',value:d.on});
-      var pw0=el('div','fld');pw0.appendChild(el('label','','Provider'));var pv=el('select');(d.providers||Object.keys(PROV)).forEach(function(k){pv.appendChild(new Option((PROV[k]||[k])[0]+' · '+((PROV[k]||['',''])[1]),k))});pv.value=d.provider||'pia';pw0.appendChild(pv);c.appendChild(pw0);
+      var pw0=el('div','fld');pw0.appendChild(el('label','','Provider'));var pv=el('select');pv.hidden=true;(d.providers||Object.keys(PROV)).forEach(function(k){pv.appendChild(new Option((PROV[k]||[k])[0],k))});pv.value=d.provider||'pia';pw0.appendChild(pv);
+      var grid=el('div','hv-provgrid');grid.setAttribute('role','radiogroup');grid.setAttribute('aria-label','VPN provider');pw0.appendChild(grid);c.appendChild(pw0);
+      function drawGrid(){grid.replaceChildren();(d.providers||Object.keys(PROV)).forEach(function(k){var P=PROV[k]||[k,''];var b=el('button','hv-prov'+(pv.value===k?' on':''));b.type='button';b.setAttribute('role','radio');b.setAttribute('aria-checked',pv.value===k?'true':'false');
+        b.appendChild(el('b','',P[0]));b.appendChild(el('span',/^Port forwarding|Any/.test(P[1])?'ok':'',P[1]));b.onclick=function(){pv.value=k;drawGrid();showProv()};grid.appendChild(b)})}
+      drawGrid();
       var piaBox=el('div');c.appendChild(piaBox);
       var user=row(piaBox,'PIA username',{value:d.user,ph:'p1234567',help:'The p-number you sign in to PIA with.'});
       var pw=row(piaBox,'PIA password',{type:'password',ph:d.hasPassword?'saved: leave blank to keep':'',help:''});
@@ -1107,57 +1119,61 @@
     if(mode==='queue')c.remove();else q.remove();
   }
 
+  // Downloads › Feeds (pinned v4): feeds with their state, rules, the watch
+  // folder, and what the feeds saw with why each item was skipped.
   function rssPane(body){
-    body.appendChild(head('RSS auto-download','Feeds are checked on a schedule. The first check of a new feed only records what is already there, so nothing old gets downloaded. The first rule that matches an item starts it.'));
-    body.appendChild(el('div','sec','what the feeds are reading'));
-    var live=el('div');body.appendChild(live);
+    var cols=el('div','hv-pipe');var left=el('div','hv-pipelist'),right=el('section','hv-feedsaw');right.setAttribute('aria-label','What the feeds saw');cols.appendChild(left);cols.appendChild(right);body.appendChild(cols);
     var cats=[];api('GET','/settings').then(function(v){cats=(v.categories||[]).map(function(c){return c.name})}).catch(function(){});
-    // "download" turns into a category picker; starting it goes through the same path as a rule.
-    function manual(feed,idx,title,cell){var btn=el('button','','download');btn.onclick=function(){
-      var sel=document.createElement('select');cats.forEach(function(n){var o=document.createElement('option');o.textContent=n;sel.appendChild(o)});
-      var go=el('button','go','start'),no=el('button','','cancel'),msg=el('span','msg');
-      function back(){cell.replaceChildren(manual(feed,idx,title,cell))}
-      no.onclick=back;
-      go.onclick=function(){go.disabled=true;msg.textContent='starting…';api('POST','/rss/download',{feed:feed,index:idx,title:title,category:sel.value}).then(function(){showFeeds()}).catch(function(e){go.disabled=false;msg.className='msg err';msg.textContent=e.message})};
-      [sel,go,no,msg].forEach(function(x){x.style.marginRight='6px';cell.appendChild(x)});btn.remove()};return btn}
-    function showFeeds(){api('GET','/rss/status').then(function(list){live.textContent='';if(!list.length)live.appendChild(help('No feeds yet.'));list.forEach(function(st){
-      var card=el('div','card');var h=el('h4','',st.name+'  ');var when=st.checkedAt&&st.checkedAt.indexOf('0001')!==0?'checked '+new Date(st.checkedAt).toLocaleTimeString():'not checked yet';h.appendChild(el('span','',when));card.appendChild(h);
-      if(st.error){var er=el('div','msg err',st.error);card.appendChild(er)}
-      var t=document.createElement('table');(st.items||[]).forEach(function(it,idx){var tr=document.createElement('tr');var a=document.createElement('td');a.textContent=it.title;var b=document.createElement('td');b.textContent=it.outcome;b.style.opacity='.75';b.style.paddingLeft='16px';b.style.whiteSpace='nowrap';tr.appendChild(a);tr.appendChild(b);var c=document.createElement('td');c.style.whiteSpace='nowrap';c.style.paddingLeft='12px';if(it.outcome.indexOf('started')!==0)c.appendChild(manual(st.name,idx,it.title,c));tr.appendChild(c);t.appendChild(tr)});
-      if(st.items&&st.items.length)card.appendChild(t);else if(!st.error)card.appendChild(help('Nothing read from this feed yet.'));
-      live.appendChild(card)})}).catch(function(e){live.textContent=e.message})}
-    var chk=el('button','','check feeds now');chk.onclick=function(){chk.textContent='checking…';api('POST','/rss/check',{}).then(function(){chk.textContent='check feeds now';showFeeds()}).catch(function(){chk.textContent='check feeds now'})};body.appendChild(chk);
-    showFeeds();
-    body.appendChild(el('div','sec','feeds'));
-    var feeds=el('div');body.appendChild(feeds);
-    function addFeed(c){var card=el('div','card');var g=el('div','grid3');var f={};
-      f.name=row(g,'name',{value:c.name});f.url=row(g,'feed address',{value:c.url,help:'the full RSS link, including any key'});
-      f.intervalMinutes=row(g,'check every (minutes)',{type:'number',value:c.intervalMinutes||15});f.enabled=row(g,'enabled',{type:'checkbox',value:c.enabled!==false});
-      card.appendChild(g);var rm=el('button','bad','remove feed');rm.onclick=function(){card.remove()};card.appendChild(rm);card._f=f;feeds.appendChild(card)}
-    S.feeds.forEach(addFeed);var af=el('button','','+ add feed');af.onclick=function(){addFeed({enabled:true,intervalMinutes:15})};body.appendChild(af);
-    body.appendChild(el('div','sec','rules'));
-    body.appendChild(help('Patterns are regular expressions and ignore case. Example: must contain  S\\d+E\\d+.*1080p   must not contain  cam|hdts'));
-    var rules=el('div');body.appendChild(rules);
-    function addRule(c){var card=el('div','card');var g=el('div','grid3');var f={};
-      f.name=row(g,'rule name',{value:c.name});f.feed=row(g,'only this feed',{value:c.feed,help:'blank = every feed'});
-      f.category=row(g,'category',{value:c.category,help:'one of your categories'});
-      f.mustContain=row(g,'must contain',{value:c.mustContain});f.mustNotContain=row(g,'must not contain',{value:c.mustNotContain});
-      f.enabled=row(g,'enabled',{type:'checkbox',value:c.enabled!==false});
-      card.appendChild(g);var rm=el('button','bad','remove rule');rm.onclick=function(){card.remove()};card.appendChild(rm);card._f=f;rules.appendChild(card)}
-    S.rules.forEach(addRule);var ar=el('button','','+ add rule');ar.onclick=function(){addRule({enabled:true})};body.appendChild(ar);
-    body.appendChild(el('div','sec','watched folders'));
-    body.appendChild(help('Drop a .torrent, .magnet or .nzb file in a folder and it goes through the same flow. Handled files move to a submitted-to-undermynd subfolder. Finished files are kept in the Complete folder under the category. Do not point this at a folder another app also watches.'));
-    var watches=el('div');body.appendChild(watches);
-    function addWatch(c){var card=el('div','card');var g=el('div','grid3');var f={};
-      f.dir=row(g,'folder',{value:c.dir,help:'full path as the container sees it'});
-      f.category=row(g,'category',{value:c.category,help:'blank = the category of your first enabled RSS rule'});
-      f.enabled=row(g,'enabled',{type:'checkbox',value:c.enabled!==false});
-      card.appendChild(g);var rm=el('button','bad','remove folder');rm.onclick=function(){card.remove()};card.appendChild(rm);card._f=f;watches.appendChild(card)}
-    (S.watches||[]).forEach(addWatch);var aw=el('button','','+ add folder');aw.onclick=function(){addWatch({enabled:true})};body.appendChild(aw);
+    var status={};
+    function secHead(title,note,btnLabel,fn){var h=el('div','hv-sechead');h.appendChild(el('h2','',title));if(note)h.appendChild(el('span','hv-note',note));h.appendChild(el('span','hv-sp'));if(btnLabel)h.appendChild(hvBtn(btnLabel,'plus',fn,true));left.appendChild(h)}
+    // One editable row: a summary line, and its fields when Edit is open.
+    function editRow(host,summary,fields,open,onRemove){var w=el('div','hv-erow');var top=el('div','hv-erow-top');w.appendChild(top);var ed=el('div','hv-erow-ed');ed.hidden=!open;
+      var g=el('div','grid3');var f=fields(g);ed.appendChild(g);var rm=hvBtn('Remove','',function(){w.remove();if(onRemove)onRemove()});rm.classList.add('bad');ed.appendChild(rm);w.appendChild(ed);
+      function draw(){top.replaceChildren();summary(top,f);var eb=hvBtn(ed.hidden?'Edit':'Done','',function(){ed.hidden=!ed.hidden;draw()});top.appendChild(eb)}
+      [].forEach.call(g.querySelectorAll('input'),function(i){i.addEventListener('input',draw);i.addEventListener('change',draw)});draw();w._f=f;host.appendChild(w);return w}
+    secHead('Feeds','','Add a feed',function(){addFeed({enabled:true,intervalMinutes:15},true)});
+    var feeds=el('div','hv-erows');left.appendChild(feeds);
+    function addFeed(c,open){editRow(feeds,function(top,f){var st=status[f.name.value]||{};var on=f.enabled.checked;var bad=!!st.error;
+        top.classList.toggle('bad',bad);top.appendChild(el('i','hv-dot2 '+(bad?'bad':on?'ok':'off')));
+        var t=el('div','hv-erow-t');t.appendChild(el('b','',f.name.value||'New feed'));
+        var when=st.checkedAt&&st.checkedAt.indexOf('0001')!==0?'checked '+ago(st.checkedAt)+' ago':'not checked yet';
+        t.appendChild(el('span','',bad?'Last check failed: '+st.error:(on?'every '+(f.intervalMinutes.value||15)+' min · '+when+(st.items?' · '+st.items.length+' items':''):'off')));top.appendChild(t)},
+      function(g){var f={};f.name=row(g,'name',{value:c.name});f.url=row(g,'feed address',{value:c.url,help:'the full RSS link, including any key'});
+        f.intervalMinutes=row(g,'check every (minutes)',{type:'number',value:c.intervalMinutes||15});f.enabled=row(g,'on',{type:'checkbox',value:c.enabled!==false});return f},open)}
+    S.feeds.forEach(function(c){addFeed(c,false)});
+    secHead('Rules','What to grab from the feeds','Add a rule',function(){addRule({enabled:true},true)});
+    var rules=el('div','hv-erows');left.appendChild(rules);
+    function addRule(c,open){editRow(rules,function(top,f){var t=el('div','hv-erow-t');t.appendChild(el('b','',f.name.value||'New rule'));
+        var bits=[];if(f.mustContain.value)bits.push('has “'+f.mustContain.value+'”');if(f.mustNotContain.value)bits.push('not “'+f.mustNotContain.value+'”');bits.push('→ '+(f.category.value||'?'));if(f.feed.value)bits.push('only '+f.feed.value);if(!f.enabled.checked)bits.push('off');
+        t.appendChild(el('span','hv-mono',bits.join(' · ')));top.appendChild(t)},
+      function(g){var f={};f.name=row(g,'rule name',{value:c.name});f.feed=row(g,'only this feed',{value:c.feed,help:'blank = every feed'});
+        f.category=row(g,'goes to category',{value:c.category,help:'one of your categories'});
+        f.mustContain=row(g,'must contain',{value:c.mustContain,help:'a pattern; case is ignored'});f.mustNotContain=row(g,'must not contain',{value:c.mustNotContain,help:'e.g. cam|hdts'});
+        f.enabled=row(g,'on',{type:'checkbox',value:c.enabled!==false});return f},open)}
+    S.rules.forEach(function(c){addRule(c,false)});
+    left.appendChild(el('p','hv-note','Shows you follow on Library › Anime are handled there, so the rules leave them alone.'));
+    secHead('Watch folders','.torrent, .nzb and .magnet files dropped here are downloaded','Add a folder',function(){addWatch({enabled:true},true)});
+    var watches=el('div','hv-erows');left.appendChild(watches);
+    function addWatch(c,open){editRow(watches,function(top,f){var t=el('div','hv-erow-t');t.appendChild(el('b','hv-mono',f.dir.value||'New folder'));t.appendChild(el('span','','into '+(f.category.value||'the first rule’s category')+(f.enabled.checked?'':' · off')));top.appendChild(t)},
+      function(g){var f={};f.dir=row(g,'folder',{value:c.dir,help:'full path as the container sees it'});f.category=row(g,'category',{value:c.category,help:'blank = the category of your first rule'});f.enabled=row(g,'on',{type:'checkbox',value:c.enabled!==false});return f},open)}
+    (S.watches||[]).forEach(function(c){addWatch(c,false)});
     saveBar(body,function(m){save(function(b){
       b.watches=[].map.call(watches.children,function(c){var f=c._f;return {dir:f.dir.value,category:f.category.value,enabled:f.enabled.checked}});
       b.feeds=[].map.call(feeds.children,function(c){var f=c._f;return {name:f.name.value,url:f.url.value,intervalMinutes:+f.intervalMinutes.value,enabled:f.enabled.checked}});
-      b.rules=[].map.call(rules.children,function(c){var f=c._f;return {name:f.name.value,feed:f.feed.value,mustContain:f.mustContain.value,mustNotContain:f.mustNotContain.value,category:f.category.value,enabled:f.enabled.checked}})},m)})
+      b.rules=[].map.call(rules.children,function(c){var f=c._f;return {name:f.name.value,feed:f.feed.value,mustContain:f.mustContain.value,mustNotContain:f.mustNotContain.value,category:f.category.value,enabled:f.enabled.checked}})},m)});
+    // What the feeds saw: grabbed, or why not, with a way to download anyway.
+    function manual(feed,idx,title,cell){var btn=hvBtn('Download anyway','dl',function(){
+      cell.replaceChildren();var sel=el('select');cats.forEach(function(n){sel.appendChild(new Option(n,n))});var go=hvBtn('Start','',function(){go.disabled=true;msg.textContent='starting…';api('POST','/rss/download',{feed:feed,index:idx,title:title,category:sel.value}).then(function(){showFeeds()}).catch(function(e){go.disabled=false;msg.className='msg err';msg.textContent=e.message})},true);
+      var no=hvBtn('Cancel','',function(){cell.replaceChildren(manual(feed,idx,title,cell))});var msg=el('span','msg');[sel,go,no,msg].forEach(function(x){cell.appendChild(x)})});btn.classList.add('sm');return btn}
+    function showFeeds(){api('GET','/rss/status').then(function(list){status={};list.forEach(function(st){status[st.name]=st});
+      [].forEach.call(feeds.children,function(w){w.querySelector('input').dispatchEvent(new Event('input'))});
+      right.replaceChildren();var h=el('div','hv-sechead');h.appendChild(el('h2','','What the feeds saw'));h.appendChild(el('span','hv-sp'));var chk=hvBtn('Check feeds now','refresh',function(){chk.disabled=true;api('POST','/rss/check',{}).then(showFeeds).catch(function(){chk.disabled=false})});h.appendChild(chk);right.appendChild(h);
+      var box=el('div','hv-saw');right.appendChild(box);var n=0;
+      list.forEach(function(st){(st.items||[]).forEach(function(it,idx){n++;var r=el('div','hv-sawrow');r.appendChild(el('span','hv-sawt',it.title));
+        var started=it.outcome.indexOf('started')===0;var o=el('span','hv-sawo '+(started?'ok':''),started?'Grabbed':'Skipped');r.appendChild(o);r.appendChild(el('span','hv-sawwhy',(started?'':it.outcome)+' · '+st.name));
+        var cell=el('span','hv-sawact');if(!started)cell.appendChild(manual(st.name,idx,it.title,cell));r.appendChild(cell);box.appendChild(r)})});
+      if(!n)box.appendChild(el('div','hv-empty','Nothing read from the feeds yet.'))}).catch(function(e){right.replaceChildren(el('div','err',e.message))})}
+    showFeeds();
   }
 
   function systemPane(body){
