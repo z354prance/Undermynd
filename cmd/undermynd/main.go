@@ -112,6 +112,13 @@ func main() {
 		healthcheck(env.PublicAddr)
 		return
 	}
+	// Graphics cards (for Tdarr's load): their counters are opened while still
+	// root, since dropping to PUID also drops --cap-add=PERFMON.
+	var gpus *gpu.Monitor
+	if os.Getenv("HYVEMYND_GPU") != "off" {
+		gpus = &gpu.Monitor{Log: logger}
+		gpus.Prepare()
+	}
 	dropPrivileges(logger, env)
 	cfg, err := config.Load(env)
 	if err != nil {
@@ -213,10 +220,9 @@ func main() {
 	site.VPN = &web.VPN{Tunnel: tunnel, Client: local}
 	site.Attention = &attention.Service{Cfg: cfg, Log: logger, State: blobs}
 	go site.Attention.Run(ctx)
-	// Graphics cards (for Tdarr's load), when the container can see any.
-	if os.Getenv("HYVEMYND_GPU") != "off" {
-		site.GPU = &gpu.Monitor{Log: logger}
-		go site.GPU.Run(ctx)
+	if gpus != nil {
+		site.GPU = gpus
+		go gpus.Run(ctx)
 	}
 	if dbh != nil {
 		if n, err := metadata.Renormalize(dbh); err != nil {
