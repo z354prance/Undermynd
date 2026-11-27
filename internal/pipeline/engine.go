@@ -690,6 +690,16 @@ func (e *Engine) doSubmit(ctx context.Context, j job.Job) {
 			rid, save, err = b.Add(ctx, j)
 		}
 	}
+	var perm backend.Permanent
+	if err != nil && b.Name() == "torbox" && errors.As(err, &perm) && e.usenetHere(j) {
+		// TorBox turned the NZB down: let the built-in downloader judge it.
+		e.Log.Printf("job %s: TorBox refused it (%v); trying the built-in usenet downloader", short(j.ID), err)
+		_, _ = e.Store.Update(j.ID, func(c *job.Job) error { c.Prefer = "builtin"; return nil })
+		j.Prefer = "builtin"
+		if b, err = e.pick(j); err == nil {
+			rid, save, err = b.Add(ctx, j)
+		}
+	}
 	if err != nil {
 		e.retry(j, err, 4, "submit to client")
 		return
@@ -762,6 +772,9 @@ func (e *Engine) doDownload(ctx context.Context, j job.Job) {
 		if j.State == job.Submitted && now.Sub(j.StateChanged) < 2*time.Minute {
 			return
 		}
+		if e.retryHere(ctx, j, "TorBox no longer has it (it may have removed a failed download)") {
+			return
+		}
 		e.fail(j, "the download client no longer has this item (TorBox may have removed a failed download)")
 	case backend.Errored:
 		e.failStalled(ctx, j, it.Error)
@@ -808,7 +821,44 @@ func (e *Engine) failStalled(ctx context.Context, j job.Job, why string) {
 	if err := e.backend(j).Remove(ctx, j.RemoteID, true); err != nil {
 		e.Log.Printf("job %s: deleting client item %s: %v (cleanup tries again)", short(j.ID), j.RemoteID, err)
 	}
+	if e.retryHere(ctx, j, why) {
+		return
+	}
 	e.fail(j, "download failed: "+why)
+}
+
+// usenetHere says whether a usenet job TorBox could not do may be tried on
+// the built-in downloader: "TorBox first" mode, providers set up, and not
+// already tried here or pinned to TorBox.
+func (e *Engine) usenetHere(j job.Job) bool {
+	if j.Kind != "usenet" || j.Prefer != "" || e.News == nil {
+		return false
+	}
+	u := e.Cfg.Get().Usenet
+	return u.Ready() && u.Mode == ""
+}
+
+// retryHere starts a usenet download TorBox failed again on HyveMynd's own
+// providers (often other backbones than TorBox's), once. False: not possible,
+// fail the job as before.
+func (e *Engine) retryHere(ctx context.Context, j job.Job, why string) bool {
+	if j.Backend != "torbox" || !e.usenetHere(j) {
+		return false
+	}
+	_, err := e.Store.Update(j.ID, func(c *job.Job) error {
+		if c.RemoteID != "" {
+			c.PastRemoteIDs = append(c.PastRemoteIDs, c.RemoteID) // TorBox's copy goes at cleanup
+		}
+		c.Prefer, c.Backend, c.RemoteID, c.SavePath, c.Files = "builtin", "", "", "", nil
+		c.Progress, c.Retries, c.Attempts, c.LastProgress = 0, 0, 0, e.Now()
+		c.Move(job.Received, "TorBox could not finish it ("+why+"); trying your own usenet providers", e.Now())
+		return nil
+	})
+	if err != nil {
+		return false
+	}
+	e.Log.Printf("job %s: TorBox failed it (%s); retrying on the built-in usenet downloader", short(j.ID), why)
+	return true
 }
 
 // ---------------------------------------------------- stage and hand back
