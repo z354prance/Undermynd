@@ -3,6 +3,7 @@ package usenet
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/md5"
 	"encoding/binary"
 	"errors"
@@ -295,16 +296,31 @@ var errPassword = errors.New("the archive is password protected")
 // unpack extracts every RAR archive in dir into dir and deletes the
 // archives it extracted. It goes one level deep into archives inside
 // archives.
-func unpack(dir, password string, r reporter) (int, error) {
+func unpack(ctx context.Context, dir, password string, r reporter) (int, error) {
 	total := 0
+	bin := sevenZipPath()
 	for round := 0; round < 2; round++ {
 		vols := firstVolumes(dir)
 		if len(vols) == 0 {
 			break
 		}
 		for _, v := range vols {
-			r.Note("unpacking %s", filepath.Base(v))
-			used, n, err := extract(v, dir, password, r)
+			var used []string
+			var n int
+			var err error
+			if bin != "" {
+				size := int64(0)
+				for _, f := range volumesOf(v) {
+					if st, e := os.Stat(f); e == nil {
+						size += st.Size()
+					}
+				}
+				r.Note("unpacking %s with 7-Zip", filepath.Base(v))
+				used, n, err = extract7z(ctx, bin, v, dir, password, size, r)
+			} else {
+				r.Note("unpacking %s", filepath.Base(v))
+				used, n, err = extract(v, dir, password, r)
+			}
 			if err != nil {
 				r.Note("unpacking %s failed: %v", filepath.Base(v), err)
 				return total, err

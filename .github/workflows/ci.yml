@@ -16,6 +16,13 @@ jobs:
       - name: gofmt
         run: test -z "$(gofmt -l .)"
       - run: go vet ./...
+      - name: Fetch 7-Zip (the same build the image ships) for the unpack tests
+        run: |
+          mkdir -p /tmp/7z
+          (curl -fsSL -o /tmp/7z.tar.xz https://github.com/ip7z/7zip/releases/download/25.01/7z2501-linux-x64.tar.xz \
+            || curl -fsSL -o /tmp/7z.tar.xz https://github.com/ip7z/7zip/releases/download/24.09/7z2409-linux-x64.tar.xz)
+          tar -xJf /tmp/7z.tar.xz -C /tmp/7z
+          echo "HYVEMYND_7Z=/tmp/7z/7zzs" >> "$GITHUB_ENV"
       - run: go test -race ./...
       - name: Validate Unraid template
         run: python3 -c "import xml.dom.minidom as m; m.parse('unraid/undermynd.xml'); m.parse('unraid/hyvemynd.xml')"
@@ -35,6 +42,12 @@ jobs:
           ls smoke/config/backups/undermynd-*.db
           docker exec smoke /undermynd healthcheck
           docker rm -f smoke
+      - name: The image's 7-Zip unpacks a RAR
+        run: |
+          mkdir -p rar && chmod 777 rar
+          HYVEMYND_SAMPLE_RAR="$PWD/rar" go test -run TestWriteSampleRAR ./internal/usenet/
+          docker run --rm -v "$PWD/rar:/w" --entrypoint /7zzs undermynd:ci x -y -o/w/out /w/sample.rar
+          cmp rar/out/sample.mkv rar/sample.mkv
 
   publish:
     name: Publish image

@@ -112,6 +112,8 @@ type progress struct {
 	Damaged int             `json:"damaged"`
 	Names   map[int]string  `json:"names"`  // file index -> name used on disk
 	Repair  bool            `json:"repair"` // repair volumes wanted
+	// LostBytes is the size of the articles missing everywhere or damaged.
+	LostBytes int64 `json:"lostBytes,omitempty"`
 }
 
 const progressFile = ".hyvemynd-usenet.json"
@@ -149,7 +151,7 @@ const stateName = "usenet.json"
 func (d *Downloader) init() {
 	d.once.Do(func() {
 		d.wake = make(chan struct{}, 1)
-		d.postSem = make(chan struct{}, 1)
+		d.postSem = make(chan struct{}, 2) // two repairs or unpacks at once
 		d.lim = rate.NewLimiter(rate.Inf, 16<<20)
 	})
 }
@@ -322,8 +324,22 @@ func (d *Downloader) Status(ctx context.Context, id string) (backend.Item, error
 	return backend.Item{Status: backend.Downloading, Progress: p}, nil
 }
 
+func sizeText(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%d MB", n>>20)
+	default:
+		return fmt.Sprintf("%d KB", (n+1023)>>10)
+	}
+}
+
 // workNote describes post-download progress: " 1.2 of 3.0 GB".
 func workNote(t *task) string {
+	if t.lastWork.Load() == 0 {
+		return " (waiting for another unpack to finish)"
+	}
 	w, tot := t.work.Load(), t.workTotal.Load()
 	if w <= 0 {
 		return ""
@@ -596,21 +612,25 @@ func (d *Downloader) Run(ctx context.Context) {
 // postRun repairs and unpacks a downloaded task, one task at a time, and
 // gives up when the work stops making progress, so nothing waits forever.
 func (d *Downloader) postRun(ctx context.Context, t *task, pr *progress) {
+	t.lastWork.Store(0) // "waiting its turn" until a slot frees
 	select {
 	case d.postSem <- struct{}{}:
 	case <-ctx.Done():
 		return
 	}
 	defer func() { <-d.postSem }()
+	pctx, pcancel := context.WithCancel(ctx)
+	defer pcancel()
 	d.mu.Lock()
 	gen, still := t.gen, d.tasks[t.ID] == t
+	t.cancel = pcancel // Remove stops the unpack too
 	d.mu.Unlock()
 	if !still {
 		return
 	}
 	t.lastWork.Store(time.Now().UnixNano())
 	res := make(chan error, 1)
-	go func() { res <- d.postSafe(ctx, t, pr) }()
+	go func() { res <- d.postSafe(pctx, t, pr) }()
 	tick := time.NewTicker(d.watchEvery())
 	defer tick.Stop()
 	var err error
@@ -633,6 +653,7 @@ wait:
 			if idle := time.Since(time.Unix(0, t.lastWork.Load())); idle > limit {
 				err = fmt.Errorf("%s stopped making progress (nothing written for %s); given up so the queue can carry on", what, idle.Round(time.Minute))
 				stalled = true
+				pcancel() // stops 7-Zip
 				break wait
 			}
 		}
@@ -908,16 +929,24 @@ func (d *Downloader) fetch(ctx context.Context, t *task) (*progress, error) {
 	d.note(t, "downloaded: %d articles missing everywhere, %d damaged, %d from main providers, %d from backups",
 		pr.Missing, pr.Damaged, t.fromMain.Load(), t.fromBackup.Load())
 	if pr.Missing+pr.Damaged > 0 && !pr.Repair {
-		pr.Repair = true
-		d.saveProgress(t, pr)
 		var extra int64
-		d.mu.Lock()
 		for i, f := range nzb.Files {
 			if isRepairVolume(pr.Names[i]) {
-				t.Total += f.Bytes
 				extra += f.Bytes
 			}
 		}
+		// par2 can rebuild at most as much as its repair volumes hold: when
+		// more is gone, say so now instead of fetching them for nothing.
+		if extra == 0 {
+			return nil, fmt.Errorf("%d articles are missing or damaged and the release has no par2 repair files; another release is needed", pr.Missing+pr.Damaged)
+		}
+		if pr.LostBytes > extra {
+			return nil, fmt.Errorf("too much of this release is gone from your providers (%s missing or damaged; its repair files can rebuild at most %s); another release is needed", sizeText(pr.LostBytes), sizeText(extra))
+		}
+		pr.Repair = true
+		d.saveProgress(t, pr)
+		d.mu.Lock()
+		t.Total += extra
 		d.mu.Unlock()
 		d.note(t, "fetching the par2 repair volumes (%d MB)", extra>>20)
 		if err := d.download(ctx, t, nzb, pr, func(i int) bool { return isRepairVolume(pr.Names[i]) }); err != nil {
@@ -955,7 +984,7 @@ func (d *Downloader) post(ctx context.Context, t *task, pr *progress) error {
 	t.work.Store(0)
 	t.workTotal.Store(archiveBytes(t.Save))
 	t.lastWork.Store(time.Now().UnixNano())
-	if n, err := unpackFn(t.Save, t.Password, r); err != nil {
+	if n, err := unpackFn(ctx, t.Save, t.Password, r); err != nil {
 		if errors.Is(err, errPassword) {
 			return errors.New("the release is password protected and the NZB gives no password")
 		}
@@ -1105,6 +1134,9 @@ func (d *Downloader) download(ctx context.Context, t *task, nzb NZB, pr *progres
 					d.mu.Unlock()
 				}
 				pmu.Lock()
+				if missing || damaged {
+					pr.LostBytes += it.seg.Bytes
+				}
 				pr.Done[it.seg.ID] = true
 				if missing {
 					pr.Missing++
