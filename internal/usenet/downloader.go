@@ -531,8 +531,16 @@ func (d *Downloader) Stats() Stats {
 			}
 		}
 	}
+	// Every provider switched on, whether or not a download has used it yet
+	// (its connections open only when one does).
+	problems := map[string]string{}
 	for _, p := range d.pools {
-		s.Servers = append(s.Servers, ServerStat{Name: p.srv.Label(), Problem: p.problem()})
+		problems[p.srv.Label()] = p.problem()
+	}
+	for _, sv := range d.Cfg().Servers {
+		if sv.On && sv.Host != "" {
+			s.Servers = append(s.Servers, ServerStat{Name: sv.Label(), Problem: problems[sv.Label()]})
+		}
 	}
 	return s
 }

@@ -844,3 +844,13 @@ func TestStuckPar2IsStopped(t *testing.T) {
 		t.Fatalf("err %v after %s", err, time.Since(start))
 	}
 }
+
+// Providers are listed before any download has opened a connection.
+func TestStatsListsIdleProviders(t *testing.T) {
+	cfg := config.Usenet{Servers: []config.NewsServer{{Name: "A", Host: "a.example", On: true}, {Name: "B", Host: "b.example"}}}
+	d := &Downloader{Cfg: func() config.Usenet { return cfg }, Dir: t.TempDir(), State: &blobs{}}
+	s := d.Stats()
+	if len(s.Servers) != 1 || s.Servers[0].Name != "A" || s.Servers[0].Problem != "" {
+		t.Fatalf("servers %+v", s.Servers)
+	}
+}
