@@ -54,7 +54,11 @@
   }
   // ---------------------------------------------------------------- app
   var tab=(location.hash||'').replace(/^#/,'')||'overview',detailId=null,actCount=null;
+  // softReload, when a page sets it, refreshes that page in place after an
+  // action (no rebuild: the Home tiles and the open details stay put).
+  var softReload=null,homeCache={};
   function app(){
+    softReload=null;
     logoutBtn.hidden=false;logoutBtn.onclick=function(){api('POST','/logout').then(start)};
     root.replaceChildren();
     document.body.classList.add('wide');
@@ -235,6 +239,7 @@
     function take(d){lastRows=d.jobs||[];paused=!!d.paused;banner();after()}
     function poll(){api('GET','/jobs').then(function(rows){lastRows=Array.isArray(rows)?rows:(rows.jobs||[]);after()}).catch(fail)}
     if(detailId)selected=detailId;
+    softReload=function(){detSig='';poll()};
     if(window.EventSource){
       es=new EventSource('/admin/api/events');
       es.addEventListener('jobs',function(e){try{take(JSON.parse(e.data))}catch(x){}});
@@ -864,7 +869,7 @@
     var tiles=el('section','hv-tiles6');tiles.setAttribute('aria-label','Health');body.appendChild(tiles);
     var need=el('section','hv-need');body.appendChild(need);
     var g=el('div','hv-two');var mv=hvBox('Moving now'),fin=hvBox('Just finished');g.appendChild(mv);g.appendChild(fin);body.appendChild(g);
-    var sysInfo=null,cl=null,vp=null,reqList=[],music=[],gpus=[];
+    var sysInfo=homeCache.sys||null,cl=homeCache.cl||null,vp=homeCache.vp||null,reqList=[],music=[],gpus=homeCache.gpus||[];
     function tile(label,line,tone,to){var b=el('button','hv-tile6 '+(tone||'ok'));b.type='button';var h=el('span','hv-th');h.appendChild(el('i'));h.appendChild(document.createTextNode(label));b.appendChild(h);b.appendChild(el('span','hv-tline',line));b.onclick=function(){tab=to;app()};tiles.appendChild(b)}
     function drawTiles(){tiles.replaceChildren();var s=sysInfo;if(!s)return;
       if(s.torbox&&s.torbox.configured)tile('TorBox',s.torbox.backoffUntil?'New adds paused by TorBox':'Working · '+((s.torbox.used||0)+(s.torbox.torrentUsed||0))+' adds this hour',s.torbox.backoffUntil?'warn':'ok','torbox');else tile('TorBox','Not set up','dim','clients');
@@ -906,10 +911,11 @@
     function draw(){drawHello();drawNeed();drawMoving();drawFin();railCounts(lastRows)}
     function refresh(){loadReqs().then(function(l){reqList=l||[];music=reqMusic||[];setReqBadge(reqList.length+music.length);draw()})}
     function poll(){api('GET','/jobs').then(function(d){lastRows=Array.isArray(d)?d:(d.jobs||[]);draw()}).catch(fail)}
-    function pollSys(){Promise.all([api('GET','/system').catch(function(){return null}),api('GET','/clients').catch(function(){return null}),api('GET','/vpn').catch(function(){return null}),api('GET','/gpus').catch(function(){return null})]).then(function(x){sysInfo=x[0];cl=x[1];vp=x[2];gpus=x[3]&&x[3].cards||[];drawTiles();drawNeed()})}
-    poll();pollSys();refresh();timer=setInterval(function(){if(tab!=='overview')return;poll();pollSys();refresh()},5000);
+    function pollSys(){Promise.all([api('GET','/system').catch(function(){return null}),api('GET','/clients').catch(function(){return null}),api('GET','/vpn').catch(function(){return null}),api('GET','/gpus').catch(function(){return null})]).then(function(x){sysInfo=x[0]||sysInfo;cl=x[1]||cl;vp=x[2]||vp;if(x[3])gpus=x[3].cards||[];homeCache={sys:sysInfo,cl:cl,vp:vp,gpus:gpus};drawTiles();drawNeed()})}
+    drawTiles();poll();pollSys();refresh();timer=setInterval(function(){if(tab!=='overview')return;poll();pollSys();refresh()},5000);
+    softReload=function(){poll();pollSys();refresh()};
   }
-  function doAction(id,a){api('POST','/jobs/'+encodeURIComponent(id)+'/'+a).then(function(){app()}).catch(function(e){if(e.status===401)fail(e);else{alert(e.message);app()}})}
+  function doAction(id,a){function again(){if(softReload)softReload();else app()}api('POST','/jobs/'+encodeURIComponent(id)+'/'+a).then(again).catch(function(e){if(e.status===401)fail(e);else{alert(e.message);again()}})}
   function detail(body,id){
     stopLive();body.replaceChildren();
     var back=el('button','link','← all jobs');back.onclick=function(){detailId=null;app()};body.appendChild(back);
