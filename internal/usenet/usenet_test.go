@@ -11,6 +11,7 @@ import (
 	"hash/crc32"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -567,13 +568,13 @@ func TestStuckUnpackDoesNotBlockTheQueue(t *testing.T) {
 	release := make(chan struct{})
 	defer close(release)
 	orig := unpackFn
-	unpackFn = func(dir, pw string, r reporter) (int, error) {
+	unpackFn = func(ctx context.Context, dir, pw string, r reporter) (int, error) {
 		if strings.HasSuffix(dir, "ja") {
 			r.Note("unpacking a.part01.rar")
 			<-release // hangs, like a stuck archive
 			return 0, nil
 		}
-		return orig(dir, pw, r)
+		return orig(ctx, dir, pw, r)
 	}
 	defer func() { unpackFn = orig }()
 
@@ -610,7 +611,7 @@ func TestUnpackReportsProgress(t *testing.T) {
 	data := randBytes(200 << 10)
 	os.WriteFile(filepath.Join(dir, "x.rar"), makeRAR("x.mkv", data), 0o644)
 	var rep recReporter
-	if n, err := unpack(dir, "", &rep); err != nil || n != 1 {
+	if n, err := unpack(context.Background(), dir, "", &rep); err != nil || n != 1 {
 		t.Fatalf("unpack: %d %v", n, err)
 	}
 	if rep.work < int64(len(data)) || len(rep.notes) < 2 {
@@ -630,3 +631,97 @@ func (r *recReporter) Note(f string, a ...any) {
 	r.mu.Unlock()
 }
 func (r *recReporter) Work(n int64) { r.mu.Lock(); r.work += n; r.mu.Unlock() }
+
+// More missing than the repair files can rebuild: fail at once, without
+// fetching the repair files.
+func TestUnrepairableFailsEarly(t *testing.T) {
+	dir := t.TempDir()
+	a := randBytes(200 << 10)
+	os.WriteFile(filepath.Join(dir, "v.mkv"), a, 0o644)
+	if err := par2.Create(filepath.Join(dir, "v.par2"), []string{filepath.Join(dir, "v.mkv")}, par2.CreateOptions{SliceByteCount: 4096, NumParityShards: 4}); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string][]byte{}
+	ents, _ := os.ReadDir(dir)
+	for _, e := range ents {
+		files[e.Name()], _ = os.ReadFile(filepath.Join(dir, e.Name()))
+	}
+	rel := makeRelease(files, 16<<10, func(n string) string { return n })
+	n := 0
+	for id, body := range rel.articles {
+		if strings.Contains(string(body[:80]), "v.mkv") && n < 6 {
+			delete(rel.articles, id) // ~96 KB gone, the repair holds ~16 KB
+			n++
+		}
+	}
+	srv := startNews(t, rel.articles, "")
+	cfg := config.Usenet{Servers: []config.NewsServer{srv.cfg("Only", 0)}}
+	d := &Downloader{Cfg: func() config.Usenet { return cfg }, Dir: t.TempDir(), State: &blobs{}}
+	stop := run(t, d)
+	defer stop()
+	addJob(t, d, "ju", rel.nzb)
+	it := waitDone(t, d, "ju")
+	if it.Status != backend.Errored || !strings.Contains(it.Error, "too much of this release is gone") {
+		t.Fatalf("status %+v", it)
+	}
+}
+
+// 7-Zip, when present, unpacks the archive (CI installs it).
+func TestUnpackWith7Zip(t *testing.T) {
+	if sevenZipPath() == "" {
+		t.Skip("7-Zip not installed")
+	}
+	dir := t.TempDir()
+	data := randBytes(300 << 10)
+	os.WriteFile(filepath.Join(dir, "Show.S01E01.rar"), makeRAR("Show.S01E01.mkv", data), 0o644)
+	var rep recReporter
+	n, err := unpack(context.Background(), dir, "", &rep)
+	if err != nil || n != 1 {
+		t.Fatalf("unpack: %d %v %v", n, err, rep.notes)
+	}
+	got, _ := os.ReadFile(filepath.Join(dir, "Show.S01E01.mkv"))
+	if !bytes.Equal(got, data) {
+		t.Fatal("content differs")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "Show.S01E01.rar")); err == nil {
+		t.Fatal("archive left behind")
+	}
+	if !strings.Contains(strings.Join(rep.notes, "\n"), "with 7-Zip") {
+		t.Fatalf("notes %v", rep.notes)
+	}
+}
+
+// A stuck 7-Zip is stopped when the work is given up.
+func TestStuck7ZipIsStopped(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no shell")
+	}
+	dir := t.TempDir()
+	fake := filepath.Join(t.TempDir(), "7zfake")
+	os.WriteFile(fake, []byte("#!"+sh+"\necho '  0%'\nsleep 60\n"), 0o755)
+	os.WriteFile(filepath.Join(dir, "x.rar"), []byte("Rar!"), 0o644)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, _, err = extract7z(ctx, fake, filepath.Join(dir, "x.rar"), dir, "", 100, &recReporter{})
+	if err == nil || time.Since(start) > 10*time.Second {
+		t.Fatalf("err %v after %s", err, time.Since(start))
+	}
+}
+
+// TestWriteSampleRAR writes a small archive and its content for CI to unpack
+// with the image's own 7-Zip (only when HYVEMYND_SAMPLE_RAR names a folder).
+func TestWriteSampleRAR(t *testing.T) {
+	dir := os.Getenv("HYVEMYND_SAMPLE_RAR")
+	if dir == "" {
+		t.Skip("only for the container check")
+	}
+	data := randBytes(500 << 10)
+	if err := os.WriteFile(filepath.Join(dir, "sample.rar"), makeRAR("sample.mkv", data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sample.mkv"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
