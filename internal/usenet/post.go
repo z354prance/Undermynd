@@ -179,8 +179,41 @@ func restoreNames(dir string) int {
 	return n
 }
 
+// reporter receives what the post-download steps are doing: Note for a
+// line in the download's log, Work for bytes written (or a step done), so a
+// watchdog can tell slow from stuck.
+type reporter interface {
+	Note(format string, a ...any)
+	Work(n int64)
+}
+
+type nopReporter struct{}
+
+func (nopReporter) Note(string, ...any) {}
+func (nopReporter) Work(int64)          {}
+
+// par2Delegate turns the par2 library's callbacks into progress.
+type par2Delegate struct {
+	par2.DoNothingDecoderDelegate
+	r reporter
+}
+
+func (p par2Delegate) OnDataFileLoad(i, n int, path string, byteCount, hits, misses int, err error) {
+	p.r.Work(int64(byteCount) + 1)
+	if misses > 0 || err != nil {
+		p.r.Note("par2: %s has %d damaged or missing blocks", filepath.Base(path), misses)
+	}
+}
+func (p par2Delegate) OnParityFileLoad(i int, path string, err error) { p.r.Work(1) }
+func (p par2Delegate) OnDataFileWrite(i, n int, path string, byteCount int, err error) {
+	p.r.Work(int64(byteCount) + 1)
+	if err == nil {
+		p.r.Note("par2: repaired %s", filepath.Base(path))
+	}
+}
+
 // repair verifies the release against its par2 set and repairs it.
-func repair(dir string) (err error) {
+func repair(dir string, r reporter) (err error) {
 	defer func() {
 		if r := recover(); r != nil { // the par2 library panics on some damaged sets
 			err = fmt.Errorf("par2 repair failed: %v", r)
@@ -201,7 +234,8 @@ func repair(dir string) (err error) {
 	if free := memAvailable(); free > 0 && size > free*7/10 {
 		return fmt.Errorf("the release needs repair but is too large to repair in the memory available (%d MB needed, %d MB free)", size>>20, free>>20)
 	}
-	dec, err := par2.NewDecoder(par2.DoNothingDecoderDelegate{}, idx, runtime.NumCPU())
+	r.Note("par2: checking %d MB against %s", size>>20, filepath.Base(idx))
+	dec, err := par2.NewDecoder(par2Delegate{r: r}, idx, runtime.NumCPU())
 	if err != nil {
 		return fmt.Errorf("reading the par2 files: %w", err)
 	}
@@ -213,8 +247,10 @@ func repair(dir string) (err error) {
 	}
 	sc := dec.ShardCounts()
 	if !sc.RepairNeeded() {
+		r.Note("par2: nothing needs repair")
 		return nil
 	}
+	r.Note("par2: %d blocks damaged, %d repair blocks available: repairing", sc.UnusableDataShardCount, sc.UsableParityShardCount)
 	if !sc.RepairPossible() {
 		return fmt.Errorf("too much is missing to repair (%d blocks damaged, %d repair blocks)", sc.UnusableDataShardCount, sc.UsableParityShardCount)
 	}
@@ -259,7 +295,7 @@ var errPassword = errors.New("the archive is password protected")
 // unpack extracts every RAR archive in dir into dir and deletes the
 // archives it extracted. It goes one level deep into archives inside
 // archives.
-func unpack(dir, password string) (int, error) {
+func unpack(dir, password string, r reporter) (int, error) {
 	total := 0
 	for round := 0; round < 2; round++ {
 		vols := firstVolumes(dir)
@@ -267,10 +303,13 @@ func unpack(dir, password string) (int, error) {
 			break
 		}
 		for _, v := range vols {
-			used, n, err := extract(v, dir, password)
+			r.Note("unpacking %s", filepath.Base(v))
+			used, n, err := extract(v, dir, password, r)
 			if err != nil {
+				r.Note("unpacking %s failed: %v", filepath.Base(v), err)
 				return total, err
 			}
+			r.Note("unpacked %d file(s) from %s (%d volume(s))", n, filepath.Base(v), len(used))
 			total += n
 			for _, u := range used {
 				os.Remove(u)
@@ -289,7 +328,7 @@ func unpack(dir, password string) (int, error) {
 	return total, nil
 }
 
-func extract(first, dir, password string) (used []string, n int, err error) {
+func extract(first, dir, password string, r reporter) (used []string, n int, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			used, err = nil, fmt.Errorf("unpacking %s failed: %v", filepath.Base(first), r)
@@ -337,7 +376,8 @@ func extract(first, dir, password string) (used []string, n int, err error) {
 		if err != nil {
 			return nil, n, err
 		}
-		_, cerr := io.Copy(f, rc)
+		r.Note("  writing %s (%d MB)", rel, h.UnPackedSize>>20)
+		_, cerr := io.Copy(workWriter{f, r}, rc)
 		f.Close()
 		if cerr != nil {
 			os.Remove(tmp)
@@ -376,4 +416,31 @@ func memAvailable() int64 {
 		}
 	}
 	return 0
+}
+
+// workWriter reports every write as progress.
+type workWriter struct {
+	w io.Writer
+	r reporter
+}
+
+func (w workWriter) Write(p []byte) (int, error) {
+	n, err := w.w.Write(p)
+	w.r.Work(int64(n))
+	return n, err
+}
+
+// archiveBytes is the size of the archives in dir, roughly what unpacking writes.
+func archiveBytes(dir string) int64 {
+	var n int64
+	ents, _ := os.ReadDir(dir)
+	for _, e := range ents {
+		nm := strings.ToLower(e.Name())
+		if strings.HasSuffix(nm, ".rar") || rarOld.MatchString(nm) {
+			if info, err := e.Info(); err == nil {
+				n += info.Size()
+			}
+		}
+	}
+	return n
 }

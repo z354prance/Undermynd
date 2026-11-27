@@ -48,11 +48,60 @@ type task struct {
 	Total    int64     `json:"total"`
 	Password string    `json:"password,omitempty"`
 	Paused   bool      `json:"paused,omitempty"`
+	Log      []LogLine `json:"log,omitempty"` // what happened, newest last
 
+	work       atomic.Int64 // bytes written by repair/unpack
+	workTotal  atomic.Int64
+	lastWork   atomic.Int64 // unix nanoseconds of the last progress
+	gen        int          // bumped when a stuck run is given up
 	done       atomic.Int64 // bytes fetched
 	fromMain   atomic.Int64 // articles from main providers
 	fromBackup atomic.Int64 // articles from backups
 	cancel     context.CancelFunc
+}
+
+// LogLine is one entry of a download's log.
+type LogLine struct {
+	At  time.Time `json:"at"`
+	Msg string    `json:"msg"`
+}
+
+const maxLog = 200
+
+// note adds a line to the task's log (and HyveMynd's log). Callers must not
+// hold d.mu.
+func (d *Downloader) note(t *task, format string, a ...any) {
+	msg := fmt.Sprintf(format, a...)
+	d.logf("job %s: %s", t.ID, msg)
+	d.mu.Lock()
+	t.Log = append(t.Log, LogLine{At: time.Now(), Msg: msg})
+	if len(t.Log) > maxLog {
+		t.Log = append(t.Log[:0:0], t.Log[len(t.Log)-maxLog:]...)
+	}
+	d.mu.Unlock()
+}
+
+// taskReporter is a task's reporter for the post-download steps.
+type taskReporter struct {
+	d *Downloader
+	t *task
+}
+
+func (r taskReporter) Note(format string, a ...any) { r.d.note(r.t, format, a...) }
+func (r taskReporter) Work(n int64) {
+	r.t.work.Add(n)
+	r.t.lastWork.Store(time.Now().UnixNano())
+}
+
+// Log returns a download's log.
+func (d *Downloader) LogOf(id string) []LogLine {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.load()
+	if t := d.tasks[id]; t != nil {
+		return append([]LogLine(nil), t.Log...)
+	}
+	return nil
 }
 
 // progress is what a task has fetched, kept in its folder so a restart
@@ -79,6 +128,9 @@ type Downloader struct {
 	RetryWait time.Duration
 	// Limit gives the speed limit in KB a second (0: none).
 	Limit func() int
+	// UnpackStall and RepairStall: how long unpacking or a par2 repair may
+	// write nothing before it is given up (defaults 10 minutes, an hour).
+	UnpackStall, RepairStall time.Duration
 
 	mu      sync.Mutex
 	tasks   map[string]*task
@@ -88,6 +140,7 @@ type Downloader struct {
 	poolKey string
 	speed   atomic.Int64 // bytes in the last second
 	once    sync.Once
+	postSem chan struct{}
 	lim     *rate.Limiter
 }
 
@@ -96,6 +149,7 @@ const stateName = "usenet.json"
 func (d *Downloader) init() {
 	d.once.Do(func() {
 		d.wake = make(chan struct{}, 1)
+		d.postSem = make(chan struct{}, 1)
 		d.lim = rate.NewLimiter(rate.Inf, 16<<20)
 	})
 }
@@ -207,7 +261,8 @@ func (d *Downloader) Add(ctx context.Context, j job.Job) (string, string, error)
 	if err := os.WriteFile(filepath.Join(save, nzbFile), raw, 0o644); err != nil {
 		return "", "", err
 	}
-	t := &task{ID: j.ID, Save: save, Stage: Queued, Added: time.Now(), Password: nzb.Password}
+	t := &task{ID: j.ID, Save: save, Stage: Queued, Added: time.Now(), Password: nzb.Password,
+		Log: []LogLine{{At: time.Now(), Msg: fmt.Sprintf("added: %d files in the NZB", len(nzb.Files))}}}
 	for _, f := range nzb.Files {
 		if !isRepairVolume(f.Name) {
 			t.Total += f.Bytes
@@ -250,9 +305,9 @@ func (d *Downloader) Status(ctx context.Context, id string) (backend.Item, error
 		}
 		return backend.Item{}, fmt.Errorf("%w: waiting for the usenet download before it", backend.ErrBusy)
 	case Repairing:
-		return backend.Item{}, fmt.Errorf("%w: repairing with par2", backend.ErrBusy)
+		return backend.Item{}, fmt.Errorf("%w: repairing with par2%s", backend.ErrBusy, workNote(t))
 	case Unpacking:
-		return backend.Item{}, fmt.Errorf("%w: unpacking", backend.ErrBusy)
+		return backend.Item{}, fmt.Errorf("%w: unpacking%s", backend.ErrBusy, workNote(t))
 	}
 	if t.Error != "" {
 		return backend.Item{}, fmt.Errorf("%w: %s", backend.ErrBusy, t.Error)
@@ -265,6 +320,19 @@ func (d *Downloader) Status(ctx context.Context, id string) (backend.Item, error
 		}
 	}
 	return backend.Item{Status: backend.Downloading, Progress: p}, nil
+}
+
+// workNote describes post-download progress: " 1.2 of 3.0 GB".
+func workNote(t *task) string {
+	w, tot := t.work.Load(), t.workTotal.Load()
+	if w <= 0 {
+		return ""
+	}
+	gb := func(n int64) string { return fmt.Sprintf("%.1f", float64(n)/(1<<30)) }
+	if tot > 0 {
+		return " " + gb(min(w, tot)) + " of " + gb(tot) + " GB"
+	}
+	return " " + gb(w) + " GB so far"
 }
 
 // Files implements backend.Backend.
@@ -322,6 +390,7 @@ func (d *Downloader) Pause(id string) error {
 		return errors.New("only a waiting or downloading usenet download can be paused")
 	}
 	t.Paused = true
+	t.Log = append(t.Log, LogLine{At: time.Now(), Msg: "paused"})
 	if t.Stage == Downloading && t.cancel != nil {
 		t.Stage = Queued
 		t.cancel() // what was fetched is kept; it carries on from there
@@ -339,6 +408,7 @@ func (d *Downloader) Resume(id string) error {
 		return errors.New("no such usenet download")
 	}
 	t.Paused = false
+	t.Log = append(t.Log, LogLine{At: time.Now(), Msg: "resumed"})
 	d.save()
 	d.mu.Unlock()
 	d.poke()
@@ -466,30 +536,48 @@ func (d *Downloader) Run(ctx context.Context) {
 		d.mu.Lock()
 		t.cancel = cancel
 		d.mu.Unlock()
-		err := d.processSafe(tctx, t)
+		pr, err := d.fetchSafe(tctx, t)
 		removed := tctx.Err() != nil && ctx.Err() == nil
 		cancel()
+		if err == nil && !removed {
+			// Downloaded: repair and unpacking happen on their own, so the
+			// next download starts now and a slow unpack holds nothing up.
+			d.mu.Lock()
+			if pr.Missing+pr.Damaged > 0 {
+				t.Stage = Repairing
+			} else {
+				t.Stage = Unpacking
+			}
+			t.work.Store(0)
+			t.workTotal.Store(0)
+			d.save()
+			d.mu.Unlock()
+			go d.postRun(ctx, t, pr)
+			continue
+		}
 		d.mu.Lock()
 		if _, still := d.tasks[t.ID]; still {
 			switch {
-			case err == nil:
-				t.Stage, t.Error = Done, ""
-				d.logf("job %s finished", t.ID)
 			case ctx.Err() != nil:
 				t.Stage = Queued // shutting down: carry on next time
 			case removed:
-				// removed or replaced while running
+				// removed, paused or replaced while running
 			case errors.Is(err, errAllDown):
 				// The providers are unreachable: wait, do not fail the job.
 				t.Stage, t.Error = Queued, err.Error()
-				d.logf("job %s: %v; trying again in a minute", t.ID, err)
 			default:
 				t.Stage, t.Error = Failed, err.Error()
-				d.logf("job %s failed: %v", t.ID, err)
 			}
 			d.save()
 		}
 		d.mu.Unlock()
+		if !removed && ctx.Err() == nil {
+			if errors.Is(err, errAllDown) {
+				d.note(t, "%v; trying again in a minute", err)
+			} else {
+				d.note(t, "failed: %v", err)
+			}
+		}
 		if ctx.Err() != nil {
 			d.closePools()
 			return
@@ -503,6 +591,95 @@ func (d *Downloader) Run(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// postRun repairs and unpacks a downloaded task, one task at a time, and
+// gives up when the work stops making progress, so nothing waits forever.
+func (d *Downloader) postRun(ctx context.Context, t *task, pr *progress) {
+	select {
+	case d.postSem <- struct{}{}:
+	case <-ctx.Done():
+		return
+	}
+	defer func() { <-d.postSem }()
+	d.mu.Lock()
+	gen, still := t.gen, d.tasks[t.ID] == t
+	d.mu.Unlock()
+	if !still {
+		return
+	}
+	t.lastWork.Store(time.Now().UnixNano())
+	res := make(chan error, 1)
+	go func() { res <- d.postSafe(ctx, t, pr) }()
+	tick := time.NewTicker(d.watchEvery())
+	defer tick.Stop()
+	var err error
+	stalled := false
+wait:
+	for {
+		select {
+		case err = <-res:
+			break wait
+		case <-ctx.Done():
+			return // shutting down: done again after the restart
+		case <-tick.C:
+			d.mu.Lock()
+			st := t.Stage
+			d.mu.Unlock()
+			limit, what := d.stall(Unpacking), "unpacking"
+			if st == Repairing {
+				limit, what = d.stall(Repairing), "the par2 repair"
+			}
+			if idle := time.Since(time.Unix(0, t.lastWork.Load())); idle > limit {
+				err = fmt.Errorf("%s stopped making progress (nothing written for %s); given up so the queue can carry on", what, idle.Round(time.Minute))
+				stalled = true
+				break wait
+			}
+		}
+	}
+	d.mu.Lock()
+	mine := d.tasks[t.ID] == t && t.gen == gen
+	if mine {
+		if err == nil {
+			t.Stage, t.Error = Done, ""
+		} else {
+			t.Stage, t.Error = Failed, err.Error()
+		}
+		if stalled {
+			t.gen++ // whatever the stuck work does later is ignored
+		}
+		d.save()
+	}
+	d.mu.Unlock()
+	if !mine {
+		return
+	}
+	if err == nil {
+		d.note(t, "finished")
+	} else {
+		d.note(t, "failed: %v", err)
+	}
+}
+
+func (d *Downloader) stall(stage string) time.Duration {
+	if stage == Repairing {
+		if d.RepairStall > 0 {
+			return d.RepairStall
+		}
+		return time.Hour
+	}
+	if d.UnpackStall > 0 {
+		return d.UnpackStall
+	}
+	return 10 * time.Minute
+}
+
+func (d *Downloader) watchEvery() time.Duration {
+	w := d.stall(Unpacking) / 4
+	if w > 30*time.Second {
+		w = 30 * time.Second
+	}
+	return w
 }
 
 // RetryWait is how long to wait when no provider answers. Default a minute.
@@ -614,7 +791,7 @@ var errAllDown = errors.New("no usenet provider could be reached")
 // fetch gets one article from the providers: main ones first (spread
 // across them), then each backup level in turn. A provider that lacks it is
 // skipped; a broken connection is retried once.
-func (d *Downloader) fetch(ctx context.Context, tiers [][]*pool, id string, turn int) ([]byte, int, error) {
+func (d *Downloader) fetchArticle(ctx context.Context, tiers [][]*pool, id string, turn int) ([]byte, int, error) {
 	reached := false
 	for ti, tier := range tiers {
 		for k := range tier {
@@ -654,27 +831,35 @@ type work struct {
 	turn int
 }
 
-// processSafe turns a panic into a failed download, so a fault here never
-// takes HyveMynd down.
-func (d *Downloader) processSafe(ctx context.Context, t *task) (err error) {
+// fetchSafe and postSafe turn a panic into a failed download, so a fault
+// here never takes HyveMynd down.
+func (d *Downloader) fetchSafe(ctx context.Context, t *task) (pr *progress, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			d.logf("job %s crashed: %v", t.ID, r)
 			err = fmt.Errorf("internal error: %v", r)
 		}
 	}()
-	return d.process(ctx, t)
+	return d.fetch(ctx, t)
 }
 
-// process downloads, repairs and unpacks one task.
-func (d *Downloader) process(ctx context.Context, t *task) error {
+func (d *Downloader) postSafe(ctx context.Context, t *task, pr *progress) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("internal error: %v", r)
+		}
+	}()
+	return d.post(ctx, t, pr)
+}
+
+// fetch downloads a task's articles (and the repair volumes when needed).
+func (d *Downloader) fetch(ctx context.Context, t *task) (*progress, error) {
 	raw, err := os.ReadFile(filepath.Join(t.Save, nzbFile))
 	if err != nil {
-		return fmt.Errorf("the NZB is gone: %w", err)
+		return nil, fmt.Errorf("the NZB is gone: %w", err)
 	}
 	nzb, err := ParseNZB(bytes.NewReader(raw))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	pr := d.loadProgress(t)
 	// Names on disk: the subject's, or file-N until yEnc tells us.
@@ -690,54 +875,93 @@ func (d *Downloader) process(ctx context.Context, t *task) error {
 		}
 		used[n] = true
 	}
-	var already int64
+	var already, total int64
+	var files int
 	for i, f := range nzb.Files {
 		if isRepairVolume(pr.Names[i]) && !pr.Repair {
 			continue
 		}
+		files++
 		for _, s := range f.Segments {
+			total += s.Bytes
 			if pr.Done[s.ID] {
 				already += s.Bytes
 			}
 		}
 	}
 	t.done.Store(already)
-
+	var names []string
+	for _, tier := range d.providers() {
+		for _, p := range tier {
+			names = append(names, p.srv.Label())
+		}
+	}
+	if already > 0 {
+		d.note(t, "carrying on: %d of %d MB already here; %d files; providers %s", already>>20, total>>20, files, strings.Join(names, ", "))
+	} else {
+		d.note(t, "downloading %d files, %d MB, from %s", files, total>>20, strings.Join(names, ", "))
+	}
 	repairWanted := func(i int) bool { return !isRepairVolume(pr.Names[i]) || pr.Repair }
 	if err := d.download(ctx, t, nzb, pr, repairWanted); err != nil {
-		return err
+		return nil, err
+	}
+	d.note(t, "downloaded: %d articles missing everywhere, %d damaged, %d from main providers, %d from backups",
+		pr.Missing, pr.Damaged, t.fromMain.Load(), t.fromBackup.Load())
+	if pr.Missing+pr.Damaged > 0 && !pr.Repair {
+		pr.Repair = true
+		d.saveProgress(t, pr)
+		var extra int64
+		d.mu.Lock()
+		for i, f := range nzb.Files {
+			if isRepairVolume(pr.Names[i]) {
+				t.Total += f.Bytes
+				extra += f.Bytes
+			}
+		}
+		d.mu.Unlock()
+		d.note(t, "fetching the par2 repair volumes (%d MB)", extra>>20)
+		if err := d.download(ctx, t, nzb, pr, func(i int) bool { return isRepairVolume(pr.Names[i]) }); err != nil {
+			return nil, err
+		}
+	}
+	return pr, nil
+}
+
+// unpackFn is unpack; tests replace it.
+var unpackFn = unpack
+
+// post restores names, repairs when needed and unpacks.
+func (d *Downloader) post(ctx context.Context, t *task, pr *progress) error {
+	r := taskReporter{d, t}
+	if n := restoreNames(t.Save); n > 0 {
+		d.note(t, "put back the real names of %d scrambled file(s) from the par2 set", n)
 	}
 	if pr.Missing+pr.Damaged > 0 {
-		// Get the repair volumes and repair.
-		if !pr.Repair {
-			pr.Repair = true
-			d.saveProgress(t, pr)
-			d.mu.Lock()
-			for i, f := range nzb.Files {
-				if isRepairVolume(pr.Names[i]) {
-					t.Total += f.Bytes
-				}
-			}
-			d.mu.Unlock()
-			if err := d.download(ctx, t, nzb, pr, func(i int) bool { return isRepairVolume(pr.Names[i]) }); err != nil {
-				return err
+		d.setStage(t, Repairing)
+		var size int64
+		ents, _ := os.ReadDir(t.Save)
+		for _, e := range ents {
+			if info, err := e.Info(); err == nil && !e.IsDir() {
+				size += info.Size()
 			}
 		}
-		restoreNames(t.Save)
-		d.setStage(t, Repairing)
-		d.logf("job %s: %d articles missing, %d damaged: repairing", t.ID, pr.Missing, pr.Damaged)
-		if err := repair(t.Save); err != nil {
+		t.work.Store(0)
+		t.workTotal.Store(size)
+		if err := repair(t.Save, r); err != nil {
 			return err
 		}
-	} else {
-		restoreNames(t.Save)
 	}
 	d.setStage(t, Unpacking)
-	if _, err := unpack(t.Save, t.Password); err != nil {
+	t.work.Store(0)
+	t.workTotal.Store(archiveBytes(t.Save))
+	t.lastWork.Store(time.Now().UnixNano())
+	if n, err := unpackFn(t.Save, t.Password, r); err != nil {
 		if errors.Is(err, errPassword) {
 			return errors.New("the release is password protected and the NZB gives no password")
 		}
 		return err
+	} else if n == 0 {
+		d.note(t, "nothing to unpack")
 	}
 	// Leave only what was released: no par2, NZB or progress files.
 	ents, _ := os.ReadDir(t.Save)
@@ -827,7 +1051,7 @@ func (d *Downloader) download(ctx context.Context, t *task, nzb NZB, pr *progres
 				}
 			}()
 			for it := range jobs {
-				body, tier, err := d.fetch(ctx, tiers, it.seg.ID, it.turn)
+				body, tier, err := d.fetchArticle(ctx, tiers, it.seg.ID, it.turn)
 				if err == nil {
 					d.throttle(ctx, len(body))
 					if tier == 0 {

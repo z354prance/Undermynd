@@ -83,7 +83,34 @@ type rec struct {
 	Done    bool      `json:"done,omitempty"`
 	Blocked string    `json:"blocked,omitempty"` // why the malicious file guard stopped it
 	Paused  bool      `json:"paused,omitempty"`
+	Log     []LogLine `json:"log,omitempty"`
+	gotInfo bool
 	Added   time.Time `json:"added"`
+}
+
+// LogLine is one entry of a download's log.
+type LogLine struct {
+	At  time.Time `json:"at"`
+	Msg string    `json:"msg"`
+}
+
+// note adds a line to a download's log; c.mu must be held.
+func (c *Client) note(r *rec, format string, a ...any) {
+	r.Log = append(r.Log, LogLine{At: time.Now(), Msg: fmt.Sprintf(format, a...)})
+	if len(r.Log) > 100 {
+		r.Log = append(r.Log[:0:0], r.Log[len(r.Log)-100:]...)
+	}
+}
+
+// LogOf returns a download's log.
+func (c *Client) LogOf(id string) []LogLine {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.load()
+	if r := c.recs[id]; r != nil {
+		return append([]LogLine(nil), r.Log...)
+	}
+	return nil
 }
 
 // Client runs the torrent client while the tunnel is up.
@@ -221,6 +248,11 @@ func (c *Client) sync() {
 	up, gen := c.Net.Up(), c.Net.Generation()
 	if c.cl != nil && (!up || gen != c.gen) {
 		c.logf("the VPN changed; pausing downloads")
+		for id := range c.tors {
+			if r := c.recs[id]; r != nil {
+				c.note(r, "paused: the VPN dropped or reconnected")
+			}
+		}
 		c.stop()
 	}
 	if c.cl == nil && up {
@@ -534,6 +566,7 @@ func (c *Client) Add(ctx context.Context, j job.Job) (string, string, error) {
 		return "", "", err
 	}
 	c.recs[j.ID] = r
+	c.note(r, "added to the built-in torrent client (through the VPN, incoming port %d)", c.Net.Port())
 	c.save()
 	return j.ID, save, nil
 }
@@ -565,6 +598,11 @@ func (c *Client) Status(ctx context.Context, id string) (backend.Item, error) {
 	if info == nil {
 		return backend.Item{Status: backend.Downloading}, nil
 	}
+	if !r.gotInfo {
+		r.gotInfo = true
+		st := t.Stats()
+		c.note(r, "file list received: %d file(s), %d MB; %d peers", len(info.UpvertedFiles()), info.TotalLength()>>20, st.ActivePeers)
+	}
 	// Malicious file guard: stop before downloading a release that carries
 	// a program or script.
 	for _, f := range info.UpvertedFiles() {
@@ -572,6 +610,7 @@ func (c *Client) Status(ctx context.Context, id string) (backend.Item, error) {
 			t.Drop()
 			delete(c.tors, id)
 			r.Blocked = "blocked: " + why
+			c.note(r, "%s; stopped before downloading", r.Blocked)
 			c.save()
 			return backend.Item{Status: backend.Errored, Error: r.Blocked}, nil
 		}
@@ -583,6 +622,7 @@ func (c *Client) Status(ctx context.Context, id string) (backend.Item, error) {
 		<-t.Closed()
 		delete(c.tors, id)
 		r.Done = true
+		c.note(r, "finished and verified; sharing stopped")
 		c.save()
 		return backend.Item{Status: backend.Complete, Progress: 1}, nil
 	}
@@ -658,6 +698,11 @@ func (c *Client) setPaused(id string, on bool) error {
 		return errors.New("the built-in torrent client has no such download running")
 	}
 	r.Paused = on
+	if on {
+		c.note(r, "paused")
+	} else {
+		c.note(r, "resumed")
+	}
 	if t := c.tors[id]; t != nil {
 		if on {
 			t.DisallowDataDownload()

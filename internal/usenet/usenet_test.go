@@ -548,3 +548,85 @@ func TestPauseResumeAndQueueOrder(t *testing.T) {
 		t.Fatalf("no article counted: %+v", det["a"])
 	}
 }
+
+// An unpack that hangs does not hold up the queue: the next download goes
+// ahead, the stuck one is given up with a clear message, and the log says
+// what happened.
+func TestStuckUnpackDoesNotBlockTheQueue(t *testing.T) {
+	relA := makeRelease(map[string][]byte{"a.mkv": randBytes(30 << 10)}, 8<<10, func(n string) string { return n })
+	relB := makeRelease(map[string][]byte{"b.mkv": randBytes(30 << 10)}, 8<<10, func(n string) string { return n })
+	all := map[string][]byte{}
+	for _, r := range []release{relA, relB} {
+		for k, v := range r.articles {
+			all[k] = v
+		}
+	}
+	srv := startNews(t, all, "")
+	cfg := config.Usenet{Servers: []config.NewsServer{srv.cfg("Only", 0)}}
+
+	release := make(chan struct{})
+	defer close(release)
+	orig := unpackFn
+	unpackFn = func(dir, pw string, r reporter) (int, error) {
+		if strings.HasSuffix(dir, "ja") {
+			r.Note("unpacking a.part01.rar")
+			<-release // hangs, like a stuck archive
+			return 0, nil
+		}
+		return orig(dir, pw, r)
+	}
+	defer func() { unpackFn = orig }()
+
+	d := &Downloader{Cfg: func() config.Usenet { return cfg }, Dir: t.TempDir(), State: &blobs{}, UnpackStall: 300 * time.Millisecond}
+	stop := run(t, d)
+	defer stop()
+	addJob(t, d, "ja", relA.nzb)
+	time.Sleep(20 * time.Millisecond)
+	addJob(t, d, "jb", relB.nzb)
+
+	// b downloads while a is stuck unpacking; then a is given up and b finishes.
+	itA := waitDone(t, d, "ja")
+	if itA.Status != backend.Errored || !strings.Contains(itA.Error, "stopped making progress") {
+		t.Fatalf("a: %+v", itA)
+	}
+	if itB := waitDone(t, d, "jb"); itB.Status != backend.Complete {
+		t.Fatalf("b: %+v", itB)
+	}
+	var lines []string
+	for _, l := range d.LogOf("ja") {
+		lines = append(lines, l.Msg)
+	}
+	log := strings.Join(lines, "\n")
+	for _, want := range []string{"added:", "downloading 1 files", "downloaded: 0 articles missing", "unpacking a.part01.rar", "failed: unpacking stopped making progress"} {
+		if !strings.Contains(log, want) {
+			t.Fatalf("log lacks %q:\n%s", want, log)
+		}
+	}
+}
+
+// Unpack progress is reported while it writes.
+func TestUnpackReportsProgress(t *testing.T) {
+	dir := t.TempDir()
+	data := randBytes(200 << 10)
+	os.WriteFile(filepath.Join(dir, "x.rar"), makeRAR("x.mkv", data), 0o644)
+	var rep recReporter
+	if n, err := unpack(dir, "", &rep); err != nil || n != 1 {
+		t.Fatalf("unpack: %d %v", n, err)
+	}
+	if rep.work < int64(len(data)) || len(rep.notes) < 2 {
+		t.Fatalf("work %d notes %v", rep.work, rep.notes)
+	}
+}
+
+type recReporter struct {
+	mu    sync.Mutex
+	work  int64
+	notes []string
+}
+
+func (r *recReporter) Note(f string, a ...any) {
+	r.mu.Lock()
+	r.notes = append(r.notes, fmt.Sprintf(f, a...))
+	r.mu.Unlock()
+}
+func (r *recReporter) Work(n int64) { r.mu.Lock(); r.work += n; r.mu.Unlock() }
