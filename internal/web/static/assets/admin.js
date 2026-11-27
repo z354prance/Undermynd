@@ -779,8 +779,8 @@
   function startView(body){
     body.appendChild(head('Getting started','HyveMynd sits between your arrs and the places files come from. It downloads, checks, sends files through Tdarr and hands them back to the arrs to import. Here is everything it works with, and whether yours is set up.'));
     var need=el('ol','hv-start');var opt=el('div','hv-startx');body.appendChild(el('h2','hv-grph','NEEDED'));body.appendChild(need);body.appendChild(el('h2','hv-grph','OPTIONAL EXTRAS'));body.appendChild(opt);
-    Promise.all([api('GET','/settings'),api('GET','/clients').catch(function(){return null}),api('GET','/vpn').catch(function(){return null}),api('GET','/system').catch(function(){return null})]).then(function(x){
-      var st=x[0],cl=x[1],vp=x[2],sy=x[3];var cats=st.categories||[];
+    Promise.all([api('GET','/settings'),api('GET','/clients').catch(function(){return null}),api('GET','/vpn').catch(function(){return null}),api('GET','/system').catch(function(){return null}),api('GET','/gpus').catch(function(){return null})]).then(function(x){
+      var st=x[0],cl=x[1],vp=x[2],sy=x[3],gx=x[4];var cats=st.categories||[];
       function has(kind){return cats.some(function(c){return c.kind===kind&&c.arrUrl&&c.hasArrApiKey})}
       function pill(ok,text,tone){return el('span','hv-spill '+(ok?'ok':tone||'off'),text)}
       function step(n,name,what,how,ok,status,to,tone){var li=el('li','hv-stepc');li.appendChild(el('span','hv-stepn',String(n)));var t=el('div','hv-stept');t.appendChild(el('b','',name));t.appendChild(el('p','',what));t.appendChild(el('p','hv-note',how));li.appendChild(t);
@@ -799,6 +799,7 @@
       extra('Emby or Jellyfin','Account requests, Now Playing, and telling it about new files.','Address and API key.',!!(st.playback&&st.playback.hasEmbyKey),st.playback&&st.playback.hasEmbyKey?'Connected':'Not set up','playback');
       extra('Tracearr','Watch history, used to pick what to upgrade.','Address and API key.',!!(st.playback&&st.playback.hasTracearrKey),st.playback&&st.playback.hasTracearrKey?'Connected':'Not set up','playback');
       extra('Lidarr','Music, handled the same way as TV and movies, and artist requests on the public page.','Add it like Sonarr, with its own category.',has('lidarr'),has('lidarr')?'Connected':'Not set up','arrs');
+      extra('GPU monitoring','Shows how busy the cards Tdarr encodes on are, and warns when one stays overloaded.','Intel or AMD: pass /dev/dri to HyveMynd (Intel also --cap-add=PERFMON). NVIDIA: --runtime=nvidia with NVIDIA_VISIBLE_DEVICES=all.',!!(gx&&gx.cards&&gx.cards.length),gx&&gx.cards&&gx.cards.length?gx.cards.length+' card'+(gx.cards.length===1?'':'s')+' watched':'No card visible','transcode');
       extra('TMDB','Titles and posters for anime and requests.','A free API key from themoviedb.org.',!!(st.metadata&&st.metadata.hasTmdbKey),st.metadata&&st.metadata.hasTmdbKey?'Key saved':'Not set up','metadata');
     }).catch(fail)}
   // Upgrades: much-watched shows and movies are moved to an upgrade profile in
@@ -862,7 +863,7 @@
     var tiles=el('section','hv-tiles6');tiles.setAttribute('aria-label','Health');body.appendChild(tiles);
     var need=el('section','hv-need');body.appendChild(need);
     var g=el('div','hv-two');var mv=hvBox('Moving now'),fin=hvBox('Just finished');g.appendChild(mv);g.appendChild(fin);body.appendChild(g);
-    var sysInfo=null,cl=null,vp=null,reqList=[],music=[];
+    var sysInfo=null,cl=null,vp=null,reqList=[],music=[],gpus=[];
     function tile(label,line,tone,to){var b=el('button','hv-tile6 '+(tone||'ok'));b.type='button';var h=el('span','hv-th');h.appendChild(el('i'));h.appendChild(document.createTextNode(label));b.appendChild(h);b.appendChild(el('span','hv-tline',line));b.onclick=function(){tab=to;app()};tiles.appendChild(b)}
     function drawTiles(){tiles.replaceChildren();var s=sysInfo;if(!s)return;
       if(s.torbox&&s.torbox.configured)tile('TorBox',s.torbox.backoffUntil?'New adds paused by TorBox':'Working · '+((s.torbox.used||0)+(s.torbox.torrentUsed||0))+' adds this hour',s.torbox.backoffUntil?'warn':'ok','torbox');else tile('TorBox','Not set up','dim','clients');
@@ -870,11 +871,15 @@
       if(vp){var st=vp.status||{};tile('VPN',st.state==='up'?(st.regionName||'Connected')+(st.port?' · port '+st.port+' open':' · no forwarded port'):st.state==='off'?'Off':st.state==='connecting'?'Connecting…':'Down: '+(st.error||''),st.state==='up'?(st.port?'ok':'warn'):st.state==='off'?'dim':st.state==='connecting'?'warn':'bad','vpn')}
       tile('Tdarr',s.tdarr.api?(s.tdarr.inFlight+' of '+s.tdarr.max+' busy'):'Folders only',s.tdarr.api?'ok':'dim','transcode');
       var fr=s.complete&&s.complete.totalBytes?s.complete.freeBytes/s.complete.totalBytes:null;if(fr!=null)tile('Storage',Math.round(fr*100)+'% free in the complete folder',fr<.1?'bad':fr<.2?'warn':'ok','system');
-      tile('Intake',s.paused?'Paused: new grabs wait':'Taking grabs from the arrs',s.paused?'warn':'ok','system')}
+      tile('Intake',s.paused?'Paused: new grabs wait':'Taking grabs from the arrs',s.paused?'warn':'ok','system');
+      (gpus||[]).forEach(function(g){var L=g.video>=0?g.video:g.busy;tile('GPU '+(g.slot||g.id),L<0?(g.note||'load unknown'):gpuLine(g),g.overloaded?'bad':L>=90?'warn':L<0?'dim':'ok','transcode')})}
     function needRow(kind,tone,title,why,btns){var r=el('div','hv-needrow '+tone);r.appendChild(el('span','hv-needk',kind));var t=el('div','hv-needt');t.appendChild(el('b','',title));t.appendChild(el('span','',why));r.appendChild(t);var a=el('div','hv-acts');btns.forEach(function(b){a.appendChild(b)});r.appendChild(a);return r}
     function drawNeed(){need.replaceChildren();var jobs=lastRows.filter(function(r){return r.attention&&r.state!=='cleaned'});var nreq=reqList.length+music.length;
-      var h=el('h2','','Needs you');if(jobs.length+(nreq?1:0))h.appendChild(el('span','hv-n bad',String(jobs.length+(nreq?1:0))));need.appendChild(h);
-      if(!jobs.length&&!nreq){need.appendChild(el('div','hv-empty','Nothing needs you right now.'));return}
+      var nh=jobs.length+(nreq?1:0)+(gpus||[]).filter(function(g){return g.overloaded}).length;var h=el('h2','','Needs you');if(nh)h.appendChild(el('span','hv-n bad',String(nh)));need.appendChild(h);
+      var hot=(gpus||[]).filter(function(g){return g.overloaded});
+      if(!jobs.length&&!nreq&&!hot.length){need.appendChild(el('div','hv-empty','Nothing needs you right now.'));return}
+      hot.forEach(function(g){var L=g.video>=0?g.video:g.busy;var t=sysInfo&&sysInfo.tdarr&&sysInfo.tdarr.api?' Tdarr is running '+sysInfo.tdarr.inFlight+' of '+sysInfo.tdarr.max+' workers; fewer workers on this card would help.':'';
+        need.appendChild(needRow('GPU','warn',g.name+' · '+(g.slot||g.id),(g.video>=0?'Video engines':'The card')+' at '+Math.round(L)+'% for '+Math.max(1,Math.round((Date.now()-new Date(g.since))/60000))+' min.'+t,[hvBtn('Tdarr settings','',function(){tab='transcode';app()},true)]))});
       jobs.forEach(function(j){var failed=j.state==='failed';var why=((j.flag?j.flag+' ':'')+(j.reason||'')).trim()||j.state;var btns=[];
         if(failed){btns.push(hvBtn('Retry','',function(b){b.disabled=true;doAction(j.id,'retry')},true));btns.push(hvBtn('Clean up','',function(b){b.disabled=true;doAction(j.id,'cleanup')}))}
         else btns.push(hvBtn('Retry now','',function(b){b.disabled=true;doAction(j.id,'retry')},true));
@@ -900,7 +905,7 @@
     function draw(){drawHello();drawNeed();drawMoving();drawFin();railCounts(lastRows)}
     function refresh(){loadReqs().then(function(l){reqList=l||[];music=reqMusic||[];setReqBadge(reqList.length+music.length);draw()})}
     function poll(){api('GET','/jobs').then(function(d){lastRows=Array.isArray(d)?d:(d.jobs||[]);draw()}).catch(fail)}
-    function pollSys(){Promise.all([api('GET','/system').catch(function(){return null}),api('GET','/clients').catch(function(){return null}),api('GET','/vpn').catch(function(){return null})]).then(function(x){sysInfo=x[0];cl=x[1];vp=x[2];drawTiles()})}
+    function pollSys(){Promise.all([api('GET','/system').catch(function(){return null}),api('GET','/clients').catch(function(){return null}),api('GET','/vpn').catch(function(){return null}),api('GET','/gpus').catch(function(){return null})]).then(function(x){sysInfo=x[0];cl=x[1];vp=x[2];gpus=x[3]&&x[3].cards||[];drawTiles();drawNeed()})}
     poll();pollSys();refresh();timer=setInterval(function(){if(tab!=='overview')return;poll();pollSys();refresh()},5000);
   }
   function doAction(id,a){api('POST','/jobs/'+encodeURIComponent(id)+'/'+a).then(function(){app()}).catch(function(e){if(e.status===401)fail(e);else{alert(e.message);app()}})}
@@ -941,8 +946,22 @@
     body.replaceChildren();
     ({arrs:arrsPane,clients:clientsPane,transcode:transcodePane,metadata:metadataPane,playback:playbackPane,public:publicPane,rss:rssPane,system:systemPane})[tab](body);
     if(/^(playback|public|transcode|metadata|clients)$/.test(tab))rowify(body);
+    if(tab==='transcode'){var gs=el('div');var first=body.querySelector('.hv-erows');if(first&&first.nextSibling)body.insertBefore(gs,first.nextSibling);else body.appendChild(gs);gpuSection(gs)}
     else if(tab!=='system'&&tab!=='rss')split(body);
   }
+  function gpuLine(g){var p=[];if(g.video>=0)p.push('video '+Math.round(g.video)+'%');if(g.render>=0&&g.vendor!=='amd')p.push('render '+Math.round(g.render)+'%');else if(g.busy>=0&&g.video<0)p.push(Math.round(g.busy)+'% busy');
+    if(g.freq>=0)p.push(Math.round(g.freq)+(g.freqMax>0?'/'+Math.round(g.freqMax):'')+' MHz');if(g.power>=0)p.push(Math.round(g.power)+' W');if(g.temp>0)p.push(Math.round(g.temp)+'°C');return p.join(' · ')}
+  function gpuSpark(g){var NS='http://www.w3.org/2000/svg';var w=360,h=60,pts=(g.history||[]);var sv=document.createElementNS(NS,'svg');sv.setAttribute('viewBox','0 0 '+w+' '+h);sv.setAttribute('class','hv-spark');sv.setAttribute('role','img');sv.setAttribute('aria-label','load over the last hour');
+    var lim=document.createElementNS(NS,'line');lim.setAttribute('x1',0);lim.setAttribute('x2',w);lim.setAttribute('y1',h*(1-.9));lim.setAttribute('y2',h*(1-.9));lim.setAttribute('class','lim');sv.appendChild(lim);
+    if(pts.length>1){var d=pts.map(function(p,i){return (i?'L':'M')+(i*(w/(pts.length-1))).toFixed(1)+' '+(h-(p.load/100)*h).toFixed(1)}).join(' ');var pa=document.createElementNS(NS,'path');pa.setAttribute('d',d);sv.appendChild(pa)}return sv}
+  function gpuSection(host){var sec=el('section','hv-gpus');host.appendChild(sec);
+    function draw(d){sec.replaceChildren();sec.appendChild(el('h2','hv-grph','GRAPHICS CARDS'));
+      if(!d||!d.on){sec.appendChild(el('p','hv-note','GPU watching is off (HYVEMYND_GPU=off).'));return}
+      if(!d.cards.length){sec.appendChild(el('p','hv-note','No graphics card is visible to HyveMynd. To watch the cards Tdarr uses: Intel or AMD, add the device /dev/dri to the HyveMynd container (Intel also needs --cap-add=PERFMON under Extra Parameters for the load); NVIDIA, add --runtime=nvidia and the variable NVIDIA_VISIBLE_DEVICES=all.'));return}
+      d.cards.forEach(function(g){var c=el('div','hv-gpu'+(g.overloaded?' bad':''));var t=el('div','hv-gpuh');t.appendChild(el('b','',g.name));t.appendChild(el('span','hv-note',[g.slot,g.driver,g.source].filter(Boolean).join(' · ')));c.appendChild(t);
+        var L=g.video>=0?g.video:g.busy;c.appendChild(el('div','hv-gpul',L<0?(g.note||'load unknown'):gpuLine(g)+(g.overloaded?' · overloaded':'')));if(g.note&&L>=0)c.appendChild(el('div','hv-note',g.note));
+        if((g.history||[]).length>1){c.appendChild(gpuSpark(g));c.appendChild(el('div','hv-note','The last hour, one point a minute; the line is 90%.'))}sec.appendChild(c)})}
+    function load(){api('GET','/gpus').then(draw).catch(function(){})}load();var iv=setInterval(function(){if(tab!=='transcode'){clearInterval(iv);return}load()},5000)}
   // A settings card becomes a row (pinned v4): a status dot, its name and
   // state on one line, and its fields under Edit.
   function rowify(body){
