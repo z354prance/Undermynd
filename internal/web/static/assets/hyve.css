@@ -527,3 +527,12 @@ body.ui .hv-body .chip2.ok{background:rgba(63,185,80,.16);color:#7ee08a}
 body.ui .hv-body .chip2.dim{background:var(--raise);color:var(--dim)}
 body.ui .hv-body .chip2::before{content:none}
 body.ui .hv-body .sec{font:700 13px var(--ui);letter-spacing:.08em;color:var(--dim);text-transform:uppercase;margin:22px 0 8px}
+body.ui .hv-ptitle{margin:0 0 6px;font:700 20px var(--ui)}
+body.ui .hv-radios{display:flex;flex-direction:column;gap:10px;margin-top:4px}
+body.ui .hv-radio{display:flex;gap:10px;align-items:flex-start;font-size:15px;cursor:pointer}
+body.ui .hv-radio input{width:auto;margin-top:4px;accent-color:var(--accent)}
+body.ui .hv-radio span{display:flex;flex-direction:column;gap:2px}
+body.ui .hv-addcard .hv-chips{margin-top:4px}
+body.ui .hv-body button.hv-chip::first-letter{text-transform:none}
+body.ui .hv-body .fld label.hv-radio{display:flex;margin:0;padding:0;font:400 14px var(--ui);color:var(--text);text-transform:none;letter-spacing:0}
+body.ui .hv-body .fld label.hv-radio b{font:600 15px var(--ui)}

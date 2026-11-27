@@ -271,7 +271,7 @@
     q.oninput=load;load();timer=setInterval(function(){if(follow.checked)load()},3000)
   }
   function reencodeView(body){
-    body.appendChild(el('h2','ptitle','Re-encode'));
+    body.appendChild(el('h3','hv-ptitle','Re-encode'));
     body.appendChild(el('p','hint','Finds videos in your library that are not AV1 and arrived since a date, so files that were imported before Tdarr finished can go back through it. Each one is copied, encoded and checked as AV1, and only then written over the library file. The original is left alone if anything fails.'));
     var bar=el('div','rebar');
     var d=new Date();d.setDate(d.getDate()-1);d.setHours(8,0,0,0);
@@ -643,13 +643,16 @@
       if(first){first=false;if(addBox)buildAdd(d);if(limBox)buildLimits(d)}
     }
     function buildAdd(d){addBox.replaceChildren();addBox.appendChild(el('h3','','Add a download'));
-      var c=el('div','card');var mg=row(c,'Magnet link',{ph:'magnet:?xt=urn:btih:…'});
+      var c=el('div','card hv-addcard');var mg=row(c,'Magnet link',{ph:'magnet:?xt=urn:btih:…'});
       var fw=el('div','fld');fw.appendChild(el('label','','or a .torrent or .nzb file'));var fi=el('input');fi.type='file';fi.accept='.torrent,.nzb';fw.appendChild(fi);c.appendChild(fw);
       var cw=el('div','fld');cw.appendChild(el('label','','Category'));var cs=el('select');(d.categories||[]).forEach(function(n){cs.appendChild(new Option(n+((d.plain||[]).indexOf(n)>=0?' (plain files)':''),n))});
-      if((d.plain||[]).length)cs.value=d.plain[0];cw.appendChild(cs);
+      if((d.plain||[]).length)cs.value=d.plain[0];cs.hidden=true;cw.appendChild(cs);
+      var chips=el('div','hv-chips');chips.setAttribute('role','radiogroup');chips.setAttribute('aria-label','Category');cw.appendChild(chips);
+      function drawChips(){chips.replaceChildren();(d.categories||[]).forEach(function(n){var b=el('button','hv-chip'+(cs.value===n?' on':''),n+((d.plain||[]).indexOf(n)>=0?' · plain files':''));b.type='button';b.setAttribute('role','radio');b.setAttribute('aria-checked',cs.value===n?'true':'false');b.onclick=function(){cs.value=n;drawChips();hint()};chips.appendChild(b)})}drawChips();
       var ch=el('div','fh','');cw.appendChild(ch);function hint(){ch.textContent=(d.plain||[]).indexOf(cs.value)>=0?'Plain files: everything is kept as released (software included), with no malicious-file check and no Tdarr.':(d.plain||[]).length?'A media category: only video, audio and subtitles are kept, and programs are blocked. Use a plain-files category for software.':'A media category: only video, audio and subtitles are kept, and programs are blocked. For software, add a “plain files” category under Settings › Arrs.'}cs.onchange=hint;hint();c.appendChild(cw);
-      var ww=el('div','fld');ww.appendChild(el('label','','Download with'));var wsel=el('select');[['','The usual order (TorBox first)'],['torbox','TorBox only'],['builtin','HyveMynd’s own client']].forEach(function(o){wsel.appendChild(new Option(o[1],o[0]))});ww.appendChild(wsel);c.appendChild(ww);
-      var go=el('button','go','Add');var am=el('span','msg');go.onclick=function(){var fd=new FormData();fd.append('magnet',mg.value);if(fi.files[0])fd.append('file',fi.files[0]);fd.append('category',cs.value);fd.append('prefer',wsel.value);
+      var ww=el('div','fld');ww.appendChild(el('label','','Where to download it'));var wsel={value:''};var rg=el('div','hv-radios');rg.setAttribute('role','radiogroup');
+      [['','The usual way','TorBox first; HyveMynd’s own client if TorBox is busy or down'],['torbox','TorBox only',''],['builtin','HyveMynd’s own client','Torrents go through the VPN']].forEach(function(o,i){var l=el('label','hv-radio');var r=el('input');r.type='radio';r.name='addwhere';r.checked=i===0;r.onchange=function(){wsel.value=o[0]};l.appendChild(r);var t=el('span','');t.appendChild(el('b','',o[1]));if(o[2])t.appendChild(el('span','hv-note',o[2]));l.appendChild(t);rg.appendChild(l)});ww.appendChild(rg);c.appendChild(ww);
+      var go=el('button','go','Add download');var am=el('span','msg');go.onclick=function(){var fd=new FormData();fd.append('magnet',mg.value);if(fi.files[0])fd.append('file',fi.files[0]);fd.append('category',cs.value);fd.append('prefer',wsel.value);
         am.className='msg';am.textContent='adding…';go.disabled=true;
         fetch('/admin/api/clients/add',{method:'POST',headers:{'X-HyveMynd-Request':'1'},body:fd,credentials:'same-origin'}).then(function(r){return r.json().then(function(x){if(!r.ok)throw new Error(x.error||('HTTP '+r.status));return x})})
           .then(function(x){go.disabled=false;am.className='msg ok';am.textContent='added: '+x.name;mg.value='';fi.value='';load()}).catch(function(e){go.disabled=false;am.className='msg err';am.textContent=e.message})};
