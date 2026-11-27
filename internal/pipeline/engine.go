@@ -54,8 +54,6 @@ type Engine struct {
 	submitMu sync.Mutex
 	bmu      sync.Mutex
 	qkey     string
-	ngkey    string
-	ngcache  *backend.NZBGet
 	qcache   backend.Backend
 	tkey     string
 	tcache   *backend.TorBox
@@ -133,20 +131,6 @@ func (e *Engine) torbox() *backend.TorBox {
 	return e.tcache
 }
 
-func (e *Engine) nzbget() *backend.NZBGet {
-	n := e.Cfg.Get().NZBGet
-	if n.URL == "" {
-		return nil
-	}
-	key := n.URL + "|" + n.Username + "|" + string(n.Password)
-	e.bmu.Lock()
-	defer e.bmu.Unlock()
-	if e.ngcache == nil || e.ngkey != key {
-		e.ngcache, e.ngkey = backend.NewNZBGet(n.URL, n.Username, string(n.Password)), key
-	}
-	return e.ngcache
-}
-
 // pick chooses the backend for a new job.
 func (e *Engine) pick(j job.Job) (backend.Backend, error) {
 	if e.Override != nil {
@@ -182,13 +166,10 @@ func (e *Engine) pick(j job.Job) (backend.Backend, error) {
 		if news && u.Mode == "" {
 			return e.News, nil
 		}
-		if ng := e.nzbget(); ng != nil {
-			return ng, nil
-		}
 		if news {
 			return e.News, nil
 		}
-		return nil, backend.Permanent{Msg: "no usenet downloader is set up: add a usenet provider, a TorBox token or an NZBGet address"}
+		return nil, backend.Permanent{Msg: "no usenet downloader is set up: add a usenet provider (Settings › Usenet providers) or a TorBox token"}
 	}
 	if v := e.Cfg.Get().VPN; e.Local != nil && v.LocalTorrents() {
 		// TorBox first (doSubmit falls over to the built-in client when it is
@@ -201,7 +182,10 @@ func (e *Engine) pick(j job.Job) (backend.Backend, error) {
 	if tb := e.torboxTorrents(); tb != nil {
 		return tb, nil
 	}
-	return e.qbit(), nil
+	if e.Cfg.Get().QBit.URL != "" {
+		return e.qbit(), nil // an outside qBittorrent left in settings.json
+	}
+	return nil, backend.Permanent{Msg: "no torrent downloader is set up: add a TorBox token or a VPN (Settings › VPN and torrents)"}
 }
 
 func (e *Engine) torboxTorrents() *backend.TorBox {
@@ -226,10 +210,8 @@ func (e *Engine) byName(name string, j job.Job) backend.Backend {
 			return tb
 		}
 	}
-	if name == "nzbget" {
-		if ng := e.nzbget(); ng != nil {
-			return ng
-		}
+	if name == "nzbget" && e.News != nil {
+		return e.News // NZBGet is no longer used; its jobs end there
 	}
 	if name == "local" && e.Local != nil {
 		return e.Local
@@ -1194,8 +1176,6 @@ func (e *Engine) removeBackendItem(ctx context.Context, j job.Job) error {
 	if j.SavePath != "" {
 		root := e.Cfg.Get().QBit.SaveDir
 		switch j.Backend {
-		case "nzbget":
-			root = e.Cfg.Get().NZBGet.DestRoot
 		case "usenet": // the built-in usenet downloader's folders
 			root = filepath.Join(e.Cfg.Env.Work(), "usenet")
 		case "local": // the built-in torrent client's folders

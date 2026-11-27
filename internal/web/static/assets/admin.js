@@ -65,7 +65,7 @@
       {id:'downloads',label:'Downloads',icon:'s_dl',pages:[['jobs','On the way'],['downloaders','Clients'],['rss','Feeds'],['reencode','Re-encode'],['usenet','Usenet'],['vpn','VPN']]},
       {id:'requests',label:'Requests',icon:'s_req',pages:[['requests','Media'],['access','Accounts']]},
       {id:'library',label:'Library',icon:'s_lib',pages:[['missing','Missing'],['anime','Anime'],['upgrades','Upgrades']]},
-      {id:'settings',label:'Settings',icon:'s_sys',pages:[['arrs','Arrs'],['clients','Download clients'],['transcode','Tdarr'],['public','Public page'],['playback','Media server'],['system','Server'],['log','Log']]}];
+      {id:'settings',label:'Settings',icon:'s_sys',pages:[['arrs','Arrs'],['clients','TorBox'],['transcode','Tdarr'],['public','Public page'],['playback','Media server'],['system','Server'],['log','Log']]}];
     function first(p){return p[2]?p[2][0][0]:p[0]}
     var cur=null,curPage=null;NAV.forEach(function(sec){sec.pages.forEach(function(p){if(p[0]===tab||(p[2]&&p[2].some(function(q){return q[0]===tab}))){cur=sec;curPage=p}})});
     if(!cur){cur=NAV[0];curPage=cur.pages[0];tab='overview'}
@@ -192,7 +192,8 @@
     banner();drawRows();
   }
 
-  function loadReqs(){return api('GET','/requests').then(function(d){return d.requests||[]}).catch(function(){return null})}
+  var reqAuto=null;
+  function loadReqs(){return api('GET','/requests').then(function(d){if(d.auto)reqAuto=d.auto;return d.requests||[]}).catch(function(){return null})}
   function reqRow(r,done,compact){
     var row=el('div',compact?'orow rrow':'jrow rrow');
     var n=el('div','jname');n.appendChild(el('div','',(r.title||'Untitled request')));
@@ -260,7 +261,8 @@
     fetch('/api/v1/media-request/title?type='+(kind==='movie'?'movie':'tv')+'&id='+id).then(function(r){return r.ok?r.json():{}}).then(function(d){posterCache[k]=d.poster||'';if(d.poster)put(d.poster)}).catch(function(){posterCache[k]=''})}
   function requestsView(body){
     var top=el('div','hv-pagehead');body.appendChild(top);var cards=el('div','hv-reqs');body.appendChild(cards);
-    function drawTop(n){top.replaceChildren();top.appendChild(el('h2','',n===null?'Requests':n+' waiting'));top.appendChild(el('span','hv-sp'));top.appendChild(el('span','hv-note','Approving sends the request on in Seerr. Seerr keeps the history.'))}
+    function drawTop(n){top.replaceChildren();top.appendChild(el('h2','',n===null?'Requests':n+' waiting'));top.appendChild(el('span','hv-sp'));top.appendChild(el('span','hv-note','Approving sends the request on in Seerr. Seerr keeps the history.'));
+      if(reqAuto){var f=el('div','hv-auto');f.appendChild(el('span','hv-note','Approve automatically:'));[['movies','Movies'],['tv','TV shows']].forEach(function(k){var l=el('label','');var i=el('input');i.type='checkbox';i.checked=!!reqAuto[k[0]];i.onchange=function(){var next={movies:reqAuto.movies,tv:reqAuto.tv,music:reqAuto.music};next[k[0]]=i.checked;api('PUT','/requests/auto',next).then(function(r){reqAuto=r.auto;if(r.approved)draw()}).catch(function(e){i.checked=!i.checked;alert(e.message)})};l.appendChild(i);l.appendChild(document.createTextNode(' '+k[1]));f.appendChild(l)});top.appendChild(f)}}
     function card(r){var c=el('article','hv-req');var ph=el('div','hv-req-poster');reqPoster(r.media_type,r.tmdb_id,ph,r.title||'');c.appendChild(ph);
       var b=el('div','hv-req-body');var tl=el('div','hv-pills-row');tl.appendChild(hvPill(r.media_type==='tv'?'Series':'Movie',r.media_type==='tv'?'var(--tv)':'var(--movie)',true));b.appendChild(tl);
       b.appendChild(el('h3','',r.title||'Untitled request'));
@@ -628,7 +630,7 @@
   // own torrent client that only goes through it.
   function vpnView(body){
     api('GET','/vpn').then(function(d){body.replaceChildren();
-      body.appendChild(head('VPN and built-in torrents','HyveMynd connects to Private Internet Access by itself and runs its own torrent client through that connection, downloading straight into its own folders. Nothing to set up on the server or in the arrs. Only these downloads use the VPN; the rest of HyveMynd does not. If the VPN drops, the client stops at once and carries on when it reconnects.'));
+      body.appendChild(head('VPN and built-in torrents','HyveMynd connects to your VPN (WireGuard) by itself and runs its own torrent client through that connection, downloading straight into its own folders. Nothing to set up on the server or in the arrs. Only these downloads use the VPN; the rest of HyveMynd does not. If the VPN drops, the client stops at once and carries on when it reconnects.'));
       var names={off:'Off',connecting:'Connecting…',up:'Connected',down:'Not connected'};
       var box=hvBox('Status');var l=el('div','hv-list');box.appendChild(l);body.appendChild(box);
       function drawStatus(d){var s=d.status||{};l.replaceChildren();
@@ -642,19 +644,33 @@
         if(s.error)l.appendChild(el('div',s.state==='up'&&s.port===0?'hv-note':'err',s.error))}
       drawStatus(d);
       timer=setInterval(function(){if(tab!=='vpn')return;api('GET','/vpn').then(drawStatus).catch(function(){})},3000);
-      var c=el('div','card');c.appendChild(el('h4','','Private Internet Access'));
+      var PROV={pia:['Private Internet Access','Port forwarding: automatic'],proton:['Proton VPN','Port forwarding: automatic on P2P servers'],mullvad:['Mullvad','No port forwarding'],airvpn:['AirVPN','Port forwarding: enter your port'],windscribe:['Windscribe','Port forwarding: with a static IP'],nord:['NordVPN','No port forwarding'],surfshark:['Surfshark','No port forwarding'],ivpn:['IVPN','No port forwarding'],other:['Another provider','Any WireGuard file']};
+      var STEPS={proton:'In your Proton account: Downloads › WireGuard configuration. Choose Router, turn on NAT-PMP (port forwarding), pick a P2P server, then download the file.',mullvad:'In your Mullvad account: WireGuard configuration. Generate a key, choose Linux and a location, then download the file.',airvpn:'In the AirVPN Client Area: Config Generator, choose WireGuard and a server, download the file. Add a port under Client Area › Ports and enter it below.',windscribe:'In your Windscribe account: Config Generators › WireGuard, pick a location, download the file. With a static IP that forwards a port, enter the port below.',surfshark:'In your Surfshark account: VPN › Manual setup › Router › WireGuard. Generate a key pair, pick a location, download the file.',ivpn:'In your IVPN account: WireGuard › Config generator. Add a key and download a server’s file.',other:'Download a WireGuard configuration file from your provider. Enter a forwarded port if your provider gives you one.'};
+      var c=el('div','card');c.appendChild(el('h4','','VPN provider'));
       var on=row(c,'Use the VPN and the built-in torrent client',{type:'checkbox',value:d.on});
-      var user=row(c,'PIA username',{value:d.user,ph:'p1234567',help:'The p-number you sign in to PIA with.'});
-      var pw=row(c,'PIA password',{type:'password',ph:d.hasPassword?'saved: leave blank to keep':'',help:''});
+      var pw0=el('div','fld');pw0.appendChild(el('label','','Provider'));var pv=el('select');(d.providers||Object.keys(PROV)).forEach(function(k){pv.appendChild(new Option((PROV[k]||[k])[0]+' · '+((PROV[k]||['',''])[1]),k))});pv.value=d.provider||'pia';pw0.appendChild(pv);c.appendChild(pw0);
+      var piaBox=el('div');c.appendChild(piaBox);
+      var user=row(piaBox,'PIA username',{value:d.user,ph:'p1234567',help:'The p-number you sign in to PIA with.'});
+      var pw=row(piaBox,'PIA password',{type:'password',ph:d.hasPassword?'saved: leave blank to keep':'',help:''});
       var rw=el('div','fld');rw.appendChild(el('label','','Location'));var rg=el('select');rg.appendChild(new Option('Best port-forwarding location (recommended)',''));if(d.region)rg.appendChild(new Option(d.region,d.region));rg.value=d.region||'';rw.appendChild(rg);
-      rw.appendChild(el('div','fh','Locations marked “port forwarding” let other people connect to you, which makes downloads faster.'));c.appendChild(rw);
+      rw.appendChild(el('div','fh','Locations marked “port forwarding” let other people connect to you, which makes downloads faster.'));piaBox.appendChild(rw);
       api('GET','/vpn/regions').then(function(list){var keep=rg.value;while(rg.options.length>1)rg.remove(1);list.forEach(function(g){rg.appendChild(new Option(g.name+(g.portForward?' · port forwarding':''),g.id))});rg.value=keep}).catch(function(){});
+      var nordBox=el('div');c.appendChild(nordBox);
+      nordBox.appendChild(el('div','fh','In your Nord account, open NordVPN › Manual setup and create an access token. HyveMynd uses it to set up WireGuard (NordLynx) for you.'));
+      var tok=row(nordBox,'Access token',{type:'password',ph:d.hasToken?'saved: leave blank to keep':''});
+      var ctry=row(nordBox,'Country',{value:d.country,ph:'NL, US, … (blank: Nord’s pick)'});
+      var fileBox=el('div');c.appendChild(fileBox);var steps=el('div','fh');fileBox.appendChild(steps);
+      var fw=el('div','fld');fw.appendChild(el('label','','WireGuard file'));var fi=el('input');fi.type='file';fi.accept='.conf,text/plain';var ta=el('textarea');ta.rows=5;ta.placeholder=d.hasWireGuard?'saved'+(d.wgServer?' (server '+d.wgServer+')':'')+': leave blank to keep, or choose or paste a new file':'choose the .conf file above, or paste its text here';
+      fi.onchange=function(){var f=fi.files&&fi.files[0];if(!f)return;f.text().then(function(t){ta.value=t})};fw.appendChild(fi);fw.appendChild(ta);fileBox.appendChild(fw);
+      var portBox=el('div');fileBox.appendChild(portBox);var port=row(portBox,'Your forwarded port',{value:d.port?String(d.port):'',ph:'from your account page (blank: none)'});
+      function showProv(){var k=pv.value;piaBox.style.display=k==='pia'?'':'none';nordBox.style.display=k==='nord'?'':'none';fileBox.style.display=(k!=='pia'&&k!=='nord')?'':'none';steps.textContent=STEPS[k]||'';portBox.style.display=(k==='airvpn'||k==='windscribe'||k==='other')?'':'none'}
+      pv.onchange=showProv;showProv();
       var tw=el('div','fld');tw.appendChild(el('label','','Where torrents go'));var tr=el('select');
       [['','TorBox first; here when TorBox is busy or not connected (recommended)'],['local','Always here (TorBox not used for torrents)'],['torbox','Always TorBox, never here']].forEach(function(o){tr.appendChild(new Option(o[1],o[0]))});tr.value=d.torrents||'';tw.appendChild(tr);
       tw.appendChild(el('div','fh',(d.torbox?'Usenet still goes to TorBox. ':'No TorBox token is set, so all torrents go here. ')+'Torrents here share at most 1 MB/s while downloading and stop sharing as soon as they finish.'));c.appendChild(tw);
       body.appendChild(c);
       saveBar(body,function(m){m.className='msg';m.textContent='saving…';
-        api('PUT','/vpn',{on:on.checked,user:user.value,password:pw.value,region:rg.value,torrents:tr.value}).then(function(){m.className='msg ok';m.textContent='saved: reconnecting (the status above updates by itself)'}).catch(function(e){m.className='msg err';m.textContent=e.message})});
+        api('PUT','/vpn',{on:on.checked,provider:pv.value,user:user.value,password:pw.value,region:rg.value,wireguard:ta.value,token:tok.value,country:ctry.value,port:parseInt(port.value,10)||0,torrents:tr.value}).then(function(){m.className='msg ok';m.textContent='saved: reconnecting (the status above updates by itself)'}).catch(function(e){m.className='msg err';m.textContent=e.message})});
     }).catch(fail)}
   // Upgrades: much-watched shows and movies are moved to an upgrade profile in
   // Sonarr or Radarr and searched (watch history from Tracearr).
@@ -829,7 +845,7 @@
   }
 
   function clientsPane(body){
-    body.appendChild(head('Download clients','HyveMynd downloads through TorBox when a token is set. Otherwise usenet goes to NZBGet and torrents go to qBittorrent, both optional and local.'));
+    body.appendChild(head('TorBox','HyveMynd sends downloads to TorBox first when a token is set. When TorBox is busy, down or not set up, its own usenet downloader (Downloads › Usenet) and torrent client (Downloads › VPN) take over.'));
     var tb=el('div','card');var h=el('h4','','TorBox ');h.appendChild(chip(S.torbox.hasToken,S.torbox.hasToken?'token set':'no token'));tb.appendChild(h);
     var g=el('div','grid3');
     var tok=row(g,'API token',{type:'password',ph:S.torbox.hasToken?'set — leave blank to keep':'paste your token',help:'TorBox → Settings → API'});
@@ -837,22 +853,8 @@
     var pa=row(g,'files copied at once',{type:'number',value:S.torbox.pullersAtOnce,help:'how many finished files are pulled down in parallel'});
     var lg=row(g,'seconds between link requests',{type:'number',value:S.torbox.linkGapSeconds,help:'spaces out requests so TorBox does not throttle'});
     tb.appendChild(g);body.appendChild(tb);
-    var ng=el('div','card');var h2=el('h4','','NZBGet (usenet fallback) ');h2.appendChild(chip(!!S.nzbget.url,S.nzbget.url?'configured':'not set'));ng.appendChild(h2);
-    var g2=el('div','grid3');
-    var nu=row(g2,'address',{value:S.nzbget.url,ph:'http://10.0.0.6:6789'});var nn=row(g2,'username',{value:S.nzbget.username});
-    var np=row(g2,'password',{type:'password',ph:S.nzbget.hasPassword?'set — leave blank to keep':''});
-    var nd=row(g2,'destination folder',{value:S.nzbget.destRoot,help:'NZBGet’s DestDir, at the same path in both containers'});
-    ng.appendChild(g2);body.appendChild(ng);
-    var qb=el('div','card');var h3=el('h4','','qBittorrent (torrent fallback) ');h3.appendChild(chip(!!S.qbit.url,S.qbit.url?'configured':'not set'));qb.appendChild(h3);
-    var g3=el('div','grid3');
-    var qu=row(g3,'address',{value:S.qbit.url,ph:'http://10.0.0.7:8080'});var qn=row(g3,'username',{value:S.qbit.username});
-    var qp=row(g3,'password',{type:'password',ph:S.qbit.hasPassword?'set — leave blank to keep':''});
-    var qd=row(g3,'save folder',{value:S.qbit.saveDir,help:'same path in both containers'});
-    qb.appendChild(g3);body.appendChild(qb);
     saveBar(body,function(m){save(function(b){
-      b.torbox={token:tok.value,createPerHour:+cph.value,pullersAtOnce:+pa.value,linkGapSeconds:+lg.value};
-      b.nzbget={url:nu.value,username:nn.value,password:np.value,destRoot:nd.value};
-      b.qbit={url:qu.value,username:qn.value,password:qp.value,saveDir:qd.value}},m).then(function(){pane(body)})})
+      b.torbox={token:tok.value,createPerHour:+cph.value,pullersAtOnce:+pa.value,linkGapSeconds:+lg.value}},m).then(function(){pane(body)})})
   }
 
   function transcodePane(body){
