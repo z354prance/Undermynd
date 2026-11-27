@@ -23,6 +23,11 @@ jobs:
             || curl -fsSL -o /tmp/7z.tar.xz https://github.com/ip7z/7zip/releases/download/24.09/7z2409-linux-x64.tar.xz)
           tar -xJf /tmp/7z.tar.xz -C /tmp/7z
           echo "HYVEMYND_7Z=/tmp/7z/7zzs" >> "$GITHUB_ENV"
+      - name: Fetch par2 (the same build the image ships) for the repair tests
+        run: |
+          curl -fsSL -o /tmp/par2.zip https://github.com/animetosho/par2cmdline-turbo/releases/download/v1.5.0/par2cmdline-turbo-1.5.0-linux-amd64.zip
+          mkdir -p /tmp/par2 && unzip -o /tmp/par2.zip -d /tmp/par2 && chmod 755 /tmp/par2/par2
+          echo "HYVEMYND_PAR2=/tmp/par2/par2" >> "$GITHUB_ENV"
       - run: go test -race ./...
       - name: Validate Unraid template
         run: python3 -c "import xml.dom.minidom as m; m.parse('unraid/undermynd.xml'); m.parse('unraid/hyvemynd.xml')"
@@ -48,6 +53,14 @@ jobs:
           HYVEMYND_SAMPLE_RAR="$PWD/rar" go test -run TestWriteSampleRAR ./internal/usenet/
           docker run --rm -v "$PWD/rar:/w" --entrypoint /7zzs undermynd:ci x -y -o/w/out /w/sample.rar
           cmp rar/out/sample.mkv rar/sample.mkv
+      - name: The image's par2 repairs a damaged file
+        run: |
+          mkdir -p p2 && chmod 777 p2
+          head -c 2000000 /dev/urandom > p2/v.mkv && cp p2/v.mkv p2/orig.mkv
+          docker run --rm -v "$PWD/p2:/w" --entrypoint /par2 undermynd:ci c -q -r10 /w/v.par2 /w/v.mkv
+          dd if=/dev/zero of=p2/v.mkv bs=1000 seek=100 count=50 conv=notrunc
+          docker run --rm -v "$PWD/p2:/w" --entrypoint /par2 undermynd:ci r -p /w/v.par2
+          cmp p2/v.mkv p2/orig.mkv
 
   publish:
     name: Publish image
