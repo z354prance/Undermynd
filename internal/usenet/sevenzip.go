@@ -41,7 +41,7 @@ var sevenPct = regexp.MustCompile(`(\d{1,3})%`)
 // extract7z unpacks an archive (all its volumes) with 7-Zip into dir. The
 // process ends with ctx, so a stuck one can be stopped.
 func extract7z(ctx context.Context, bin, first, dir, password string, total int64, r reporter) (used []string, n int, err error) {
-	args := []string{"x", "-y", "-aoa", "-bsp1", "-bso1", "-bse1", "-o" + dir, "-p" + password, first}
+	args := []string{"x", "-y", "-aoa", "-bb1", "-bsp1", "-bso1", "-bse1", "-o" + dir, "-p" + password, first}
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
 	// Stopping it stops everything it started, and its output closes, so a
@@ -118,6 +118,9 @@ func extract7z(ctx context.Context, bin, first, dir, password string, total int6
 		} else {
 			return nil, n, fmt.Errorf("7-Zip could not unpack %s: %s", filepath.Base(first), lastLines(msg, 4))
 		}
+	}
+	if total > 0 && last < 100 {
+		r.Work(int64(100-last) * total / 100) // finished: the rest is done
 	}
 	return volumesOf(first), n, nil
 }
