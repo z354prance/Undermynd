@@ -192,8 +192,8 @@
     banner();drawRows();
   }
 
-  var reqAuto=null;
-  function loadReqs(){return api('GET','/requests').then(function(d){if(d.auto)reqAuto=d.auto;return d.requests||[]}).catch(function(){return null})}
+  var reqAuto=null,reqMusic=[],reqMusicOn=false;
+  function loadReqs(){return api('GET','/requests').then(function(d){if(d.auto)reqAuto=d.auto;reqMusic=d.music||[];reqMusicOn=!!d.musicOn;return d.requests||[]}).catch(function(){return null})}
   function reqRow(r,done,compact){
     var row=el('div',compact?'orow rrow':'jrow rrow');
     var n=el('div','jname');n.appendChild(el('div','',(r.title||'Untitled request')));
@@ -262,7 +262,7 @@
   function requestsView(body){
     var top=el('div','hv-pagehead');body.appendChild(top);var cards=el('div','hv-reqs');body.appendChild(cards);
     function drawTop(n){top.replaceChildren();top.appendChild(el('h2','',n===null?'Requests':n+' waiting'));top.appendChild(el('span','hv-sp'));top.appendChild(el('span','hv-note','Approving sends the request on in Seerr. Seerr keeps the history.'));
-      if(reqAuto){var f=el('div','hv-auto');f.appendChild(el('span','hv-note','Approve automatically:'));[['movies','Movies'],['tv','TV shows']].forEach(function(k){var l=el('label','');var i=el('input');i.type='checkbox';i.checked=!!reqAuto[k[0]];i.onchange=function(){var next={movies:reqAuto.movies,tv:reqAuto.tv,music:reqAuto.music};next[k[0]]=i.checked;api('PUT','/requests/auto',next).then(function(r){reqAuto=r.auto;if(r.approved)draw()}).catch(function(e){i.checked=!i.checked;alert(e.message)})};l.appendChild(i);l.appendChild(document.createTextNode(' '+k[1]));f.appendChild(l)});top.appendChild(f)}}
+      if(reqAuto){var f=el('div','hv-auto');f.appendChild(el('span','hv-note','Approve automatically:'));[['movies','Movies'],['tv','TV shows']].concat(reqMusicOn?[['music','Music']]:[]).forEach(function(k){var l=el('label','');var i=el('input');i.type='checkbox';i.checked=!!reqAuto[k[0]];i.onchange=function(){var next={movies:reqAuto.movies,tv:reqAuto.tv,music:reqAuto.music};next[k[0]]=i.checked;api('PUT','/requests/auto',next).then(function(r){reqAuto=r.auto;if(r.approved)draw()}).catch(function(e){i.checked=!i.checked;alert(e.message)})};l.appendChild(i);l.appendChild(document.createTextNode(' '+k[1]));f.appendChild(l)});top.appendChild(f)}}
     function card(r){var c=el('article','hv-req');var ph=el('div','hv-req-poster');reqPoster(r.media_type,r.tmdb_id,ph,r.title||'');c.appendChild(ph);
       var b=el('div','hv-req-body');var tl=el('div','hv-pills-row');tl.appendChild(hvPill(r.media_type==='tv'?'Series':'Movie',r.media_type==='tv'?'var(--tv)':'var(--movie)',true));b.appendChild(tl);
       b.appendChild(el('h3','',r.title||'Untitled request'));
@@ -271,9 +271,15 @@
       var a=el('div','hv-acts');a.appendChild(hvBtn('Approve','',function(x){x.disabled=true;decideReq(r,'approve',draw)},true));a.appendChild(hvBtn('Decline','',function(x){x.disabled=true;decideReq(r,'decline',draw)}));b.appendChild(a);c.appendChild(b);return c}
     function draw(){loadReqs().then(function(list){cards.replaceChildren();
       if(list===null){drawTop(null);cards.appendChild(el('div','hv-empty','Requests are not set up, or Seerr could not be reached. Set it under Settings › Public page.'));return}
-      setReqBadge(list.length);drawTop(list.length);
-      if(!list.length)cards.appendChild(el('div','hv-empty','Nothing is waiting for approval.'));
-      list.forEach(function(r){cards.appendChild(card(r))})})}
+      setReqBadge(list.length+reqMusic.length);drawTop(list.length+reqMusic.length);
+      if(!list.length&&!reqMusic.length)cards.appendChild(el('div','hv-empty','Nothing is waiting for approval.'));
+      list.forEach(function(r){cards.appendChild(card(r))});
+      reqMusic.forEach(function(m){cards.appendChild(musicCard(m))})})}
+    function musicCard(m){var c=el('article','hv-req');var ph=el('div','hv-req-poster hv-artist');if(m.image){var im=el('img');im.src=m.image;im.alt='';ph.appendChild(im)}else ph.appendChild(el('span','',(m.name||'?').slice(0,1)));c.appendChild(ph);
+      var b=el('div','hv-req-body');var tl=el('div','hv-pills-row');tl.appendChild(hvPill('Music · whole artist','var(--music)',true));b.appendChild(tl);b.appendChild(el('h3','',m.name));
+      var meta=[m.detail||'',m.requestedAt&&m.requestedAt[0]!=='0'?ago(m.requestedAt)+' ago':''].filter(Boolean).join(' · ');if(meta)b.appendChild(el('div','hv-meta',meta));
+      var a=el('div','hv-acts');function go(action,x){x.disabled=true;api('POST','/music-requests/'+encodeURIComponent(m.id)+'/'+action).then(draw).catch(function(e){if(e.status===401)fail(e);else{alert(e.message);draw()}})}
+      a.appendChild(hvBtn('Approve','',function(x){go('approve',x)},true));a.appendChild(hvBtn('Decline','',function(x){go('decline',x)}));b.appendChild(a);c.appendChild(b);return c}
     draw();timer=setInterval(draw,15000)}
   // Anime (C3, C4): the show folders of the feed libraries, followed shows,
   // nyaa search and gap filling, in the arrs' style.

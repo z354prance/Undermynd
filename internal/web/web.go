@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/z354prance/undermynd/internal/attention"
+	"github.com/z354prance/undermynd/internal/state"
 	"github.com/z354prance/undermynd/internal/tdarr"
 	"github.com/z354prance/undermynd/internal/usenet"
 	"io/fs"
@@ -48,7 +49,10 @@ const (
 )
 
 type Server struct {
-	Store    *store.Store
+	Store *store.Store
+	// Blobs keeps small state (music requests); nil: in memory.
+	Blobs    state.Blobs
+	musicMem []musicRequest
 	Engine   *pipeline.Engine
 	Cfg      *config.Config
 	Auth     *auth.Auth
@@ -178,6 +182,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /admin/api/requests/test", s.guard(s.admin(s.requestsTest)))
 	mux.HandleFunc("GET /admin/api/requests", s.admin(s.requestsAdminList))
 	mux.HandleFunc("PUT /admin/api/requests/auto", s.guard(s.admin(s.requestsAuto)))
+	mux.HandleFunc("POST /admin/api/music-requests/{id}/{action}", s.guard(s.admin(s.musicDecide)))
 	mux.HandleFunc("POST /admin/api/requests/{id}/{action}", s.guard(s.admin(s.requestsDecide)))
 	mux.HandleFunc("POST /admin/api/playback/test", s.guard(s.admin(s.playbackTest)))
 	mux.HandleFunc("POST /admin/api/metadata/test", s.guard(s.admin(s.metadataTest)))

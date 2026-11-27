@@ -73,7 +73,7 @@ func (s *Server) seerrAdmin() *seerr.Client {
 }
 
 func (s *Server) requestStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, map[string]bool{"enabled": s.seerrPublic() != nil})
+	writeJSON(w, map[string]bool{"enabled": s.seerrPublic() != nil, "music": s.musicOn()})
 }
 
 func (s *Server) requestSearch(w http.ResponseWriter, r *http.Request) {
@@ -169,13 +169,24 @@ func (s *Server) requestsPending(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"requests": []any{}, "errors": []string{"Seerr is unavailable"}})
 		return
 	}
-	writeJSON(w, map[string]any{"requests": list, "errors": []string{}})
+	all := make([]any, 0, len(list))
+	for _, p := range list {
+		all = append(all, p)
+	}
+	if s.Auth != nil && s.signedIn(r) {
+		waiting, _ := s.musicLists()
+		for _, m := range waiting {
+			all = append(all, map[string]any{"id": "music:" + m.ID, "source": "hyvemynd", "media_type": "music", "title": m.Name, "status": "pending", "created_at": m.RequestedAt})
+		}
+	}
+	writeJSON(w, map[string]any{"requests": all, "errors": []string{}})
 }
 
 func (s *Server) requestsAdminList(w http.ResponseWriter, r *http.Request) {
 	c := s.seerrAdmin()
 	if c == nil {
-		writeJSON(w, map[string]any{"requests": []any{}})
+		waiting, decided := s.musicLists()
+		writeJSON(w, map[string]any{"requests": []any{}, "auto": s.autoView(), "music": waiting, "musicDecided": decided, "musicOn": s.musicOn()})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
@@ -185,7 +196,8 @@ func (s *Server) requestsAdminList(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, map[string]any{"requests": list, "auto": s.autoView()})
+	waiting, decided := s.musicLists()
+	writeJSON(w, map[string]any{"requests": list, "auto": s.autoView(), "music": waiting, "musicDecided": decided, "musicOn": s.musicOn()})
 }
 
 type autoApprove struct {
@@ -224,6 +236,16 @@ func (s *Server) requestsAuto(w http.ResponseWriter, r *http.Request) {
 						approved++
 					}
 				}
+			}
+		}
+	}
+	if in.Music && !was.AutoMusic {
+		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+		defer cancel()
+		waiting, _ := s.musicLists()
+		for _, m := range waiting {
+			if _, err := s.decideMusic(ctx, m.ID, "approve"); err == nil {
+				approved++
 			}
 		}
 	}

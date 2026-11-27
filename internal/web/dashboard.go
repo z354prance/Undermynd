@@ -50,6 +50,8 @@ func (s *Server) dashboardRoutes(mux *http.ServeMux, files http.Handler) {
 	mux.HandleFunc("GET /api/v1/media-request/title", s.requestTitle)
 	mux.HandleFunc("GET /api/v2/onway", s.onway)
 	mux.HandleFunc("POST /api/v1/media-request", s.requestCreate)
+	mux.HandleFunc("GET /api/v1/music-request/search", s.musicSearch)
+	mux.HandleFunc("POST /api/v1/music-request", s.musicRequestCreate)
 	mux.HandleFunc("GET /api/v1/requests", s.requestsPending)
 	mux.HandleFunc("POST /api/v1/requests/{serviceID}/{requestID}/{action}", s.guard(s.admin(s.requestsDecide)))
 	mux.HandleFunc("GET /api/v1/donations", func(w http.ResponseWriter, r *http.Request) {
