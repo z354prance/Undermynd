@@ -583,6 +583,21 @@
       p.appendChild(pre);setTimeout(function(){pre.scrollTop=pre.scrollHeight},0);return p}
     function act(id,a,name,b){if(a==='remove'&&!confirm('Remove '+name+'? Its files are deleted.'))return;b.disabled=true;
       api('POST','/clients/'+encodeURIComponent(id)+'/'+a).then(load).catch(function(e){b.disabled=false;alertMsg(e.message)})}
+    // The client tabs: a table in the style of each client's own app.
+    var COLS={TorBox:['Name','At TorBox','Size',''],Usenet:['#','Name','Progress','Size','Time left',''],Torrent:['Name','Progress','Status','Seeds','Peers','Down','Up','Time left','']};
+    function bar(x,color){var w=el('div','hv-tbar');var b=el('div','hv-bar');var f=el('span');f.style.width=Math.round((x.progress||0)*100)+'%';f.style.background=color;b.appendChild(f);w.appendChild(el('span','',Math.round((x.progress||0)*100)+'%'));w.appendChild(b);return w}
+    function table(rows,past){var wrap=el('div','hv-twrap');var t=el('table','hv-table');var hr=el('tr');
+      (past?['Name','Finished','']:COLS[WHERE]).forEach(function(h){var th=el('th','',h);th.scope='col';hr.appendChild(th)});var th0=el('thead');th0.appendChild(hr);t.appendChild(th0);var tb=el('tbody');t.appendChild(tb);
+      rows.forEach(function(x){var r=el('tr',past&&x.state==='failed'?'bad':x.paused?'dim':'');function td(c,cls){var d=el('td',cls||'');if(typeof c==='string')d.textContent=c;else if(c)d.appendChild(c);r.appendChild(d);return d}
+        var nm=el('div','hv-tname');nm.appendChild(el('b','',x.name));var sub=[x.category];if(x.note&&(!past||x.state==='failed'))sub.push(x.note);if(!past&&x.stage&&WHERE!=='TorBox')sub.unshift(x.paused?'paused':x.stage);nm.appendChild(el('span','',sub.filter(Boolean).join(' · ')));
+        if(past){td(nm);td(({cleaned:'finished',imported:'imported',ready:'ready',failed:'failed'}[x.state]||x.state)+' '+ago(x.when)+' ago',x.state==='failed'?'bad':'')}
+        else if(WHERE==='TorBox'){td(nm);var at=el('div');at.appendChild(el('span','',x.paused?'paused':x.stage||'')) ;at.appendChild(bar(x,'var(--st-down)'));td(at);td(x.size?size(x.size):'')}
+        else if(WHERE==='Usenet'){td(x.position?String(x.position):'—','hv-tnum');td(nm);td(bar(x,x.stage==='downloading'||!x.stage?'var(--st-down)':'var(--warn)'));td(x.size?size(x.size):'');td(eta(x.eta)||'—')}
+        else{td(nm);td(bar(x,'var(--st-down)'));td(x.paused?'Paused':x.stage||'Downloading');td(String(x.seeds||0));td(String(x.peers||0));td(x.down?rate(x.down):'—');td(x.up?rate(x.up):'—');td(eta(x.eta)||'—')}
+        var a=el('div','hv-acts');a.appendChild(hvBtn(open[x.id]?'Hide':'Details','',function(){if(open[x.id]){delete open[x.id];draw(lastData)}else{open[x.id]=true;draw(lastData);fetchLog(x.id).then(function(){draw(lastData)})}}));
+        (x.can||[]).forEach(function(k){var L=labels[k];if(L){var b=hvBtn(L[0],'',function(bb){act(x.id,k,x.name,bb)});if(k==='remove')b.classList.add('bad');a.appendChild(b)}});[].forEach.call(a.children,function(b){b.classList.add('sm')});td(a,'hv-tacts');tb.appendChild(r);
+        if(open[x.id]){var dr=el('tr','hv-tdet');var dd=el('td');dd.colSpan=(past?3:COLS[WHERE].length);dd.appendChild(details(x));dr.appendChild(dd);tb.appendChild(dr)}});
+      wrap.appendChild(t);return wrap}
     function item(x,past){var r=el('div','hv-item');r.appendChild(hvPill(x.where||'Waiting',colors[x.where]||'',!!x.where));
       var t=el('div','hv-it');t.appendChild(el('b','',x.name));var bits=[];
       if(!past){bits.push(Math.round((x.progress||0)*100)+'%'+(x.size?' of '+size(x.size):''));
@@ -619,10 +634,12 @@
       card('Usenet','var(--movie)',d.builtin.usenet?['↓ '+rate(d.usenet.speed),(d.usenet.active?1:0)+' active · '+(d.usenet.queued||0)+' waiting']:['no provider'])}
       list.replaceChildren();
       if(!d.items.length)list.appendChild(el('div','hv-empty','Nothing downloading right now.'));
-      d.items.forEach(function(x){list.appendChild(item(x,false))});
+      else if(WHERE)list.appendChild(table(d.items,false));
+      else d.items.forEach(function(x){list.appendChild(item(x,false))});
       hist.replaceChildren();
       if(!d.history.length)hist.appendChild(el('div','hv-empty','Nothing in the last three days.'));
-      d.history.forEach(function(x){hist.appendChild(item(x,true))});
+      else if(WHERE)hist.appendChild(table(d.history,true));
+      else d.history.forEach(function(x){hist.appendChild(item(x,true))});
       if(first){first=false;if(addBox)buildAdd(d);if(limBox)buildLimits(d)}
     }
     function buildAdd(d){addBox.replaceChildren();addBox.appendChild(el('h3','','Add a download'));
@@ -785,23 +802,26 @@
   // Sonarr or Radarr and searched (watch history from Tracearr).
   function upgradesView(body){
     api('GET','/attention').then(function(d){body.replaceChildren();var a=d.settings||{};
-      body.appendChild(head('Upgrade what people watch','When a movie gets watched by two or more people in 30 days, or someone watches three or more episodes of a show in 14 days, HyveMynd moves it to the upgrade profile below in Radarr or Sonarr and starts the search. A show is searched the season being watched and the next one first, then one more season each time Sonarr finishes, starting the next show whenever the ones in progress have fewer than 10 downloads waiting (up to 3 at once). Titles already on that profile are left alone.'));
+      var upDesc='When a movie gets watched by two or more people in 30 days, or someone watches three or more episodes of a show in 14 days, HyveMynd moves it to the upgrade profile below in Radarr or Sonarr and starts the search. A show is searched the season being watched and the next one first, then one more season each time Sonarr finishes, starting the next show whenever the ones in progress have fewer than 10 downloads waiting (up to 3 at once). Titles already on that profile are left alone.';
       if(!d.tracearr)body.appendChild(el('div','err','Tracearr is not set up, so there is no watch history to read. Add it under Settings › Media server.'));
-      var c=el('div','card');c.appendChild(el('h4','','Settings'));c.appendChild(help('Watch history comes from Tracearr and is checked every hour.'));
+      var strip=el('div','hv-upstrip');var st0=d.status||{};strip.appendChild(el('i','hv-dot2 '+(a.on?'ok':'off')));var stt=el('div','hv-erow-t');stt.appendChild(el('b','',a.on?'Upgrading what people watch':'Upgrades are off'));
+      stt.appendChild(el('span','',['watch history from Tracearr',a.tvProfile?'shows → '+a.tvProfile:'',a.movieProfile?'movies → '+a.movieProfile+' (up to '+(a.moviePerDay||3)+' a day)':'',st0.lastRun&&st0.lastRun[0]!=='0'?'checked '+ago(st0.lastRun)+' ago':''].filter(Boolean).join(' · ')));strip.appendChild(stt);
+      var setWrap=el('div');setWrap.hidden=!!a.on;
+      strip.appendChild(hvBtn('Check now','refresh',function(b){b.disabled=true;api('POST','/attention/run').then(function(){upgradesView(body)}).catch(function(e){b.disabled=false;alertMsg(e.message)})}));
+      strip.appendChild(hvBtn('Settings','',function(){setWrap.hidden=!setWrap.hidden}));body.appendChild(strip);body.appendChild(setWrap);
+      var c=el('div','card');c.appendChild(el('h4','','Settings'));c.appendChild(help(upDesc+' Watch history comes from Tracearr and is checked every hour.'));
       var on=row(c,'Switch and search automatically',{type:'checkbox',value:a.on});
       function pick(label,list,val,hint){var w=el('div','fld');w.appendChild(el('label','',label));var sl=el('select');sl.appendChild(new Option('— not for '+hint+' —',''));(list||[]).forEach(function(n){sl.appendChild(new Option(n,n))});if(val&&(list||[]).indexOf(val)<0)sl.appendChild(new Option(val+' (not found)',val));sl.value=val||'';w.appendChild(sl);c.appendChild(w);return sl}
       var tv=pick('Sonarr upgrade profile',d.profiles&&d.profiles.sonarr,a.tvProfile,'shows');
       var mv=pick('Radarr upgrade profile',d.profiles&&d.profiles.radarr,a.movieProfile,'movies');
       c.appendChild(help('Shows go one at a time: the next show starts once every season of the one before has been searched.'));
       var md=row(c,'Most movies a day (Radarr)',{type:'number',value:a.moviePerDay||3,help:'Anything over the limit waits its turn; movies you add yourself do not count.'});
-      body.appendChild(c);
-      saveBar(body,function(m){m.className='msg';m.textContent='saving…';
-        api('PUT','/attention',{on:on.checked,tvProfile:tv.value,movieProfile:mv.value,perDay:a.perDay||3,moviePerDay:parseInt(md.value,10)||3}).then(function(){m.className='msg ok';m.textContent='saved'}).catch(function(e){m.className='msg err';m.textContent=e.message})});
-      split(body);
-      var st=d.status||{actions:[]},box=hvBox('Moved to the upgrade profile');
-      var tools=el('div','hv-pagehead');tools.appendChild(el('span','hv-note',st.lastRun&&st.lastRun[0]!=='0'?'Last checked '+ago(st.lastRun)+' ago':'Not checked yet'));tools.appendChild(el('span','hv-sp'));
-      tools.appendChild(hvBtn('Check now','refresh',function(b){b.disabled=true;api('POST','/attention/run').then(function(){upgradesView(body)}).catch(function(e){b.disabled=false;alertMsg(e.message)})}));
-      box.appendChild(tools);
+      setWrap.appendChild(c);
+      saveBar(setWrap,function(m){m.className='msg';m.textContent='saving…';
+        api('PUT','/attention',{on:on.checked,tvProfile:tv.value,movieProfile:mv.value,perDay:a.perDay||3,moviePerDay:parseInt(md.value,10)||3}).then(function(){m.className='msg ok';m.textContent='saved';setTimeout(function(){upgradesView(body)},800)}).catch(function(e){m.className='msg err';m.textContent=e.message})});
+      split(setWrap);
+      var st=d.status||{actions:[]},box=hvBox('Being upgraded');
+
       if(st.lastError)box.appendChild(el('div','err',st.lastError));
       var l=el('div','hv-list');
       if(!(st.actions||[]).length)l.appendChild(el('div','hv-empty','Nothing moved yet.'));
@@ -816,10 +836,10 @@
         dd.forEach(function(x){var r=el('div','hv-item');r.appendChild(hvPill('Movie','var(--movie)',true));var t=el('div','hv-it');t.appendChild(el('b','',x.title+(x.year?' ('+x.year+')':'')));t.appendChild(el('span','',x.reason));t.appendChild(el('span','hv-warn-t',x.why));r.appendChild(t);
           var bs=el('div','hv-acts');[['Add to Radarr',true],['Dismiss',false]].forEach(function(o){bs.appendChild(hvBtn(o[0],o[1]?'plus':'x',function(b){b.disabled=true;api('POST','/attention/decide',{tmdb:x.tmdb,add:o[1]}).then(function(){upgradesView(body)}).catch(function(e){b.disabled=false;alertMsg(e.message)})},o[1]))});r.appendChild(bs);dl.appendChild(r)});
         db.appendChild(dl);body.appendChild(db)}
+      body.appendChild(box);
       var q=st.queue||[];if(q.length){var qb=hvBox('Waiting for their turn');qb.appendChild(el('p','hv-note','Shows start one at a time: the next starts when the shows in progress have fewer than 10 downloads waiting in Sonarr between them (up to 3 shows at once), or when the show in progress is done or has upgraded nothing for 12 hours; movies over the daily limit go on the next days. Oldest first, even after the watching is older than the window that counted it.'));var ql=el('div','hv-list');
         q.forEach(function(x,i){var r=el('div','hv-item slim');r.appendChild(hvPill(String(i+1),'var(--dim)'));var t=el('div','hv-it');t.appendChild(el('b','',x.title));t.appendChild(el('span','',(x.kind==='movie'?'Movie':'Show')+' · '+x.reason));r.appendChild(t);r.appendChild(el('span','hv-note','waiting '+ago(x.since)));ql.appendChild(r)});
         qb.appendChild(ql);body.appendChild(qb)}
-      body.appendChild(box);
     }).catch(fail)}
   // Upgrade progress: one segment per season, filled to the share of its
   // episodes already at the upgrade quality (Sonarr's own cutoff check).
@@ -934,9 +954,9 @@
     conn.appendChild(help('In Sonarr, Radarr or Lidarr: Settings → Download Clients → add. Use SABnzbd for usenet and qBittorrent for torrents.'));
     [['host',host],['port','8081 (the LAN-only machine port)'],['SABnzbd API key','the client password (see Settings › Server)'],['qBittorrent login','username '+S.clientUser+' and the client password'],['category','one of the names below, exactly']].forEach(function(p){var d=el('div','kv');d.appendChild(el('span','k',p[0]));d.appendChild(el('span','v',p[1]));conn.appendChild(d)});
     body.appendChild(conn);
-    var cats=el('div');body.appendChild(cats);
+    body.appendChild(el('h2','hv-grph','CATEGORIES'));var cats=el('div','hv-erows');body.appendChild(cats);
     function add(c){
-      var card=el('div','card cat kind-'+(c.kind||'none'));var f={};var g=el('div','grid3');f.orig=c.name||'';
+      var cw=el('div','hv-erow');var top=el('div','hv-erow-top');cw.appendChild(top);var card=el('div','hv-erow-ed');card.hidden=!!c.name;cw.appendChild(card);var f={};var g=el('div','grid3');f.orig=c.name||'';
       f.name=row(g,'category name',{value:c.name,help:'what the arr sends, e.g. tv'});
       var w=el('div','fld');w.appendChild(el('label','','arr type'));var k=el('select');[['sonarr','sonarr'],['radarr','radarr'],['lidarr','lidarr'],['rss','no arr (RSS / watch folder)'],['files','plain files (software and anything else, kept as it is)']].forEach(function(p){var x=p[0];var o=el('option','',p[1]);o.value=x;if(c.kind===x)o.selected=true;k.appendChild(o)});w.appendChild(k);g.appendChild(w);f.kind=k;
       f.arrUrl=row(g,'arr address',{value:c.arrUrl,ph:'http://10.0.0.5:8989',help:'so HyveMynd can confirm the import'});
@@ -945,16 +965,22 @@
       f.libraryDir=row(g,'library folder',{value:c.libraryDir,ph:'/media/Anime',help:'“no arr” categories: finished episodes are matched to a show folder here. Plain files: each download is moved here as its own folder, every file kept, with no malicious-file check and no Tdarr.'});
       f.keepNames=row(g,'keep release names',{type:'checkbox',value:c.keepNames,help:'off (the default): a placed episode is named after its show folder, the way that folder names its files'});
       var pw=el('div','fld');pw.appendChild(el('label','','if the transcode fails'));var pf=el('select');[['fail','fail the grab (the arr blocklists and searches again)'],['passthrough','keep the original file']].forEach(function(x){var o=el('option','',x[1]);o.value=x[0];if((c.onTranscodeFail||'fail')===x[0])o.selected=true;pf.appendChild(o)});pw.appendChild(pf);g.appendChild(pw);f.onFail=pf;
-      card.appendChild(g);var tt=el('button','','test arr connection');var tmsg=el('span','msg');tmsg.style.marginLeft='12px';
+      card.appendChild(g);var tt=el('button','','Test arr connection');var tmsg=el('span','msg');tmsg.style.marginLeft='12px';
       tt.onclick=function(){tmsg.className='msg';tmsg.textContent='testing…';api('POST','/arrs/test',{name:f.name.value,origName:f.orig,kind:f.kind.value,url:f.arrUrl.value,apiKey:f.arrApiKey.value}).then(function(r){tmsg.className='msg ok';tmsg.textContent='connected: '+r.app+' '+r.version}).catch(function(e){tmsg.className='msg err';tmsg.textContent=e.message})};
       card.appendChild(tt);card.appendChild(tmsg);
-      var sw=el('button','','place files already in this category\u2019s folder');sw.style.marginLeft='12px';sw.title='uses the saved library folder; save first if you just changed it';var smsg=el('span','msg');smsg.style.marginLeft='12px';
+      var sw=el('button','','Place files already in this category\u2019s folder');sw.style.marginLeft='12px';sw.title='uses the saved library folder; save first if you just changed it';var smsg=el('span','msg');smsg.style.marginLeft='12px';
       sw.onclick=function(){smsg.className='msg';smsg.textContent='placing…';api('POST','/library/sweep',{name:f.orig||f.name.value}).then(function(r){smsg.className='msg ok';smsg.textContent=r.result}).catch(function(e){smsg.className='msg err';smsg.textContent=e.message})};
       if(c.libraryDir&&c.kind!=='files'){card.appendChild(sw);card.appendChild(smsg)}card.appendChild(document.createElement('br'));
-      var rm=el('button','bad','remove category');rm.onclick=function(){card.remove()};card.appendChild(rm);card._f=f;cats.appendChild(card)
+      var rm=el('button','bad','Remove category');rm.onclick=function(){cw.remove()};card.appendChild(rm);cw._f=f;cats.appendChild(cw);
+      var KN={sonarr:['Sonarr','var(--tv)'],radarr:['Radarr','var(--movie)'],lidarr:['Lidarr','var(--music)'],rss:['No arr: feeds and folders','var(--anime)'],files:['Plain files','var(--dim)']};
+      function sum(){top.replaceChildren();var kn=KN[f.kind.value]||[f.kind.value,'var(--dim)'];var arr=/sonarr|radarr|lidarr/.test(f.kind.value);
+        top.appendChild(el('i','hv-dot2 '+(arr&&!f.arrUrl.value?'bad':'ok')));var t=el('div','hv-erow-t');var nb=el('b','',f.name.value||'New category');t.appendChild(nb);
+        t.appendChild(el('span','',[arr?(f.arrUrl.value||'no address'):(f.libraryDir.value||'complete folder'),f.kind.value==='files'?'kept as it is':f.transcode.checked?'through Tdarr':'no Tdarr'].join(' · ')));top.appendChild(t);
+        top.appendChild(hvPill(kn[0],kn[1]));top.appendChild(hvBtn(card.hidden?'Edit':'Done','',function(){card.hidden=!card.hidden;sum()}))}
+      [].forEach.call(card.querySelectorAll('input,select'),function(i){i.addEventListener('input',sum);i.addEventListener('change',sum)});sum()
     }
     S.categories.forEach(add);
-    var a=el('button','','+ add category');a.onclick=function(){add({kind:'radarr',transcode:true})};body.appendChild(a);
+    var a=hvBtn('Add a category','plus',function(){add({kind:'radarr',transcode:true})});a.style.marginTop='10px';body.appendChild(a);
     saveBar(body,function(m){save(function(b){b.categories=[].map.call(cats.children,function(c){var f=c._f;return {name:f.name.value,origName:f.orig,kind:f.kind.value,libraryDir:f.libraryDir.value,arrUrl:f.arrUrl.value,arrApiKey:f.arrApiKey.value,transcode:f.transcode.checked,onTranscodeFail:f.onFail.value,keepNames:f.keepNames.checked}})},m)})
   }
 

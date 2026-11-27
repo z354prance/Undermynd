@@ -501,3 +501,29 @@ body.ui .hv-body button.hv-prov{height:auto;display:flex;flex-direction:column;a
 body.ui .hv-prov b{font:600 15px var(--ui);color:var(--text)}
 body.ui .hv-prov span.ok{color:#7ee08a}
 body.ui .hv-body button.hv-prov.on{background:var(--accent-soft);border:2px solid var(--accent)}
+/* client tables */
+body.ui .hv-twrap{overflow-x:auto;border-radius:10px;border:1px solid var(--line)}
+body.ui .hv-table{width:100%;min-width:760px;border-collapse:collapse;background:var(--panel);font:400 14px var(--ui)}
+body.ui .hv-table th{text-align:left;padding:10px 12px;font:500 13px var(--ui);color:var(--dim);border-bottom:1px solid var(--line);white-space:nowrap}
+body.ui .hv-table td{padding:11px 12px;border-top:1px solid var(--line);vertical-align:middle;white-space:nowrap}
+body.ui .hv-table tr:first-child td{border-top:0}
+body.ui .hv-table tr.bad td{background:#2a1a1c}
+body.ui .hv-table tr.dim td{color:var(--dim)}
+body.ui .hv-table td.bad{color:#ff9a9a}
+body.ui .hv-table td.hv-tnum{color:var(--dim)}
+body.ui .hv-tname{display:flex;flex-direction:column;gap:2px;white-space:normal;min-width:220px;max-width:460px}
+body.ui .hv-tname b{font-weight:600;overflow-wrap:anywhere}
+body.ui .hv-tname span{font-size:12px;color:var(--dim);overflow-wrap:anywhere}
+body.ui .hv-tbar{display:flex;flex-direction:column;gap:5px;min-width:130px}
+body.ui .hv-tbar .hv-bar{width:100%;max-width:none}
+body.ui .hv-tacts .hv-acts{justify-content:flex-end;flex-wrap:nowrap}
+body.ui .hv-table td.hv-tacts{text-align:right}
+body.ui .hv-tdet td{background:#181a1b;white-space:normal}
+body.ui .hv-upstrip{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:14px 16px;margin-bottom:16px;border-radius:10px;background:var(--panel);border:1px solid var(--line)}
+/* settings forms: sentence-case labels, status chips like the rest */
+body.ui .hv-body .fld>label::first-letter,body.ui .hv-body .main button::first-letter{text-transform:uppercase}
+body.ui .hv-body .chip2{display:inline-block;border:0;border-radius:10px;padding:2px 9px;font:600 12px var(--ui);vertical-align:middle}
+body.ui .hv-body .chip2.ok{background:rgba(63,185,80,.16);color:#7ee08a}
+body.ui .hv-body .chip2.dim{background:var(--raise);color:var(--dim)}
+body.ui .hv-body .chip2::before{content:none}
+body.ui .hv-body .sec{font:700 13px var(--ui);letter-spacing:.08em;color:var(--dim);text-transform:uppercase;margin:22px 0 8px}
