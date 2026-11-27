@@ -53,7 +53,7 @@
     c.appendChild(f);(p||k).focus();
   }
   // ---------------------------------------------------------------- app
-  var tab='overview',detailId=null,actCount=null;
+  var tab=(location.hash||'').replace(/^#/,'')||'overview',detailId=null,actCount=null;
   function app(){
     logoutBtn.hidden=false;logoutBtn.onclick=function(){api('POST','/logout').then(start)};
     root.replaceChildren();
@@ -61,32 +61,58 @@
     // The menu follows what HyveMynd does beside the arrs: downloads in,
     // requests from visitors, the library it watches, and its settings.
     var NAV=[
-      {id:'overview',label:'Overview',icon:'s_over',pages:[['overview','Overview']]},
-      {id:'downloads',label:'Downloads',icon:'s_dl',pages:[['jobs','On the way'],['downloaders','Clients'],['rss','Feeds'],['reencode','Re-encode'],['usenet','Usenet'],['vpn','VPN']]},
-      {id:'requests',label:'Requests',icon:'s_req',pages:[['requests','Media'],['access','Accounts']]},
-      {id:'library',label:'Library',icon:'s_lib',pages:[['missing','Missing'],['anime','Anime'],['upgrades','Upgrades']]},
-      {id:'settings',label:'Settings',icon:'s_sys',pages:[['arrs','Arrs'],['clients','TorBox'],['transcode','Tdarr'],['public','Public page'],['playback','Media server'],['system','Server'],['log','Log']]}];
+      {id:'home',label:'Home',icon:'s_over',pages:[['overview','Home']]},
+      {id:'downloads',label:'Downloads',icon:'s_dl',pages:[['jobs','Pipeline'],['torbox','TorBox'],['usenetq','Usenet'],['torrents','Torrents'],['rss','Feeds'],['add','Add a download']]},
+      {id:'requests',label:'Requests',icon:'s_req',pages:[['requests','Requests']]},
+      {id:'library',label:'Library',icon:'s_lib',pages:[['missing','Missing'],['upgrades','Upgrades'],['anime','Anime']]},
+      {id:'settings',label:'Settings',icon:'s_sys',pages:[['start','Settings']],settings:true}];
+    // Settings: one page with a menu in groups (pinned v4).
+    var SETTINGS=[['','Getting started',[['start','Getting started']]],
+      ['Connections',[['arrs','Sonarr · Radarr · categories','arr sonarr radarr lidarr category categories folders library'],['playback','Media server · Tracearr','emby jellyfin tracearr playback'],['public','Public page · Seerr','seerr requests donate public'],['transcode','Tdarr','tdarr transcode'],['metadata','Metadata','tmdb anime lists']]],
+      ['Downloading',[['clients','TorBox','torbox token'],['usenet','Usenet providers','usenet news provider server connections'],['vpn','VPN and torrents','vpn wireguard pia proton mullvad nord torrent port'],['limits','Speed limits','speed limit bandwidth'],['reencode','Re-encode','av1 re-encode']]],
+      ['Server',[['system','Server · sign-in · backups','password backup intake client login'],['log','Log','log']]]];
+    var SETTING_IDS={};SETTINGS.forEach(function(g){(g[2]||g[1]).forEach(function(p){SETTING_IDS[p[0]]=p})});
+    if(tab==='downloaders')tab='torbox';
     function first(p){return p[2]?p[2][0][0]:p[0]}
     var cur=null,curPage=null;NAV.forEach(function(sec){sec.pages.forEach(function(p){if(p[0]===tab||(p[2]&&p[2].some(function(q){return q[0]===tab}))){cur=sec;curPage=p}})});
+    if(!cur&&SETTING_IDS[tab]){cur=NAV[4];curPage=cur.pages[0]}
     if(!cur){cur=NAV[0];curPage=cur.pages[0];tab='overview'}
-    function go(t){stopLive();tab=t;detailId=null;if(t==='anime'){aView.page='list'}app()}
+    function go(t){stopLive();tab=t;detailId=null;try{history.replaceState(null,'','#'+t)}catch(x){}if(t==='anime'){aView.page='list'}app()}
     var shell=el('div','hv'),side=el('nav','hv-rail');side.setAttribute('aria-label','Sections');
     var brand=el('a','hv-brand');brand.href='/admin';brand.title='HyveMynd';var bi=el('img');bi.src='/assets/logo.svg';bi.alt='HyveMynd';brand.appendChild(bi);side.appendChild(brand);
     actCount=null;
     NAV.forEach(function(sec){var b=el('button','hv-sec'+(sec===cur?' on':''));b.type='button';b.appendChild(svg(sec.icon));b.appendChild(el('span','',sec.label));if(sec===cur)b.setAttribute('aria-current','page');
       if(sec.id==='requests'){actCount=el('span','hv-count');actCount.hidden=true;b.appendChild(actCount)}
+      if(sec.id==='home'){homeCount=el('span','hv-count bad');homeCount.hidden=true;b.appendChild(homeCount)}
+      if(sec.id==='downloads'){dlCount=el('span','hv-count dim');dlCount.hidden=true;b.appendChild(dlCount)}
       b.onclick=function(){go(first(sec.pages[0]))};tabBtns['sec:'+sec.id]=b;side.appendChild(b)});
     side.appendChild(el('span','hv-sp'));var pub=el('a','hv-sec hv-extra');pub.href='/';pub.appendChild(svg('s_pub'));pub.appendChild(el('span','','Public'));side.appendChild(pub);
     var so=el('button','hv-sec hv-extra');so.type='button';so.appendChild(svg('s_out'));so.appendChild(el('span','','Sign out'));so.onclick=function(){api('POST','/logout').then(start)};side.appendChild(so);
-    api('GET','/requests').then(function(d){var n=(d.requests||[]).filter(function(r){return r.status==='pending'||r.Status==='pending'}).length;if(n&&actCount){actCount.textContent=n;actCount.hidden=false;actCount.setAttribute('aria-label',n+' requests waiting')}}).catch(function(){});
+    api('GET','/requests').then(function(d){var n=(d.requests||[]).filter(function(r){return r.status==='pending'||r.Status==='pending'}).length+(d.music||[]).length;if(n&&actCount){actCount.textContent=n;actCount.hidden=false;actCount.setAttribute('aria-label',n+' requests waiting')}}).catch(function(){});
+    api('GET','/jobs').then(function(d){railCounts(Array.isArray(d)?d:(d.jobs||[]))}).catch(function(){});
     var mainCol=el('div','hv-main'),head=el('header','hv-head');head.appendChild(el('h1','',cur.label));
-    if(cur.pages.length>1){var pl=el('div','hv-pills');pl.setAttribute('role','tablist');cur.pages.forEach(function(p){var b=el('button',p===curPage?'on':'',p[1]);b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-selected',p===curPage?'true':'false');b.onclick=function(){go(first(p))};tabBtns[p[0]]=b;pl.appendChild(b)});head.appendChild(pl)}
+    if(cur.pages.length>1&&!cur.settings){var pl=el('div','hv-pills');pl.setAttribute('role','tablist');cur.pages.forEach(function(p){var b=el('button',p===curPage?'on':'',p[1]);b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-selected',p===curPage?'true':'false');b.onclick=function(){go(first(p))};tabBtns[p[0]]=b;pl.appendChild(b)});head.appendChild(pl)}
     var out=el('button','hv-out','Sign out');out.type='button';out.onclick=function(){api('POST','/logout').then(start)};head.appendChild(out);
     mainCol.appendChild(head);
     if(curPage[2]){var tb=el('div','hv-tabs');tb.setAttribute('role','tablist');curPage[2].forEach(function(q){var b=el('button',q[0]===tab?'on':'',q[1]);b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-selected',q[0]===tab?'true':'false');b.onclick=function(){go(q[0])};tabBtns[q[0]]=b;tb.appendChild(b)});mainCol.appendChild(tb)}
     var bodyWrap=el('div','hv-body');mainCol.appendChild(bodyWrap);
     var main=el('main','main'),body=el('div');main.appendChild(body);bodyWrap.appendChild(main);shell.appendChild(side);shell.appendChild(mainCol);root.appendChild(shell);
-    if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else if(tab==='requests')requestsView(body);else if(tab==='missing')missingView(body);else if(tab==='upgrades')upgradesView(body);else if(tab==='reencode')reencodeView(body);else if(tab==='log')logView(body);else if(tab==='access')accessView(body);else if(tab==='anime')animeView(body);else if(tab==='vpn')vpnView(body);else if(tab==='usenet')usenetView(body);else if(tab==='downloaders')clientsView(body);else settingsView(body);
+    if(cur.settings){settingsShell(body,SETTINGS,go);}
+    else if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else if(tab==='requests')requestsView(body);else if(tab==='missing')missingView(body);else if(tab==='upgrades')upgradesView(body);else if(tab==='anime')animeView(body);
+    else if(tab==='torbox'||tab==='usenetq'||tab==='torrents')clientsView(body,tab);else if(tab==='add')addView(body);else settingsView(body);
+  }
+  var homeCount=null,dlCount=null;
+  function railCounts(rows){var bad=rows.filter(function(r){return r.attention&&r.state!=='cleaned'}).length,mv=rows.filter(function(r){return WORKING[r.group]}).length;
+    if(homeCount){homeCount.textContent=bad;homeCount.hidden=!bad;homeCount.setAttribute('aria-label',bad+' need you')}if(dlCount){dlCount.textContent=mv;dlCount.hidden=!mv;dlCount.setAttribute('aria-label',mv+' moving')}}
+  // The settings page: a menu in groups with a search box, and the chosen page beside it.
+  function settingsShell(body,groups,go){
+    var wrap=el('div','hv-set');var nav=el('nav','hv-setnav');nav.setAttribute('aria-label','Settings sections');var main=el('div','hv-setmain');wrap.appendChild(nav);wrap.appendChild(main);body.appendChild(wrap);
+    var sw=el('label','hv-setsearch');sw.appendChild(svg('search'));var si=el('input');si.type='search';si.placeholder='Find a setting';si.setAttribute('aria-label','Find a setting');sw.appendChild(si);nav.appendChild(sw);
+    var links=[];
+    groups.forEach(function(g){var items=g[2]||g[1],title=g[2]?g[0]:g[0];var box=el('div','hv-setgrp');if(title)box.appendChild(el('div','hv-setgh',title.toUpperCase()));
+      items.forEach(function(p){var a=el('button','hv-setlink'+(p[0]===tab?' on':''),p[1]);a.type='button';if(p[0]===tab)a.setAttribute('aria-current','page');a.onclick=function(){go(p[0])};a.dataset.k=(p[1]+' '+(p[2]||'')).toLowerCase();links.push(a);box.appendChild(a)});nav.appendChild(box)});
+    si.oninput=function(){var q=si.value.trim().toLowerCase();links.forEach(function(a){a.hidden=!!q&&a.dataset.k.indexOf(q)<0});[].forEach.call(nav.querySelectorAll('.hv-setgrp'),function(g){g.hidden=![].some.call(g.querySelectorAll('.hv-setlink'),function(a){return !a.hidden})})};
+    if(tab==='start')startView(main);else if(tab==='usenet')usenetView(main);else if(tab==='vpn')vpnView(main);else if(tab==='reencode')reencodeView(main);else if(tab==='log')logView(main);else if(tab==='limits')limitsView(main);else settingsView(main);
   }
   function fail(e){if(e.status===401){start()}else{var d=el('div','err',e.message);root.appendChild(d)}}
   function ago(t){var s=Math.max(0,(Date.now()-new Date(t))/1000);if(s<90)return Math.round(s)+'s';if(s<5400)return Math.round(s/60)+'m';if(s<172800)return Math.round(s/3600)+'h';return Math.round(s/86400)+'d'}
@@ -152,44 +178,68 @@
     r.appendChild(el('span','hv-age',ago(j.changed||j.created)));
     var acts=(m[1]==='failed'||m[1]==='stalled'||j.state==='ready')?jobActions(j):el('div');acts.className='hv-acts';[].forEach.call(acts.querySelectorAll('button'),function(b){b.className='hv-btn sm'+(/\bgo\b/.test(b.className)?' primary':/\bbad\b/.test(b.className)?' bad':'');b.textContent=cap(b.textContent)});r.appendChild(acts);return r}
   var WORKING={queued:1,downloading:1,processing:1,finishing:1};
+  // Downloads › Pipeline (pinned v4): problems first, a six-step bar per
+  // download, and a details panel with a plain verdict and the timeline.
+  var pipeFilter='all',pipeLog=false;
+  function stepBar(j){var m=jobStage(j),at=STAGES6.indexOf(m[0]);var b=el('div','hv-steps');b.setAttribute('role','img');b.setAttribute('aria-label',jobStageText(j));
+    STAGES6.forEach(function(st,i){var c=el('span','');if(i<at||m[1]==='done')c.className='dn';else if(i===at){c.className=m[1]==='failed'?'bad':m[1]==='stalled'?'warn':'cur k-'+st;if(m[1]==='working'&&j.progress)c.style.setProperty('--p',Math.round(j.progress*100)+'%')}b.appendChild(c)});return b}
   function jobsView(body){
-    var bar=el('div','toolbar');var pills=el('div','pills');bar.appendChild(pills);
-    var q=el('input');q.placeholder='search title';q.value=jobFilter.q;q.oninput=function(){jobFilter.q=q.value;drawRows()};bar.appendChild(q);
-    var ss=el('select');[['all','all sources'],['sonarr','sonarr'],['radarr','radarr'],['lidarr','lidarr'],['rss','rss']].forEach(function(x){var o=el('option','',x[1]);o.value=x[0];if(jobFilter.source===x[0])o.selected=true;ss.appendChild(o)});ss.onchange=function(){jobFilter.source=ss.value;drawRows()};bar.appendChild(ss);
-    bar.appendChild(el('span','sp'));
-    var pb=el('button','','');function pauseLabel(){pb.textContent=paused?'resume intake':'pause intake';pb.className=paused?'go':''}
-    pb.onclick=function(){api('POST','/intake',{paused:!paused}).then(function(r){paused=r.paused;pauseLabel();banner()}).catch(fail)};pauseLabel();bar.appendChild(pb);
-    body.appendChild(bar);var note=el('div','notice');body.appendChild(note);var host=el('div');body.appendChild(host);
-    function banner(){note.textContent=paused?'Intake is paused: new grabs are accepted but held until you resume.':'';note.style.display=paused?'block':'none';pauseLabel()}
-    function inGroup(r,g){
-      if(g==='attention')return r.attention&&r.state!=='cleaned';
-      if(g==='working')return !!WORKING[r.group];
-      if(g==='done')return r.group==='done';
-      return r.state!=='cleaned'}
-    function match(r){
-      if(jobFilter.q&&r.name.toLowerCase().indexOf(jobFilter.q.toLowerCase())<0)return false;
-      if(jobFilter.source!=='all'&&r.source!==jobFilter.source)return false;
-      return inGroup(r,jobFilter.group)}
+    var top=el('div','hv-pipehead');body.appendChild(top);var note=el('div','notice');body.appendChild(note);
+    var wrap=el('div','hv-pipe');var listCol=el('section','hv-pipelist');listCol.setAttribute('aria-label','Downloads');var det=el('aside','hv-pipedet');det.setAttribute('aria-label','Details');wrap.appendChild(listCol);wrap.appendChild(det);body.appendChild(wrap);
+    var q=el('input');q.type='search';q.placeholder='Search';q.setAttribute('aria-label','Search downloads');q.value=jobFilter.q;q.oninput=function(){jobFilter.q=q.value;drawRows()};
+    var pb=hvBtn('Pause intake','',function(){api('POST','/intake',{paused:!paused}).then(function(r){paused=r.paused;banner()}).catch(fail)});
+    var addB=hvBtn('Add a download','plus',function(){tab='add';app()},true);
+    var chips=el('div','hv-chips');chips.setAttribute('role','group');chips.setAttribute('aria-label','Show');top.appendChild(chips);top.appendChild(el('span','hv-sp'));top.appendChild(q);top.appendChild(pb);top.appendChild(addB);
+    function banner(){note.textContent=paused?'Intake is paused: new grabs are accepted but held until you resume.':'';note.style.display=paused?'block':'none';pb.querySelector('span').textContent=paused?'Resume intake':'Pause intake'}
+    function isProblem(r){return r.attention&&r.state!=='cleaned'}
+    function isDoneToday(r){return (r.state==='imported'||r.state==='cleaned')&&new Date(r.changed)>new Date(Date.now()-864e5)}
+    function groupOf(r){if(isProblem(r))return 'need';if(WORKING[r.group])return 'moving';if(r.state==='imported'||r.state==='cleaned')return 'done';return 'waiting'}
+    var selected=null,logCache={};
+    function row(j){var m=jobStage(j),g=groupOf(j);var r=el('button','hv-prow '+(m[1]==='failed'?'bad':m[1]==='stalled'?'warn':'')+(selected===j.id?' sel':''));r.type='button';
+      var t=el('div','hv-prt');t.appendChild(el('b','',j.name));var k=KIND[j.source]||[j.source||'',''];var src=el('span','hv-prs',[k[0],j.category,j.backend?({torbox:'TorBox',usenet:'Usenet',local:'Torrent'}[j.backend]||j.backend):''].filter(Boolean).join(' · '));t.appendChild(src);r.appendChild(t);
+      if(g!=='done')r.appendChild(stepBar(j));
+      var why=g==='need'?((j.flag?j.flag+' ':'')+(j.reason||'')).trim():'';r.appendChild(el('span','hv-prl',why||jobStageText(j)));
+      r.onclick=function(){selected=j.id;detailId=j.id;drawRows();drawDet()};return r}
     function drawRows(){
-      if(tab!=='jobs'||detailId)return;
-      var base=lastRows.filter(function(r){return (!jobFilter.q||r.name.toLowerCase().indexOf(jobFilter.q.toLowerCase())>=0)&&(jobFilter.source==='all'||r.source===jobFilter.source)});
-      pills.replaceChildren();
-      [['all','All'],['attention','Needs you'],['working','Working'],['done','Done']].forEach(function(g){
-        var n=base.filter(function(r){return inGroup(r,g[0])}).length;
-        var p=el('button','fpill '+g[0]+(jobFilter.group===g[0]?' on':''),g[1]+' '+n);p.onclick=function(){jobFilter.group=g[0];drawRows()};pills.appendChild(p)});
-      var list=lastRows.filter(match);host.replaceChildren();
-      var ac=attentionCount(lastRows);if(tabBtns.jobs){tabBtns.jobs.textContent='On the way';if(ac){var bd=el('span','badge',String(ac));bd.title=ac+' need attention';tabBtns.jobs.appendChild(bd)}}
-      if(!list.length){host.appendChild(el('div','empty',lastRows.length?'nothing matches these filters':'no jobs yet'));return}
-      var box=el('div','jlist');list.forEach(function(j){box.appendChild(jobRow(j,function(j){detailId=j.id;detail(body,j.id)}))});host.appendChild(box);
-    }
-    function take(d){lastRows=d.jobs||[];paused=!!d.paused;banner();drawRows()}
-    function poll(){api('GET','/jobs').then(function(rows){lastRows=rows;drawRows()}).catch(fail)}
+      if(tab!=='jobs')return;
+      var base=lastRows.filter(function(r){return !jobFilter.q||r.name.toLowerCase().indexOf(jobFilter.q.toLowerCase())>=0});
+      chips.replaceChildren();
+      [['problems','Problems',base.filter(isProblem).length],['all','Everything',base.filter(function(r){return r.state!=='cleaned'||isDoneToday(r)}).length],['moving','Moving',base.filter(function(r){return WORKING[r.group]}).length],['done','Done today',base.filter(isDoneToday).length]].forEach(function(c){
+        var b=el('button','hv-chip'+(pipeFilter===c[0]?' on':'')+(c[0]==='problems'&&c[2]?' bad':''),c[1]+' '+c[2]);b.type='button';b.setAttribute('aria-pressed',pipeFilter===c[0]?'true':'false');b.onclick=function(){pipeFilter=c[0];drawRows()};chips.appendChild(b)});
+      var show=base.filter(function(r){if(pipeFilter==='problems')return isProblem(r);if(pipeFilter==='moving')return WORKING[r.group];if(pipeFilter==='done')return isDoneToday(r);return r.state!=='cleaned'||isDoneToday(r)});
+      listCol.replaceChildren();
+      if(!show.length){listCol.appendChild(el('div','hv-empty',lastRows.length?'Nothing here.':'No downloads yet.'));}
+      [['need','NEEDS YOU','bad'],['moving','MOVING',''],['waiting','WAITING',''],['done','DONE','']].forEach(function(g){var rows=show.filter(function(r){return groupOf(r)===g[0]});if(!rows.length)return;
+        listCol.appendChild(el('h2','hv-grph '+g[2],g[1]));rows.sort(function(a,b){return new Date(b.changed)-new Date(a.changed)}).forEach(function(j){listCol.appendChild(row(j))})});
+      if(!selected||!lastRows.some(function(r){return r.id===selected})){var f=show.filter(isProblem)[0]||show[0];selected=f?f.id:null;drawDet()}
+      railCounts(lastRows)}
+    function drawDet(){det.replaceChildren();var j=lastRows.filter(function(r){return r.id===selected})[0];
+      if(!j){det.appendChild(el('div','hv-empty','Pick a download to see what is happening with it.'));return}
+      var m=jobStage(j),k=KIND[j.source]||[j.source||''];
+      det.appendChild(el('div','hv-dsub',[({torbox:'TorBox',usenet:'Usenet',local:'Torrent'}[j.backend]||j.backend||'Not sent yet'),k[0],j.category].filter(Boolean).join(' · ')));det.appendChild(el('h2','hv-dt',j.name));
+      var why=((j.flag?j.flag+' ':'')+(j.reason||'')).trim();
+      var v=el('div','hv-verdict '+(m[1]==='failed'?'bad':m[1]==='stalled'?'warn':m[1]==='done'?'ok':''));
+      v.appendChild(el('strong','',m[1]==='failed'?'This did not work':m[1]==='stalled'?'This looks stuck':m[1]==='done'?'Done':jobStageText(j)));
+      if(why)v.appendChild(el('span','',why));else if(m[1]==='working'||m[1]==='waiting')v.appendChild(el('span','',m[1]==='waiting'?'Waiting its turn.':'Moving along.'));det.appendChild(v);
+      var acts=jobActions(j);acts.className='hv-acts';[].forEach.call(acts.querySelectorAll('button'),function(b){b.className='hv-btn'+(/\bgo\b/.test(b.className)?' primary':/\bbad\b/.test(b.className)?' bad':'');b.textContent=cap(b.textContent)});if(acts.children.length)det.appendChild(acts);
+      var tl=el('ol','hv-tl');det.appendChild(tl);var logBtn=el('button','hv-linkbtn',pipeLog?'Hide the full log':'Show the full log');logBtn.type='button';logBtn.onclick=function(){pipeLog=!pipeLog;drawDet()};det.appendChild(logBtn);
+      var pre=el('div','hv-log');if(pipeLog)det.appendChild(pre);det.appendChild(el('div','hv-rel',j.name));
+      function fill(L){tl.replaceChildren();pre.replaceChildren();if(!L||L.error){tl.appendChild(el('li','hv-note',L&&L.error||'loading…'));return}
+        (L.lines||[]).filter(function(l){return l.from!=='client'}).forEach(function(l){var li=el('li','');li.appendChild(el('span','t',new Date(l.at).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})));li.appendChild(el('span','m',l.msg));tl.appendChild(li)});
+        (L.lines||[]).forEach(function(l){var r=el('div',l.from==='client'?'c':'p');r.appendChild(el('span','t',new Date(l.at).toLocaleTimeString()));r.appendChild(document.createTextNode(l.msg));pre.appendChild(r)})}
+      fill(logCache[j.id]);api('GET','/clients/'+encodeURIComponent(j.id)+'/log').then(function(L){logCache[j.id]=L;if(selected===j.id)fill(L)}).catch(function(e){fill({error:e.message})})}
+    var detSig='';
+    function sig(){var j=lastRows.filter(function(r){return r.id===selected})[0];return j?j.state+'|'+j.reason+'|'+j.flag:''}
+    function after(){drawRows();var x=sig();if(x!==detSig){detSig=x;drawDet()}}
+    function take(d){lastRows=d.jobs||[];paused=!!d.paused;banner();after()}
+    function poll(){api('GET','/jobs').then(function(rows){lastRows=Array.isArray(rows)?rows:(rows.jobs||[]);after()}).catch(fail)}
+    if(detailId)selected=detailId;
     if(window.EventSource){
       es=new EventSource('/admin/api/events');
       es.addEventListener('jobs',function(e){try{take(JSON.parse(e.data))}catch(x){}});
       es.onerror=function(){if(es&&es.readyState===2){es.close();es=null;poll();timer=setInterval(poll,3000)}};
     }else{poll();timer=setInterval(poll,3000)}
-    banner();drawRows();
+    banner();drawRows();drawDet();
   }
 
   var reqAuto=null,reqMusic=[],reqMusicOn=false;
@@ -280,6 +330,7 @@
       var meta=[m.detail||'',m.requestedAt&&m.requestedAt[0]!=='0'?ago(m.requestedAt)+' ago':''].filter(Boolean).join(' · ');if(meta)b.appendChild(el('div','hv-meta',meta));
       var a=el('div','hv-acts');function go(action,x){x.disabled=true;api('POST','/music-requests/'+encodeURIComponent(m.id)+'/'+action).then(draw).catch(function(e){if(e.status===401)fail(e);else{alert(e.message);draw()}})}
       a.appendChild(hvBtn('Approve','',function(x){go('approve',x)},true));a.appendChild(hvBtn('Decline','',function(x){go('decline',x)}));b.appendChild(a);c.appendChild(b);return c}
+    var acc=el('section','hv-accq');var ah=el('h2','hv-grph','ACCOUNT REQUESTS');body.appendChild(ah);body.appendChild(acc);accessCard(acc,'queue');
     draw();timer=setInterval(draw,15000)}
   // Anime (C3, C4): the show folders of the feed libraries, followed shows,
   // nyaa search and gap filling, in the arrs' style.
@@ -510,7 +561,8 @@
     }).catch(fail)}
   // Clients: everything being downloaded, in TorBox, the built-in torrent
   // client and the built-in usenet downloader, with their controls.
-  function clientsView(body){
+  function clientsView(body,only){
+    var WHERE={torbox:'TorBox',usenetq:'Usenet',torrents:'Torrent'}[only];
     function rate(b){b=b||0;return b>=1048576?(b/1048576).toFixed(1)+' MB/s':b>=1024?Math.round(b/1024)+' KB/s':b+' B/s'}
     function size(b){b=b||0;return b>=1073741824?(b/1073741824).toFixed(2)+' GB':b>=1048576?Math.round(b/1048576)+' MB':Math.round(b/1024)+' KB'}
     function eta(s){if(!s)return '';if(s<60)return s+'s';if(s<3600)return Math.round(s/60)+'m';return Math.floor(s/3600)+'h '+Math.round(s%3600/60)+'m'}
@@ -551,18 +603,27 @@
       return r}
     function draw(d){
       if(!d)return;lastData=d;
+      if(only==='add')d=Object.assign({},d,{items:d.items.filter(function(x){return x.source==='manual'}),history:d.history.filter(function(x){return x.source==='manual'})});
+      if(WHERE){d=Object.assign({},d,{items:d.items.filter(function(x){return x.where===WHERE}),history:d.history.filter(function(x){return x.where===WHERE})});
+        if(WHERE==='Usenet')d.items.sort(function(a,b){return (a.position||0)-(b.position||0)})}
       tops.replaceChildren();
       function card(name,color,lines){var c=el('div','hv-box');c.style.flex='1';c.style.minWidth='180px';var h=el('h3','',name);h.style.color=color;c.appendChild(h);lines.forEach(function(l){c.appendChild(el('div','hv-note',l))});tops.appendChild(c)}
-      card('TorBox','var(--accent)',[d.torbox.set?d.torbox.active+' at TorBox':'not connected']);
-      card('Torrent','var(--tv)',d.builtin.torrent?['↓ '+rate(d.torrent.downRate)+'  ↑ '+rate(d.torrent.upRate),(d.torrent.active||0)+' active · '+(d.torrent.running?'VPN up':'waiting for the VPN')]:['off (Downloads › VPN)']);
-      card('Usenet','var(--movie)',d.builtin.usenet?['↓ '+rate(d.usenet.speed),(d.usenet.active?1:0)+' active · '+(d.usenet.queued||0)+' waiting'].concat((d.usenet.servers||[]).filter(function(s){return s.problem}).map(function(s){return s.name+': '+s.problem})):['no provider (Downloads › Usenet)']);
+      function stat(label,value,tone){var c=el('div','hv-stat'+(tone?' '+tone:''));c.appendChild(el('span','',label));c.appendChild(el('b','',value));tops.appendChild(c)}
+      if(WHERE==='TorBox'){if(!d.torbox.set){stat('TorBox','not connected (Settings › TorBox)','warn')}else{stat('At TorBox',String(d.torbox.active||0));
+        if(sys&&sys.torbox){stat('Usenet adds this hour',(sys.torbox.used||0)+' of '+sys.torbox.limit);stat('Torrent adds this hour',(sys.torbox.torrentUsed||0)+' of '+sys.torbox.limit);if(sys.torbox.backoffUntil)stat('New adds','paused by TorBox','warn')}}}
+      else if(WHERE==='Usenet'){if(!d.builtin.usenet)stat('Usenet','no provider (Settings › Usenet providers)','warn');else{stat('Speed',rate(d.usenet.speed),'cyan');stat('In the queue',(d.usenet.active?1:0)+' downloading · '+(d.usenet.queued||0)+' waiting');
+        (d.usenet.servers||[]).forEach(function(sv){stat(sv.name,sv.problem?sv.problem:(sv.conns!=null?sv.conns+' connections':'ready'),sv.problem?'bad':'')})}}
+      else if(WHERE==='Torrent'){if(!d.builtin.torrent)stat('Torrents','off (Settings › VPN and torrents)','warn');else{stat('VPN',d.torrent.running?'up'+(d.torrent.port?' · port '+d.torrent.port:' · no forwarded port'):'waiting for the VPN',d.torrent.running?'':'warn');stat('Down',rate(d.torrent.downRate),'cyan');stat('Up (capped)',rate(d.torrent.upRate));stat('Active',String(d.torrent.active||0))}}
+      else{card('TorBox','var(--accent)',[d.torbox.set?d.torbox.active+' at TorBox':'not connected']);
+      card('Torrent','var(--tv)',d.builtin.torrent?['↓ '+rate(d.torrent.downRate)+'  ↑ '+rate(d.torrent.upRate),(d.torrent.active||0)+' active · '+(d.torrent.running?'VPN up':'waiting for the VPN')]:['off']);
+      card('Usenet','var(--movie)',d.builtin.usenet?['↓ '+rate(d.usenet.speed),(d.usenet.active?1:0)+' active · '+(d.usenet.queued||0)+' waiting']:['no provider'])}
       list.replaceChildren();
       if(!d.items.length)list.appendChild(el('div','hv-empty','Nothing downloading right now.'));
       d.items.forEach(function(x){list.appendChild(item(x,false))});
       hist.replaceChildren();
       if(!d.history.length)hist.appendChild(el('div','hv-empty','Nothing in the last three days.'));
       d.history.forEach(function(x){hist.appendChild(item(x,true))});
-      if(first){first=false;buildAdd(d);buildLimits(d)}
+      if(first){first=false;if(addBox)buildAdd(d);if(limBox)buildLimits(d)}
     }
     function buildAdd(d){addBox.replaceChildren();addBox.appendChild(el('h3','','Add a download'));
       var c=el('div','card');var mg=row(c,'Magnet link',{ph:'magnet:?xt=urn:btih:…'});
@@ -582,16 +643,19 @@
       var un=row(c,'Usenet download (KB/s)',{type:'number',value:sp.usenetKb||0,help:'0 = no limit'});
       var sb=el('button','go','Save limits');var lm=el('span','msg');sb.onclick=function(){api('PUT','/clients/limits',{torrentDownKb:parseInt(td.value,10)||0,torrentUpKb:parseInt(tu.value,10)||0,usenetKb:parseInt(un.value,10)||0}).then(function(){lm.className='msg ok';lm.textContent='saved'}).catch(function(e){lm.className='msg err';lm.textContent=e.message})};
       c.appendChild(sb);c.appendChild(lm);limBox.appendChild(c)}
-    function load(){return api('GET','/clients').then(function(d){var ids=Object.keys(open);return Promise.all(ids.map(fetchLog)).then(function(){draw(d)})}).catch(fail)}
+    var sys=null;
+    function load(){if(WHERE==='TorBox')api('GET','/system').then(function(x){sys=x}).catch(function(){});return api('GET','/clients').then(function(d){var ids=Object.keys(open);return Promise.all(ids.map(fetchLog)).then(function(){draw(d)})}).catch(fail)}
     body.replaceChildren();
-    body.appendChild(head('Download clients','Everything being downloaded, wherever it is: TorBox, HyveMynd’s own torrent client (through the VPN) and its own usenet downloader.'));
-    tops=el('div');tops.style.display='flex';tops.style.gap='12px';tops.style.flexWrap='wrap';body.appendChild(tops);
-    var b1=hvBox('Downloading');list=el('div','hv-list');b1.appendChild(list);body.appendChild(b1);
-    addBox=hvBox('');body.appendChild(addBox);
-    var b2=hvBox('Last three days');hist=el('div','hv-list');b2.appendChild(hist);body.appendChild(b2);
-    limBox=hvBox('');body.appendChild(limBox);
-    load();timer=setInterval(function(){if(tab==='downloaders')load()},3000);
+    if(only==='add'){addBox=hvBox('');body.appendChild(addBox);tops=el('div');list=el('div');hist=el('div','hv-list');var b3=hvBox('Your recent manual downloads');b3.appendChild(hist);body.appendChild(b3);
+      load();timer=setInterval(function(){if(tab==='add')load()},5000);return}
+    if(only==='limits'){limBox=hvBox('');body.appendChild(limBox);tops=el('div');list=el('div');hist=el('div');load();return}
+    tops=el('div','hv-stats');body.appendChild(tops);
+    var b1=hvBox(WHERE==='Usenet'?'Queue':'Downloading');list=el('div','hv-list');b1.appendChild(list);body.appendChild(b1);
+    var b2=hvBox('History · last three days');hist=el('div','hv-list');b2.appendChild(hist);body.appendChild(b2);
+    load();timer=setInterval(function(){if(tab===only)load()},3000);
   }
+  function addView(body){clientsView(body,'add')}
+  function limitsView(body){clientsView(body,'limits')}
   // Usenet: HyveMynd's own usenet downloader and the providers it uses.
   function usenetView(body){
     api('GET','/usenet').then(function(d){body.replaceChildren();
@@ -650,8 +714,8 @@
         if(s.error)l.appendChild(el('div',s.state==='up'&&s.port===0?'hv-note':'err',s.error))}
       drawStatus(d);
       timer=setInterval(function(){if(tab!=='vpn')return;api('GET','/vpn').then(drawStatus).catch(function(){})},3000);
-      var PROV={pia:['Private Internet Access','Port forwarding: automatic'],proton:['Proton VPN','Port forwarding: automatic on P2P servers'],mullvad:['Mullvad','No port forwarding'],airvpn:['AirVPN','Port forwarding: enter your port'],windscribe:['Windscribe','Port forwarding: with a static IP'],nord:['NordVPN','No port forwarding'],surfshark:['Surfshark','No port forwarding'],ivpn:['IVPN','No port forwarding'],other:['Another provider','Any WireGuard file']};
-      var STEPS={proton:'In your Proton account: Downloads › WireGuard configuration. Choose Router, turn on NAT-PMP (port forwarding), pick a P2P server, then download the file.',mullvad:'In your Mullvad account: WireGuard configuration. Generate a key, choose Linux and a location, then download the file.',airvpn:'In the AirVPN Client Area: Config Generator, choose WireGuard and a server, download the file. Add a port under Client Area › Ports and enter it below.',windscribe:'In your Windscribe account: Config Generators › WireGuard, pick a location, download the file. With a static IP that forwards a port, enter the port below.',surfshark:'In your Surfshark account: VPN › Manual setup › Router › WireGuard. Generate a key pair, pick a location, download the file.',ivpn:'In your IVPN account: WireGuard › Config generator. Add a key and download a server’s file.',other:'Download a WireGuard configuration file from your provider. Enter a forwarded port if your provider gives you one.'};
+      var PROV={pia:['Private Internet Access','Port forwarding: automatic'],proton:['Proton VPN','Port forwarding: automatic on P2P servers'],mullvad:['Mullvad','No port forwarding'],airvpn:['AirVPN','Port forwarding: enter your port'],windscribe:['Windscribe','Port forwarding: enter your port (Pro plan)'],nord:['NordVPN','No port forwarding'],surfshark:['Surfshark','No port forwarding'],ivpn:['IVPN','No port forwarding'],other:['Another provider','Any WireGuard file']};
+      var STEPS={proton:'In your Proton account: Downloads › WireGuard configuration. Choose Router, turn on NAT-PMP (port forwarding), pick a P2P server, then download the file.',mullvad:'In your Mullvad account: WireGuard configuration. Generate a key, choose Linux and a location, then download the file.',airvpn:'In the AirVPN Client Area: Config Generator, choose WireGuard and a server, download the file. Add a port under Client Area › Ports and enter it below.',windscribe:'In your Windscribe account: Config Generators › WireGuard, pick a location, download the file. For port forwarding (Pro plan): My Account › Port Forwarding › request an ephemeral port with the same internal and external port, and enter it below. Ephemeral ports last 7 days, so request a new one and enter it again when it runs out.',surfshark:'In your Surfshark account: VPN › Manual setup › Router › WireGuard. Generate a key pair, pick a location, download the file.',ivpn:'In your IVPN account: WireGuard › Config generator. Add a key and download a server’s file.',other:'Download a WireGuard configuration file from your provider. Enter a forwarded port if your provider gives you one.'};
       var c=el('div','card');c.appendChild(el('h4','','VPN provider'));
       var on=row(c,'Use the VPN and the built-in torrent client',{type:'checkbox',value:d.on});
       var pw0=el('div','fld');pw0.appendChild(el('label','','Provider'));var pv=el('select');(d.providers||Object.keys(PROV)).forEach(function(k){pv.appendChild(new Option((PROV[k]||[k])[0]+' · '+((PROV[k]||['',''])[1]),k))});pv.value=d.provider||'pia';pw0.appendChild(pv);c.appendChild(pw0);
@@ -677,6 +741,33 @@
       body.appendChild(c);
       saveBar(body,function(m){m.className='msg';m.textContent='saving…';
         api('PUT','/vpn',{on:on.checked,provider:pv.value,user:user.value,password:pw.value,region:rg.value,wireguard:ta.value,token:tok.value,country:ctry.value,port:parseInt(port.value,10)||0,torrents:tr.value}).then(function(){m.className='msg ok';m.textContent='saved: reconnecting (the status above updates by itself)'}).catch(function(e){m.className='msg err';m.textContent=e.message})});
+    }).catch(fail)}
+  // Settings › Getting started: everything HyveMynd works with, what it is
+  // for and whether it is set up here.
+  function startView(body){
+    body.appendChild(head('Getting started','HyveMynd sits between your arrs and the places files come from. It downloads, checks, sends files through Tdarr and hands them back to the arrs to import. Here is everything it works with, and whether yours is set up.'));
+    var need=el('ol','hv-start');var opt=el('div','hv-startx');body.appendChild(el('h2','hv-grph','NEEDED'));body.appendChild(need);body.appendChild(el('h2','hv-grph','OPTIONAL EXTRAS'));body.appendChild(opt);
+    Promise.all([api('GET','/settings'),api('GET','/clients').catch(function(){return null}),api('GET','/vpn').catch(function(){return null}),api('GET','/system').catch(function(){return null})]).then(function(x){
+      var st=x[0],cl=x[1],vp=x[2],sy=x[3];var cats=st.categories||[];
+      function has(kind){return cats.some(function(c){return c.kind===kind&&c.arrUrl&&c.hasArrApiKey})}
+      function pill(ok,text,tone){return el('span','hv-spill '+(ok?'ok':tone||'off'),text)}
+      function step(n,name,what,how,ok,status,to,tone){var li=el('li','hv-stepc');li.appendChild(el('span','hv-stepn',String(n)));var t=el('div','hv-stept');t.appendChild(el('b','',name));t.appendChild(el('p','',what));t.appendChild(el('p','hv-note',how));li.appendChild(t);
+        var r=el('div','hv-stepr');r.appendChild(pill(ok,status,tone));var a=el('button','hv-linkbtn','Open');a.type='button';a.onclick=function(){tab=to;app()};r.appendChild(a);li.appendChild(r);need.appendChild(li)}
+      var dirs=!!(sy&&sy.complete&&sy.complete.totalBytes);
+      step(1,'Shared folders','HyveMynd and your arrs must see downloads at the same path, so the arrs can import what HyveMynd finishes.','Give both containers the same /data mount on Unraid.',dirs,dirs?'Set up':'Check the /data mount','system');
+      var arrs=has('sonarr')||has('radarr');
+      step(2,'Sonarr and Radarr','They decide what to grab and send it to HyveMynd. HyveMynd reads them with their API keys and tells them when a file is ready.','In each arr: Settings › Download Clients › add HyveMynd as a SABnzbd client for usenet and a qBittorrent client for torrents (it answers as both), on port 8081 of this server.',arrs,arrs?[has('sonarr')?'Sonarr':'',has('radarr')?'Radarr':''].filter(Boolean).join(' · ')+' connected':'Not connected','arrs');
+      var src=[];if(st.torbox&&st.torbox.hasToken)src.push('TorBox');if(cl&&cl.builtin&&cl.builtin.usenet)src.push((cl.usenet.servers||[]).length+' usenet providers');if(vp&&vp.on)src.push('VPN');
+      step(3,'Somewhere to download from','At least one of: a TorBox account, usenet providers, or a VPN account for torrents (Private Internet Access, Proton, Mullvad, AirVPN and other major ones).','TorBox is tried first; the others take over when it is busy, down or not set up.',src.length>0,src.length?src.join(' · '):'Nothing yet','clients');
+      var td=!!(st.tdarr&&st.tdarr.url);
+      step(4,'Tdarr','Every media file goes through it before the arrs import it.','Give HyveMynd the Tdarr address and a library that watches its staging folder.',td,td?'Connected':'Folders only','transcode',td?'':'warn');
+      function extra(name,what,how,ok,status,to,tone){var c=el('button','hv-xcard');c.type='button';var h=el('div','hv-xh');h.appendChild(el('b','',name));h.appendChild(pill(ok,status,tone));c.appendChild(h);c.appendChild(el('p','',what));c.appendChild(el('p','hv-note',how));if(to)c.onclick=function(){tab=to;app()};opt.appendChild(c)}
+      extra('Prowlarr','Finds releases for your arrs. It talks to Sonarr and Radarr, not to HyveMynd.','Nothing to set here.',false,'Not needed here','', 'info');
+      extra('Seerr','Powers the request box on the public page.','Address and API key.',!!(st.requests&&st.requests.enabled),st.requests&&st.requests.enabled?'Connected':'Not set up','public');
+      extra('Emby or Jellyfin','Account requests, Now Playing, and telling it about new files.','Address and API key.',!!(st.playback&&st.playback.hasEmbyKey),st.playback&&st.playback.hasEmbyKey?'Connected':'Not set up','playback');
+      extra('Tracearr','Watch history, used to pick what to upgrade.','Address and API key.',!!(st.playback&&st.playback.hasTracearrKey),st.playback&&st.playback.hasTracearrKey?'Connected':'Not set up','playback');
+      extra('Lidarr','Music, handled the same way as TV and movies, and artist requests on the public page.','Add it like Sonarr, with its own category.',has('lidarr'),has('lidarr')?'Connected':'Not set up','arrs');
+      extra('TMDB','Titles and posters for anime and requests.','A free API key from themoviedb.org.',!!(st.metadata&&st.metadata.hasTmdbKey),st.metadata&&st.metadata.hasTmdbKey?'Key saved':'Not set up','metadata');
     }).catch(fail)}
   // Upgrades: much-watched shows and movies are moved to an upgrade profile in
   // Sonarr or Radarr and searched (watch history from Tracearr).
@@ -730,47 +821,52 @@
   // Overview (pinned v2 admin): health pills, Needs you, Pipeline now, Just finished, Who runs what.
   var STAGE6=[['found','Found','var(--st-found)'],['download','Download','var(--st-down)'],['transfer','Transfer','var(--st-transfer)'],['convert','Convert','var(--st-convert)'],['ready','Ready','var(--st-ready)']];
   function hvHealth(label,value,tone){var p=el('div','hv-health '+(tone||'ok'));p.appendChild(el('i'));p.appendChild(el('span','',label));if(value)p.appendChild(el('b','',value));return p}
+  // Home (pinned v4): health tiles, what needs you, what is moving, what just finished.
   function overviewView(body){
-    var pills=el('div','hv-healthrow');body.appendChild(pills);
-    var g=el('div','hv-ov');var left=el('div','hv-col'),right=el('div','hv-col');g.appendChild(left);g.appendChild(right);body.appendChild(g);
-    var need=hvBox('Needs you'),pipe=hvBox('Pipeline now'),fin=hvBox('Just finished'),who=hvBox('Categories');
-    left.appendChild(need);left.appendChild(fin);right.appendChild(pipe);right.appendChild(who);
-    var sysInfo=null,reqList=[],cats=[];
-    function count(t,n){var h=t.querySelector('h3');h.replaceChildren(document.createTextNode(h.dataset.t||(h.dataset.t=h.textContent)));if(n){h.appendChild(el('span','hv-n',String(n)))}}
-    function drawPills(){pills.replaceChildren();if(!sysInfo)return;var s=sysInfo;
-      pills.appendChild(hvHealth('Intake',s.paused?'paused':'running',s.paused?'warn':'ok'));
-      if(s.torbox.configured)pills.appendChild(hvHealth('TorBox',s.torbox.backoffUntil?'new adds paused':'usenet '+s.torbox.used+' · torrents '+(s.torbox.torrentUsed||0)+' of '+s.torbox.limit+' an hour',s.torbox.backoffUntil?'warn':'ok'));
-      else pills.appendChild(hvHealth('TorBox','not set','dim'));
-      pills.appendChild(hvHealth('Tdarr',s.tdarr.api?s.tdarr.inFlight+' / '+s.tdarr.max+' busy':'folders only',s.tdarr.api?'ok':'dim'));
-      if(s.complete&&s.complete.totalBytes){var fr=s.complete.freeBytes/s.complete.totalBytes;pills.appendChild(hvHealth('Complete folder',Math.round(fr*100)+'% free',fr<.1?'bad':fr<.2?'warn':'ok'))}
-      if(s.work&&s.work.totalBytes){var wf=s.work.freeBytes/s.work.totalBytes;pills.appendChild(hvHealth('Work folder',Math.round(wf*100)+'% free',wf<.1?'bad':wf<.2?'warn':'ok'))}}
-    function drawNeed(){var list=need.querySelector('.hv-list')||need.appendChild(el('div','hv-list'));list.replaceChildren();
-      var jobs=lastRows.filter(function(r){return r.attention&&r.state!=='cleaned'});
-      count(need,jobs.length+reqList.length);
-      if(!jobs.length&&!reqList.length){list.appendChild(el('div','hv-empty','Nothing needs you right now.'));return}
-      reqList.forEach(function(r){var row=el('div','hv-item');row.appendChild(hvPill('Request','var(--warn)'));var t=el('div','hv-it');t.appendChild(el('b','',r.title||'Untitled request'));t.appendChild(el('span','',[r.media_type==='tv'?'TV':'Movie',r.requested_by,r.seasons&&r.seasons.length?'seasons '+r.seasons.join(', '):''].filter(Boolean).join(' · ')));row.appendChild(t);
-        var a=el('div','hv-acts');a.appendChild(hvBtn('Approve','',function(b){b.disabled=true;decideReq(r,'approve',refresh)},true));a.appendChild(hvBtn('Decline','',function(b){b.disabled=true;decideReq(r,'decline',refresh)}));row.appendChild(a);list.appendChild(row)});
-      jobs.forEach(function(j){var row=el('div','hv-item');row.appendChild(hvPill(j.state==='failed'?'Failed':'Stalled',j.state==='failed'?'var(--bad)':'var(--warn)'));var t=el('div','hv-it');var n=el('button','hv-link',j.name);n.type='button';n.onclick=function(){tab='jobs';detailId=j.id;app()};t.appendChild(n);t.appendChild(el('span','',((j.flag?j.flag+' ':'')+(j.reason||'')).trim()||j.state));row.appendChild(t);
-        var a=el('div','hv-acts');if(j.state==='failed')a.appendChild(hvBtn('Retry','',function(b){b.disabled=true;doAction(j.id,'retry')},true));a.appendChild(hvBtn('Details','',function(){tab='jobs';detailId=j.id;app()}));row.appendChild(a);list.appendChild(row)})}
-    function drawPipe(){var gr=pipe.querySelector('.hv-tiles')||pipe.appendChild(el('div','hv-tiles'));gr.replaceChildren();
-      STAGE6.forEach(function(s){var n=lastRows.filter(function(r){var m=jobStage(r);return m[0]===s[0]&&m[1]!=='done'&&m[1]!=='failed'}).length;var t=el('div','hv-tile');t.style.setProperty('--c',s[2]);t.appendChild(el('b','',String(n)));t.appendChild(el('span','',s[1]));gr.appendChild(t)})}
+    var hello=el('div','hv-hello');body.appendChild(hello);
+    var tiles=el('section','hv-tiles6');tiles.setAttribute('aria-label','Health');body.appendChild(tiles);
+    var need=el('section','hv-need');body.appendChild(need);
+    var g=el('div','hv-two');var mv=hvBox('Moving now'),fin=hvBox('Just finished');g.appendChild(mv);g.appendChild(fin);body.appendChild(g);
+    var sysInfo=null,cl=null,vp=null,reqList=[],music=[];
+    function tile(label,line,tone,to){var b=el('button','hv-tile6 '+(tone||'ok'));b.type='button';var h=el('span','hv-th');h.appendChild(el('i'));h.appendChild(document.createTextNode(label));b.appendChild(h);b.appendChild(el('span','hv-tline',line));b.onclick=function(){tab=to;app()};tiles.appendChild(b)}
+    function drawTiles(){tiles.replaceChildren();var s=sysInfo;if(!s)return;
+      if(s.torbox&&s.torbox.configured)tile('TorBox',s.torbox.backoffUntil?'New adds paused by TorBox':'Working · '+((s.torbox.used||0)+(s.torbox.torrentUsed||0))+' adds this hour',s.torbox.backoffUntil?'warn':'ok','torbox');else tile('TorBox','Not set up','dim','clients');
+      if(cl){if(cl.builtin.usenet){var sv=cl.usenet.servers||[],bad=sv.filter(function(x){return x.problem});tile('Usenet',bad.length?bad.length+' of '+sv.length+' providers failing: '+bad[0].name:sv.length+' of '+sv.length+' providers answering',bad.length===sv.length?'bad':bad.length?'warn':'ok','usenet')}else tile('Usenet','No providers','dim','usenet')}
+      if(vp){var st=vp.status||{};tile('VPN',st.state==='up'?(st.regionName||'Connected')+(st.port?' · port '+st.port+' open':' · no forwarded port'):st.state==='off'?'Off':st.state==='connecting'?'Connecting…':'Down: '+(st.error||''),st.state==='up'?(st.port?'ok':'warn'):st.state==='off'?'dim':st.state==='connecting'?'warn':'bad','vpn')}
+      tile('Tdarr',s.tdarr.api?(s.tdarr.inFlight+' of '+s.tdarr.max+' busy'):'Folders only',s.tdarr.api?'ok':'dim','transcode');
+      var fr=s.complete&&s.complete.totalBytes?s.complete.freeBytes/s.complete.totalBytes:null;if(fr!=null)tile('Storage',Math.round(fr*100)+'% free in the complete folder',fr<.1?'bad':fr<.2?'warn':'ok','system');
+      tile('Intake',s.paused?'Paused: new grabs wait':'Taking grabs from the arrs',s.paused?'warn':'ok','system')}
+    function needRow(kind,tone,title,why,btns){var r=el('div','hv-needrow '+tone);r.appendChild(el('span','hv-needk',kind));var t=el('div','hv-needt');t.appendChild(el('b','',title));t.appendChild(el('span','',why));r.appendChild(t);var a=el('div','hv-acts');btns.forEach(function(b){a.appendChild(b)});r.appendChild(a);return r}
+    function drawNeed(){need.replaceChildren();var jobs=lastRows.filter(function(r){return r.attention&&r.state!=='cleaned'});var nreq=reqList.length+music.length;
+      var h=el('h2','','Needs you');if(jobs.length+(nreq?1:0))h.appendChild(el('span','hv-n bad',String(jobs.length+(nreq?1:0))));need.appendChild(h);
+      if(!jobs.length&&!nreq){need.appendChild(el('div','hv-empty','Nothing needs you right now.'));return}
+      jobs.forEach(function(j){var failed=j.state==='failed';var why=((j.flag?j.flag+' ':'')+(j.reason||'')).trim()||j.state;var btns=[];
+        if(failed){btns.push(hvBtn('Retry','',function(b){b.disabled=true;doAction(j.id,'retry')},true));btns.push(hvBtn('Clean up','',function(b){b.disabled=true;doAction(j.id,'cleanup')}))}
+        else btns.push(hvBtn('Retry now','',function(b){b.disabled=true;doAction(j.id,'retry')},true));
+        btns.push(hvBtn('Details','',function(){tab='jobs';detailId=j.id;app()}));
+        need.appendChild(needRow(failed?'FAILED':'STUCK',failed?'bad':'warn',j.name,why,btns))});
+      if(nreq){var parts=[];if(reqList.length)parts.push(reqList.length+' media');if(music.length)parts.push(music.length+' music');
+        need.appendChild(needRow('REQUESTS','req',nreq+' waiting for approval',parts.join(' and ')+' request'+(nreq===1?'':'s'),[hvBtn('Review','',function(){tab='requests';app()},true)]))}}
+    var STEPS=[['found','Grabbed'],['download','Downloading'],['transfer','Transferring'],['convert','Tdarr'],['ready','Importing']];
+    function drawMoving(){var b=mv.querySelector('.hv-steps6')||mv.appendChild(el('div','hv-steps6'));b.replaceChildren();
+      STEPS.forEach(function(st){var n=lastRows.filter(function(r){var m=jobStage(r);return m[0]===st[0]&&m[1]!=='done'&&m[1]!=='failed'}).length;var c=el('div','hv-step6 k-'+st[0]);c.appendChild(el('b','',String(n)));c.appendChild(el('span','',st[1]));b.appendChild(c)});
+      var today=lastRows.filter(function(r){return (r.state==='imported'||r.state==='cleaned')&&new Date(r.changed)>new Date(Date.now()-864e5)}).length;var c=el('div','hv-step6 k-done');c.appendChild(el('b','',String(today)));c.appendChild(el('span','','Done today'));b.appendChild(c);
+      var l=mv.querySelector('.hv-list')||mv.appendChild(el('div','hv-list'));l.replaceChildren();
+      var moving=lastRows.filter(function(r){return WORKING[r.group]}).sort(function(a,b){return (b.progress||0)-(a.progress||0)}).slice(0,4);
+      if(!moving.length){l.appendChild(el('div','hv-empty','Nothing is moving right now.'));return}
+      moving.forEach(function(j){var m=jobStage(j);var r=el('button','hv-mrow');r.type='button';r.onclick=function(){tab='jobs';detailId=j.id;app()};var t=el('div','hv-mt');t.appendChild(el('b','',j.name));t.appendChild(el('span','',jobStageText(j)));r.appendChild(t);var bar=el('div','hv-bar');var f=el('span','k-'+m[0]);f.style.width=Math.round((j.progress||0)*100)+'%';bar.appendChild(f);r.appendChild(bar);l.appendChild(r)})}
     function drawFin(){var list=fin.querySelector('.hv-list')||fin.appendChild(el('div','hv-list'));list.replaceChildren();
       var done=lastRows.filter(function(r){return r.state==='imported'||r.state==='cleaned'}).sort(function(a,b){return new Date(b.changed)-new Date(a.changed)}).slice(0,6);
       if(!done.length){list.appendChild(el('div','hv-empty','Nothing finished lately.'));return}
-      done.forEach(function(j){var row=el('div','hv-item slim');var dot=el('i','hv-dot');row.appendChild(dot);var t=el('div','hv-it');t.appendChild(el('b','',j.name));t.appendChild(el('span','',j.category));row.appendChild(t);row.appendChild(el('span','hv-age',ago(j.changed)));list.appendChild(row)})}
-    function drawWho(){var list=who.querySelector('.hv-list')||who.appendChild(el('div','hv-list'));list.replaceChildren();
-      if(!cats.length){list.appendChild(el('div','hv-empty','No categories yet. Add them under Settings › Arrs.'));return}
-      var ARR={sonarr:'Sonarr',radarr:'Radarr',lidarr:'Lidarr'};
-      cats.forEach(function(c){var row=el('div','hv-item slim');var t=el('div','hv-it');t.appendChild(el('b','',c.name));t.appendChild(el('span','',[c.transcode?'through Tdarr':'no transcode',c.libraryDir||''].filter(Boolean).join(' · ')));row.appendChild(t);
-        row.appendChild(ARR[c.kind]?hvPill(ARR[c.kind],c.kind==='sonarr'?'var(--tv)':c.kind==='radarr'?'var(--movie)':'var(--music)'):hvPill('Feeds and folders','var(--anime)'));
-        if(ARR[c.kind])row.appendChild(hvPill(c.arrUrl?'connected':'no address',c.arrUrl?'var(--ok)':'var(--warn)'));
-        list.appendChild(row)})}
-    function draw(){drawNeed();drawPipe();drawFin();var ac=attentionCount(lastRows);if(tabBtns.jobs){tabBtns.jobs.textContent='On the way';if(ac)tabBtns.jobs.appendChild(el('span','badge',String(ac)))}}
-    function refresh(){loadReqs().then(function(l){reqList=l||[];setReqBadge(reqList.length);drawNeed()})}
+      done.forEach(function(j){var k=KIND[j.source]||[j.source||'',''];var row=el('div','hv-frow');var kk=el('span','hv-fk',k[0]);kk.style.color=k[1];row.appendChild(kk);row.appendChild(el('span','hv-ft',j.name));row.appendChild(el('span','hv-age',ago(j.changed)+' ago'));list.appendChild(row)})}
+    function drawHello(){hello.replaceChildren();var h=new Date().getHours();hello.appendChild(el('h2','',h<12?'Good morning':h<18?'Good afternoon':'Good evening'));
+      var bad=lastRows.filter(function(r){return r.attention&&r.state!=='cleaned'}).length+(reqList.length+music.length?1:0),moving=lastRows.filter(function(r){return WORKING[r.group]}).length;
+      hello.appendChild(el('p','',[bad?bad+(bad===1?' thing needs':' things need')+' you':'nothing needs you',moving?moving+' download'+(moving===1?'':'s')+' moving':'nothing moving'].join(' · ')))}
+    function draw(){drawHello();drawNeed();drawMoving();drawFin();railCounts(lastRows)}
+    function refresh(){loadReqs().then(function(l){reqList=l||[];music=reqMusic||[];setReqBadge(reqList.length+music.length);draw()})}
     function poll(){api('GET','/jobs').then(function(d){lastRows=Array.isArray(d)?d:(d.jobs||[]);draw()}).catch(fail)}
-    function pollSys(){api('GET','/system').then(function(d){sysInfo=d;drawPills()}).catch(function(){})}
-    api('GET','/settings').then(function(s){cats=s.categories||[];drawWho()}).catch(function(){});
-    drawWho();poll();pollSys();refresh();timer=setInterval(function(){poll();pollSys();refresh()},5000);
+    function pollSys(){Promise.all([api('GET','/system').catch(function(){return null}),api('GET','/clients').catch(function(){return null}),api('GET','/vpn').catch(function(){return null})]).then(function(x){sysInfo=x[0];cl=x[1];vp=x[2];drawTiles()})}
+    poll();pollSys();refresh();timer=setInterval(function(){if(tab!=='overview')return;poll();pollSys();refresh()},5000);
   }
   function doAction(id,a){api('POST','/jobs/'+encodeURIComponent(id)+'/'+a).then(function(){app()}).catch(function(e){if(e.status===401)fail(e);else{alert(e.message);app()}})}
   function detail(body,id){

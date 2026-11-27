@@ -212,11 +212,6 @@ body.ui .acts.rhoriz button{height:auto}
 .main .osec{margin-top:22px}
 
 /* settings: same prompt-link buttons and quiet cards */
-body.ui .main button:not(.fpill):not(.link):not(.badge):not([class^="a-"]),body.ui .savebar button{border:0;background:transparent;height:auto;padding:2px 14px 2px 0;color:#c9cdc6;border-radius:0}
-body.ui .main button:not(.fpill):not(.link):not([class^="a-"])::before,body.ui .savebar button::before{content:"\276F ";color:#5a5c5a;font-family:"Segoe UI Symbol","DejaVu Sans Mono",monospace}
-body.ui .main button.go:not(.fpill),body.ui .savebar button.go{color:#45bba9}
-body.ui .main button:not(.fpill):not(.link):hover,body.ui .savebar button:hover{color:#fff;border:0}
-body.ui .main button.bad{color:#f27b89}
 body.ui .main button:disabled{opacity:.5}
 body.ui .sl h4,body.ui .card h4{color:#e5e8e2}
 body.ui .card:not(.setting){border-radius:4px;background:#0f100f}
