@@ -940,7 +940,22 @@
   function pane(body){
     body.replaceChildren();
     ({arrs:arrsPane,clients:clientsPane,transcode:transcodePane,metadata:metadataPane,playback:playbackPane,public:publicPane,rss:rssPane,system:systemPane})[tab](body);
-    if(tab!=='system'&&tab!=='rss')split(body);
+    if(/^(playback|public|transcode|metadata|clients)$/.test(tab))rowify(body);
+    else if(tab!=='system'&&tab!=='rss')split(body);
+  }
+  // A settings card becomes a row (pinned v4): a status dot, its name and
+  // state on one line, and its fields under Edit.
+  function rowify(body){
+    [].filter.call(body.children,function(c){return c.classList.contains('card')&&c.firstChild&&c.firstChild.tagName==='H4'}).forEach(function(c){
+      var h=c.firstChild,chip=h.querySelector('.chip2'),title=h.firstChild&&h.firstChild.nodeType===3?h.firstChild.textContent.trim():h.textContent.replace(chip?chip.textContent:'','').trim();
+      h.remove();var w=el('div','hv-erow');c.parentNode.insertBefore(w,c);var top=el('div','hv-erow-top');w.appendChild(top);c.className='hv-erow-ed hv-cardbody';w.appendChild(c);
+      var ok=chip?chip.classList.contains('ok'):true,state=chip?chip.textContent.trim():'';
+      function addr(){var v='';[].some.call(c.querySelectorAll('input[type=text],input:not([type])'),function(i){if(/^https?:\/\//.test(i.value)){v=i.value;return true}});return v}
+      c.hidden=ok;
+      function sum(){top.replaceChildren();top.appendChild(el('i','hv-dot2 '+(ok?'ok':'off')));var t=el('div','hv-erow-t');t.appendChild(el('b','',title));var hn=c.querySelector('.hint');var hs=hn?hn.textContent.split(/(?<=\.)\s/)[0]:'';t.appendChild(el('span','',[state,addr()].filter(Boolean).join(' · ')||hs));top.appendChild(t);
+        top.appendChild(hvBtn(c.hidden?(ok?'Edit':'Set up'):'Done','',function(){c.hidden=!c.hidden;sum()},!ok&&c.hidden))}
+      c.addEventListener('input',sum);sum()});
+    var rows=[].filter.call(body.children,function(x){return x.classList.contains('hv-erow')});if(rows.length){var box=el('div','hv-erows');body.insertBefore(box,rows[0]);rows.forEach(function(r){box.appendChild(r)})}
   }
   // A settings card becomes a row: its title and explanation on the left, the fields on the right.
   function split(body){
