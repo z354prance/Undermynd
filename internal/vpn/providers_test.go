@@ -168,3 +168,17 @@ func TestNordConf(t *testing.T) {
 		t.Fatalf("bad token: %v", err)
 	}
 }
+
+// A PIA server that cannot be reached: the error never shows the token.
+func TestPIAErrorHidesToken(t *testing.T) {
+	api := &API{Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	_, err := api.AddKey(ctx, Server{IP: "127.0.0.1", CN: "nl-1"}, "SECRET-TOKEN", "pub")
+	if err == nil || strings.Contains(err.Error(), "SECRET-TOKEN") || !strings.Contains(err.Error(), "nl-1") {
+		t.Fatalf("err %v", err)
+	}
+}

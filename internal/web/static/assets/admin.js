@@ -210,7 +210,7 @@
       listCol.replaceChildren();
       if(!show.length){listCol.appendChild(el('div','hv-empty',lastRows.length?'Nothing here.':'No downloads yet.'));}
       [['need','NEEDS YOU','bad'],['moving','MOVING',''],['waiting','WAITING',''],['done','DONE','']].forEach(function(g){var rows=show.filter(function(r){return groupOf(r)===g[0]});if(!rows.length)return;
-        listCol.appendChild(el('h2','hv-grph '+g[2],g[1]));rows.sort(function(a,b){return new Date(b.changed)-new Date(a.changed)}).forEach(function(j){listCol.appendChild(row(j))})});
+        listCol.appendChild(el('h2','hv-grph '+g[2],g[1]));var hostG=listCol;if(g[0]==='done'){hostG=el('div','hv-done');listCol.appendChild(hostG)}rows.sort(function(a,b){return new Date(b.changed)-new Date(a.changed)}).forEach(function(j){hostG.appendChild(row(j))})});
       if(!selected||!lastRows.some(function(r){return r.id===selected})){var f=show.filter(isProblem)[0]||show[0];selected=f?f.id:null;drawDet()}
       railCounts(lastRows)}
     function drawDet(){det.replaceChildren();var j=lastRows.filter(function(r){return r.id===selected})[0];
@@ -666,12 +666,12 @@
     var sys=null;
     function load(){if(WHERE==='TorBox')api('GET','/system').then(function(x){sys=x}).catch(function(){});return api('GET','/clients').then(function(d){var ids=Object.keys(open);return Promise.all(ids.map(fetchLog)).then(function(){draw(d)})}).catch(fail)}
     body.replaceChildren();
-    if(only==='add'){addBox=hvBox('');body.appendChild(addBox);tops=el('div');list=el('div');hist=el('div','hv-list');var b3=hvBox('Your recent manual downloads');b3.appendChild(hist);body.appendChild(b3);
+    if(only==='add'){addBox=hvBox('');body.appendChild(addBox);tops=el('div');list=el('div');hist=el('div','hv-list');hist.classList.add('hv-scroll');var b3=hvBox('Your recent manual downloads');b3.appendChild(hist);body.appendChild(b3);
       load();timer=setInterval(function(){if(tab==='add')load()},5000);return}
     if(only==='limits'){limBox=hvBox('');body.appendChild(limBox);tops=el('div');list=el('div');hist=el('div');load();return}
     tops=el('div','hv-stats');body.appendChild(tops);
     var b1=hvBox(WHERE==='Usenet'?'Queue':'Downloading');list=el('div','hv-list');b1.appendChild(list);body.appendChild(b1);
-    var b2=hvBox('History · last three days');hist=el('div','hv-list');b2.appendChild(hist);body.appendChild(b2);
+    var b2=hvBox('History · last three days');hist=el('div','hv-list hv-scroll');b2.appendChild(hist);body.appendChild(b2);
     load();timer=setInterval(function(){if(tab===only)load()},3000);
   }
   function addView(body){clientsView(body,'add')}

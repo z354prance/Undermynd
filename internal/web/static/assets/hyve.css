@@ -537,3 +537,11 @@ body.ui .hv-body button.hv-chip::first-letter{text-transform:none}
 body.ui .hv-body .fld label.hv-radio{display:flex;margin:0;padding:0;font:400 14px var(--ui);color:var(--text);text-transform:none;letter-spacing:0}
 body.ui .hv-body .fld label.hv-radio b{font:600 15px var(--ui)}
 body.ui .hv-body .hv-cardbody{background:transparent;border:0;border-top:1px solid var(--line);border-radius:0;margin:0;padding:14px 16px 16px}
+/* long lists scroll inside their box */
+body.ui .hv-scroll{max-height:440px;overflow-y:auto;overscroll-behavior:contain}
+body.ui .hv-scroll .hv-twrap{overflow:visible;border:0}
+body.ui .hv-scroll .hv-table th{position:sticky;top:0;background:var(--panel);z-index:1}
+body.ui .hv-pipelist .hv-done{max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;overscroll-behavior:contain}
+/* a long reason stays inside its tile */
+body.ui .hv-tile6 .hv-tline{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;max-width:100%}
+body.ui .hv-tile6{min-width:0;overflow:hidden}
