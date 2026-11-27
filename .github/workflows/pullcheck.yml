@@ -1,0 +1,18 @@
+name: pull check
+on:
+  push:
+    branches: [check/pull]
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pull the published images anonymously, as Unraid does
+        run: |
+          docker logout ghcr.io || true
+          for img in ghcr.io/z354prance/hyvemynd:latest ghcr.io/z354prance/undermynd:latest; do
+            echo "== $img"
+            start=$(date +%s)
+            timeout 300 docker pull "$img" && echo "pulled in $(( $(date +%s) - start ))s" || echo "PULL FAILED or timed out"
+            docker image inspect "$img" --format 'size={{.Size}} created={{.Created}} digest={{index .RepoDigests 0}}' || true
+            docker run --rm --entrypoint /hyvemynd "$img" -version 2>&1 | head -2 || true
+          done
