@@ -872,7 +872,7 @@
     var sysInfo=homeCache.sys||null,cl=homeCache.cl||null,vp=homeCache.vp||null,reqList=[],music=[],gpus=homeCache.gpus||[];
     function tile(label,line,tone,to){var b=el('button','hv-tile6 '+(tone||'ok'));b.type='button';var h=el('span','hv-th');h.appendChild(el('i'));h.appendChild(document.createTextNode(label));b.appendChild(h);b.appendChild(el('span','hv-tline',line));b.onclick=function(){tab=to;app()};tiles.appendChild(b)}
     function drawTiles(){tiles.replaceChildren();var s=sysInfo;if(!s)return;
-      if(s.torbox&&s.torbox.configured)tile('TorBox',s.torbox.backoffUntil?'New adds paused by TorBox':'Working · '+((s.torbox.used||0)+(s.torbox.torrentUsed||0))+' adds this hour',s.torbox.backoffUntil?'warn':'ok','torbox');else tile('TorBox','Not set up','dim','clients');
+      if(s.torbox&&s.torbox.off)tile('TorBox','Off: token kept, nothing new sent','dim','clients');else if(s.torbox&&s.torbox.configured)tile('TorBox',s.torbox.backoffUntil?'New adds paused by TorBox':'Working · '+((s.torbox.used||0)+(s.torbox.torrentUsed||0))+' adds this hour',s.torbox.backoffUntil?'warn':'ok','torbox');else tile('TorBox','Not set up','dim','clients');
       if(cl){if(cl.builtin.usenet){var sv=cl.usenet.servers||[],bad=sv.filter(function(x){return x.problem});tile('Usenet',bad.length?bad.length+' of '+sv.length+' providers failing: '+bad[0].name:sv.length+' provider'+(sv.length===1?'':'s')+', no problems',bad.length&&bad.length===sv.length?'bad':bad.length?'warn':'ok','usenet')}else tile('Usenet','No providers','dim','usenet')}
       if(vp){var st=vp.status||{};tile('VPN',st.state==='up'?(st.regionName||'Connected')+(st.port?' · port '+st.port+' open':' · no forwarded port'):st.state==='off'?'Off':st.state==='connecting'?'Connecting…':'Down: '+(st.error||''),st.state==='up'?(st.port?'ok':'warn'):st.state==='off'?'dim':st.state==='connecting'?'warn':'bad','vpn')}
       tile('Tdarr',s.tdarr.api?(s.tdarr.inFlight+' of '+s.tdarr.max+' busy'):'Folders only',s.tdarr.api?'ok':'dim','transcode');
@@ -1048,7 +1048,9 @@
 
   function clientsPane(body){
     body.appendChild(head('TorBox','HyveMynd sends downloads to TorBox first when a token is set. When TorBox is busy, down or not set up, its own usenet downloader (Downloads › Usenet) and torrent client (Downloads › VPN) take over.'));
-    var tb=el('div','card');var h=el('h4','','TorBox ');h.appendChild(chip(S.torbox.hasToken,S.torbox.hasToken?'token set':'no token'));tb.appendChild(h);
+    var tbOn=S.torbox.on!==false;
+    var tb=el('div','card');var h=el('h4','','TorBox ');h.appendChild(chip(S.torbox.hasToken&&tbOn,!S.torbox.hasToken?'no token':tbOn?'on':'off'));tb.appendChild(h);
+    var onw=el('label','hv-radio');var onc=el('input');onc.type='checkbox';onc.checked=tbOn;onw.appendChild(onc);var ont=el('span');ont.appendChild(el('b','','Use TorBox'));ont.appendChild(el('span','hv-note','Off: nothing new is sent to TorBox and its token and settings are kept. Downloads already at TorBox still finish. New ones go to HyveMynd’s own usenet downloader and torrent client.'));onw.appendChild(ont);tb.appendChild(onw);
     var g=el('div','grid3');
     var tok=row(g,'API token',{type:'password',ph:S.torbox.hasToken?'set — leave blank to keep':'paste your token',help:'TorBox → Settings → API'});
     var cph=row(g,'new downloads per hour',{type:'number',value:S.torbox.createPerHour,help:'TorBox’s limit on creating downloads'});
@@ -1056,7 +1058,7 @@
     var lg=row(g,'seconds between link requests',{type:'number',value:S.torbox.linkGapSeconds,help:'spaces out requests so TorBox does not throttle'});
     tb.appendChild(g);body.appendChild(tb);
     saveBar(body,function(m){save(function(b){
-      b.torbox={token:tok.value,createPerHour:+cph.value,pullersAtOnce:+pa.value,linkGapSeconds:+lg.value}},m).then(function(){pane(body)})})
+      b.torbox={token:tok.value,on:onc.checked,createPerHour:+cph.value,pullersAtOnce:+pa.value,linkGapSeconds:+lg.value}},m).then(function(){pane(body)})})
   }
 
   function transcodePane(body){

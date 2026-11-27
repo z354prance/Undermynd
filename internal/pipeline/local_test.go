@@ -443,3 +443,35 @@ func TestUsenetTorBoxFailureRetriesOnBuiltIn(t *testing.T) {
 		t.Fatalf("the arr must see the failure: %v", s)
 	}
 }
+
+// TorBox switched off: new NZBs go to the built-in downloader, while one
+// already at TorBox is still followed to the end.
+func TestTorBoxSwitchedOff(t *testing.T) {
+	u := newURig(t)
+	news := &fakeLocal{dir: t.TempDir(), name: "usenet"}
+	u.eng.News = news
+	s := u.cfg.Get()
+	s.Usenet = config.Usenet{Servers: []config.NewsServer{{Name: "P", Host: "news.example", On: true}}}
+	u.cfg.Set(s)
+	old := u.addNZB("Show.S01E06.1080p")
+	u.tick(2)
+	if j, _ := u.st.Get(old); j.Backend != "torbox" {
+		t.Fatalf("TorBox on: backend %q (%s)", j.Backend, j.Reason)
+	}
+	s = u.cfg.Get()
+	s.TorBox.Off = true
+	u.cfg.Set(s)
+	id := u.addNZB("Show.S01E07.1080p")
+	u.tick(2)
+	if j, _ := u.st.Get(id); j.Backend != "usenet" {
+		t.Fatalf("TorBox off: backend %q (%s)", j.Backend, j.Reason)
+	}
+	if !u.cfg.Get().TorBox.Off || u.cfg.Get().TorBox.Token == "" {
+		t.Fatal("the token must be kept")
+	}
+	u.tb.finish("101", map[string]string{"Show.S01E06.1080p/Show.S01E06.1080p.mkv": "video"})
+	u.tick(4)
+	if j, _ := u.st.Get(old); j.State == job.Failed || j.State == job.Downloading || j.State == job.Submitted {
+		t.Fatalf("the download already at TorBox must carry on: %s (%s)", j.State, j.Reason)
+	}
+}

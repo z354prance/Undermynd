@@ -33,7 +33,7 @@ func (s *Server) adminUsenet(w http.ResponseWriter, r *http.Request) {
 		Mode    string           `json:"mode"`
 		TorBox  bool             `json:"torbox"`
 		Stats   usenet.Stats     `json:"stats"`
-	}{Mode: c.Usenet.Mode, TorBox: c.TorBox.Token != "", Servers: []newsServerView{}}
+	}{Mode: c.Usenet.Mode, TorBox: c.TorBox.On(), Servers: []newsServerView{}}
 	for _, n := range c.Usenet.Servers {
 		out.Servers = append(out.Servers, newsServerView{Name: n.Name, Host: n.Host, Port: n.Port, TLS: n.TLS, SkipVerify: n.SkipVerify,
 			User: n.User, HasPassword: n.Pass != "", Conns: n.Conns, Priority: n.Priority, On: n.On})

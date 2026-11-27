@@ -104,7 +104,18 @@ func (e *Engine) qbit() backend.Backend {
 	return e.qcache
 }
 
+// torbox is TorBox for new downloads: nil when it has no token or is
+// switched off.
 func (e *Engine) torbox() *backend.TorBox {
+	if e.Cfg.Get().TorBox.Off {
+		return nil
+	}
+	return e.torboxAny()
+}
+
+// torboxAny is TorBox whenever a token is set, switched off or not: for
+// downloads already there, which still finish.
+func (e *Engine) torboxAny() *backend.TorBox {
 	s := e.Cfg.Get().TorBox
 	if s.Token == "" {
 		return nil
@@ -207,9 +218,11 @@ func (e *Engine) byName(name string, j job.Job) backend.Backend {
 		return e.Override
 	}
 	if name == "torbox" {
-		if tb := e.torbox(); tb != nil {
+		if tb := e.torboxAny(); tb != nil {
 			if j.Kind != "usenet" {
-				return e.torboxTorrents()
+				e.bmu.Lock()
+				defer e.bmu.Unlock()
+				return e.ttcache
 			}
 			return tb
 		}

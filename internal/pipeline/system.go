@@ -21,8 +21,9 @@ type SystemInfo struct {
 	Counts map[string]int `json:"counts"` // jobs per public group
 	TorBox struct {
 		Configured   bool       `json:"configured"`
-		Used         int        `json:"used"`  // usenet creates this hour
-		Limit        int        `json:"limit"` // per kind
+		Off          bool       `json:"off,omitempty"` // token kept, switched off
+		Used         int        `json:"used"`          // usenet creates this hour
+		Limit        int        `json:"limit"`         // per kind
 		TorrentUsed  int        `json:"torrentUsed"`
 		BackoffUntil *time.Time `json:"backoffUntil,omitempty"`
 	} `json:"torbox"`
@@ -74,6 +75,7 @@ func (e *Engine) System() SystemInfo {
 			si.Counts[job.Group(j.State)]++
 		}
 	}
+	si.TorBox.Off = s.TorBox.Off && s.TorBox.Token != ""
 	if tb := e.torbox(); tb != nil {
 		si.TorBox.Configured = true
 		e.bmu.Lock()

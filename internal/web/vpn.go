@@ -42,7 +42,7 @@ func (s *Server) adminVPN(w http.ResponseWriter, r *http.Request) {
 	c := s.Cfg.Get()
 	v := vpnView{On: c.VPN.On, Provider: c.VPN.Kind(), Providers: config.VPNProviders, User: c.VPN.User, HasPassword: c.VPN.Pass != "", Region: c.VPN.Region,
 		HasWireGuard: c.VPN.WireGuard != "", HasToken: c.VPN.Token != "", Country: c.VPN.Country, Port: c.VPN.Port,
-		Torrents: c.VPN.Torrents, TorBox: c.TorBox.Token != ""}
+		Torrents: c.VPN.Torrents, TorBox: c.TorBox.On()}
 	if wc, err := vpn.ParseWG(string(c.VPN.WireGuard)); err == nil {
 		v.WGServer = wc.Endpoint
 	}

@@ -114,7 +114,13 @@ type TorBox struct {
 	CreatePerHour  int           `json:"createPerHour"`
 	PullersAtOnce  int           `json:"pullersAtOnce"`
 	LinkGapSeconds int           `json:"linkGapSeconds"`
+	// Off stops sending new downloads to TorBox but keeps the token and
+	// settings; downloads already there still finish.
+	Off bool `json:"off,omitempty"`
 }
+
+// On says whether new downloads may go to TorBox.
+func (t TorBox) On() bool { return t.Token != "" && !t.Off }
 
 // Tdarr hands videos to a Tdarr library by folder. Create a library in Tdarr that
 // watches InDir and writes to OutDir (folder to folder); HyveMynd does not touch any other library.

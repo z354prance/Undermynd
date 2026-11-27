@@ -655,6 +655,7 @@ type settingsView struct {
 	TorBox struct {
 		Token          string `json:"token,omitempty"` // write-only
 		HasToken       bool   `json:"hasToken"`
+		On             *bool  `json:"on,omitempty"` // nil when saving: unchanged
 		CreatePerHour  int    `json:"createPerHour"`
 		PullersAtOnce  int    `json:"pullersAtOnce"`
 		LinkGapSeconds int    `json:"linkGapSeconds"`
@@ -701,6 +702,8 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	v.Playback.EmbyURL, v.Playback.HasEmbyKey, v.Playback.HiddenLibraries = c.Playback.EmbyURL, c.Playback.EmbyKey != "", c.Playback.HiddenLibraries
 	v.Playback.RefreshAfterPlace, v.Playback.PathFrom, v.Playback.PathTo = c.Playback.RefreshAfterPlace, c.Playback.PathFrom, c.Playback.PathTo
 	v.TorBox.HasToken, v.TorBox.CreatePerHour, v.TorBox.PullersAtOnce, v.TorBox.LinkGapSeconds = c.TorBox.Token != "", c.TorBox.CreatePerHour, c.TorBox.PullersAtOnce, c.TorBox.LinkGapSeconds
+	tbOn := !c.TorBox.Off
+	v.TorBox.On = &tbOn
 	v.ClientUser, v.StallMinutes, v.ReconcileSeconds, v.FlagImportHours = c.ClientUser, c.StallMinutes, c.ReconcileSeconds, c.FlagImportHours
 	v.StorageScanMinutes = c.StorageScanMinutes
 	v.Metadata.HasTMDBKey, v.Metadata.AnimeTitlesURL, v.Metadata.AnimeIDsURL = c.Metadata.TMDBKey != "", c.Metadata.AnimeTitlesURL, c.Metadata.AnimeIDsURL
@@ -853,6 +856,9 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	next.Metadata.AnimeTitlesURL, next.Metadata.AnimeIDsURL = strings.TrimSpace(in.Metadata.AnimeTitlesURL), strings.TrimSpace(in.Metadata.AnimeIDsURL)
 	if in.TorBox.Token != "" {
 		next.TorBox.Token = secret.String(strings.TrimSpace(in.TorBox.Token))
+	}
+	if in.TorBox.On != nil {
+		next.TorBox.Off = !*in.TorBox.On
 	}
 	if in.TorBox.CreatePerHour > 0 {
 		next.TorBox.CreatePerHour = in.TorBox.CreatePerHour
