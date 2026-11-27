@@ -471,3 +471,33 @@ body.ui .hv-mt span{flex:0 0 auto;white-space:nowrap}
 body.ui .hv-ft{overflow-wrap:anywhere}
 body.ui .hv-frow .hv-age{flex:0 0 auto;white-space:nowrap}
 body.ui .hv-fk{flex:0 0 56px}
+/* editable rows: a summary line, and the fields when Edit is open */
+body.ui .hv-sechead{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:18px 0 8px}
+body.ui .hv-sechead h2{margin:0;font:700 18px var(--ui)}
+body.ui .hv-pipelist>.hv-sechead:first-child{margin-top:0}
+body.ui .hv-erows{display:flex;flex-direction:column;gap:8px}
+body.ui .hv-erow{border-radius:10px;background:var(--panel);border:1px solid var(--line);overflow:hidden}
+body.ui .hv-erow-top{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:12px 14px}
+body.ui .hv-erow-top.bad{background:#2a1a1c}
+body.ui .hv-erow-t{flex:1 1 220px;min-width:0;display:flex;flex-direction:column;gap:3px}
+body.ui .hv-erow-t b{font-weight:600}
+body.ui .hv-erow-t span{font-size:13px;color:var(--dim);overflow-wrap:anywhere}
+body.ui .hv-erow-top.bad .hv-erow-t span{color:#e0b4b4}
+body.ui .hv-erow-ed{padding:4px 14px 14px;border-top:1px solid var(--line)}
+body.ui .hv-mono{font-family:var(--mono)!important;font-size:12px!important}
+body.ui .hv-dot2{flex:0 0 10px;height:10px;border-radius:50%;background:var(--ok)}
+body.ui .hv-dot2.bad{background:var(--bad)}body.ui .hv-dot2.off{background:var(--faint)}
+body.ui .hv-feedsaw{flex:1 1 400px;min-width:0}
+body.ui .hv-saw{display:flex;flex-direction:column;border-radius:10px;background:var(--panel);border:1px solid var(--line);padding:2px 14px}
+body.ui .hv-sawrow{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
+body.ui .hv-sawrow:last-child{border-bottom:0}
+body.ui .hv-sawt{flex:1 1 100%;font:12px var(--mono);overflow-wrap:anywhere}
+body.ui .hv-sawo{font-weight:600;color:var(--dim)}body.ui .hv-sawo.ok{color:var(--ok)}
+body.ui .hv-sawwhy{color:var(--dim);flex:1 1 160px}
+body.ui .hv-sawact{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+/* VPN providers as cards */
+body.ui .hv-provgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-top:6px}
+body.ui .hv-body button.hv-prov{height:auto;display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:12px 14px;border-radius:10px;background:var(--panel);border:1px solid var(--line);text-align:left;font:400 13px var(--ui);color:var(--dim)}
+body.ui .hv-prov b{font:600 15px var(--ui);color:var(--text)}
+body.ui .hv-prov span.ok{color:#7ee08a}
+body.ui .hv-body button.hv-prov.on{background:var(--accent-soft);border:2px solid var(--accent)}
