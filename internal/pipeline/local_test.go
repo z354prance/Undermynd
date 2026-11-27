@@ -30,6 +30,7 @@ type fakeLocal struct {
 	video   []byte            // the video's content (default: zeros)
 	done    bool
 	down    bool // the VPN is not connected
+	failed  bool // the download errors
 	removed map[string]bool
 }
 
@@ -68,6 +69,9 @@ func (f *fakeLocal) Status(ctx context.Context, id string) (backend.Item, error)
 	}
 	if f.busy {
 		return backend.Item{}, fmt.Errorf("%w: waiting for the VPN", backend.ErrBusy)
+	}
+	if f.failed {
+		return backend.Item{Status: backend.Errored, Error: "articles missing everywhere"}, nil
 	}
 	if f.done {
 		return backend.Item{Status: backend.Complete, Progress: 1}, nil
@@ -395,5 +399,47 @@ func TestBuiltInDownloadIsCleanedUp(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(news.dir, id)); !os.IsNotExist(err) {
 		t.Fatalf("download folder left behind (state %s, %q)", j.State, j.Reason)
+	}
+}
+
+// An NZB TorBox fails is tried once more on the built-in downloader; when that
+// fails too, the job fails and the arr is told, so it picks another release.
+func TestUsenetTorBoxFailureRetriesOnBuiltIn(t *testing.T) {
+	u := newURig(t)
+	news := &fakeLocal{dir: t.TempDir(), name: "usenet"}
+	u.eng.News = news
+	s := u.cfg.Get()
+	s.Usenet = config.Usenet{Servers: []config.NewsServer{{Name: "P", Host: "news.example", On: true}}}
+	u.cfg.Set(s)
+	id := u.addNZB("Show.S01E05.1080p")
+	u.tick(2)
+	if j, _ := u.st.Get(id); j.Backend != "torbox" {
+		t.Fatalf("TorBox first: backend %q (%s)", j.Backend, j.Reason)
+	}
+	for i := 0; i < 12; i++ {
+		u.tb.mu.Lock()
+		for _, it := range u.tb.items {
+			it["download_state"] = "failed"
+		}
+		u.tb.mu.Unlock()
+		u.tick(1)
+		if j, _ := u.st.Get(id); j.Backend == "usenet" {
+			break
+		}
+	}
+	j, _ := u.st.Get(id)
+	if j.Backend != "usenet" || j.State == job.Failed || len(j.PastRemoteIDs) == 0 {
+		t.Fatalf("expected a retry on the built-in downloader, got %s on %q (%s)", j.State, j.Backend, j.Reason)
+	}
+	news.mu.Lock()
+	news.failed = true
+	news.mu.Unlock()
+	u.tick(3)
+	j, _ = u.st.Get(id)
+	if j.State != job.Failed {
+		t.Fatalf("expected failed after the built-in try, got %s (%s)", j.State, j.Reason)
+	}
+	if s := u.slot("history", id); s == nil || s["status"] != "Failed" {
+		t.Fatalf("the arr must see the failure: %v", s)
 	}
 }
