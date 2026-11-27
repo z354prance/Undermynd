@@ -42,6 +42,7 @@ func TestTdarrStage(t *testing.T) {
 	out := filepath.Join(s.Tdarr.OutDir, id)
 	_ = os.MkdirAll(out, 0o755)
 	small := mkvHead + strings.Repeat("s", 1500)
+	_ = os.Remove(in) // Tdarr flows often delete their input; the size sent is still known
 	_ = os.WriteFile(filepath.Join(out, "Tdarr.Show.S01E01.mkv"), []byte(small), 0o644)
 	u.tick(1)
 	if j, _ = u.st.Get(id); j.State != job.Transcoding {

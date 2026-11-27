@@ -50,7 +50,10 @@ type Job struct {
 	TranscodeSig      string  `json:"transcodeSig,omitempty"` // sizes seen last check, to tell when output stopped growing
 	// The video files' total size before and after Tdarr, once Tdarr has
 	// finished with them.
-	SizeIn  int64 `json:"sizeIn,omitempty"`
+	SizeIn int64 `json:"sizeIn,omitempty"`
+	// TdarrIn is the videos' size when they went into Tdarr's input folder
+	// (Tdarr may delete or replace the input before HyveMynd checks the output).
+	TdarrIn int64 `json:"tdarrIn,omitempty"`
 	SizeOut int64 `json:"sizeOut,omitempty"`
 
 	PullDone  int64 `json:"pullDone,omitempty"` // bytes copied from the remote backend to staging

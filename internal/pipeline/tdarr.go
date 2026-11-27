@@ -43,13 +43,21 @@ func (e *Engine) sendToTdarr(j job.Job) bool {
 		})
 		return true
 	}
+	var total int64
 	for _, f := range videos {
-		if err := moveFile(filepath.Join(j.StagingDir, f), filepath.Join(e.tdarrIn(j.ID), f)); err != nil {
+		src := filepath.Join(j.StagingDir, f)
+		if fi, err := os.Stat(src); err == nil {
+			total += fi.Size()
+		}
+		if err := moveFile(src, filepath.Join(e.tdarrIn(j.ID), f)); err != nil {
 			e.retry(j, err, 6, "move to Tdarr input")
 			return true
 		}
 	}
 	_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
+		if total > 0 {
+			c.TdarrIn = total
+		}
 		c.TranscodeSig = ""
 		c.LastProgress = e.Now()
 		c.Move(job.QueuedTranscode, fmt.Sprintf("%d video(s) waiting in the Tdarr input folder", len(videos)), e.Now())
@@ -350,6 +358,7 @@ func (e *Engine) doVerify(ctx context.Context, j job.Job) {
 	type swap struct{ rel, out string }
 	var swaps []swap
 	var sizeIn, sizeOut int64
+	allIn := true // every input still there to measure
 	for _, f := range j.Files {
 		if !isVideo(f) {
 			continue
@@ -371,8 +380,13 @@ func (e *Engine) doVerify(ctx context.Context, j job.Job) {
 		swaps = append(swaps, swap{f, out})
 		if err == nil {
 			sizeIn += in.Size()
+		} else {
+			allIn = false
 		}
 		sizeOut += fi.Size()
+	}
+	if !allIn && j.TdarrIn > 0 {
+		sizeIn = j.TdarrIn // Tdarr removed its input: use the size it was sent at
 	}
 	newFiles := make([]string, 0, len(j.Files))
 	repl := map[string]string{}
