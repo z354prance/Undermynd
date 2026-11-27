@@ -48,6 +48,10 @@ type Job struct {
 	TranscodeNode     string  `json:"transcodeNode,omitempty"`
 	TranscodeWorker   string  `json:"transcodeWorker,omitempty"`
 	TranscodeSig      string  `json:"transcodeSig,omitempty"` // sizes seen last check, to tell when output stopped growing
+	// The video files' total size before and after Tdarr, once Tdarr has
+	// finished with them.
+	SizeIn  int64 `json:"sizeIn,omitempty"`
+	SizeOut int64 `json:"sizeOut,omitempty"`
 
 	PullDone  int64 `json:"pullDone,omitempty"` // bytes copied from the remote backend to staging
 	PullTotal int64 `json:"pullTotal,omitempty"`

@@ -349,6 +349,7 @@ func validContainer(path string) bool {
 func (e *Engine) doVerify(ctx context.Context, j job.Job) {
 	type swap struct{ rel, out string }
 	var swaps []swap
+	var sizeIn, sizeOut int64
 	for _, f := range j.Files {
 		if !isVideo(f) {
 			continue
@@ -368,6 +369,10 @@ func (e *Engine) doVerify(ctx context.Context, j job.Job) {
 			return
 		}
 		swaps = append(swaps, swap{f, out})
+		if err == nil {
+			sizeIn += in.Size()
+		}
+		sizeOut += fi.Size()
 	}
 	newFiles := make([]string, 0, len(j.Files))
 	repl := map[string]string{}
@@ -390,7 +395,17 @@ func (e *Engine) doVerify(ctx context.Context, j job.Job) {
 		e.retry(j, err, 10, "clear Tdarr folders")
 		return
 	}
-	_, _ = e.Store.Update(j.ID, func(c *job.Job) error { c.Files, c.TranscodeSig = newFiles, ""; return nil })
+	_, _ = e.Store.Update(j.ID, func(c *job.Job) error {
+		c.Files, c.TranscodeSig = newFiles, ""
+		if sizeIn > 0 {
+			c.SizeIn, c.SizeOut = sizeIn, sizeOut
+		}
+		return nil
+	})
+	if sizeIn > 0 {
+		e.recordSavings(j.Category, sizeIn, sizeOut)
+		j.SizeIn, j.SizeOut = sizeIn, sizeOut
+	}
 	j.Files = newFiles
 	e.handBack(j)
 }

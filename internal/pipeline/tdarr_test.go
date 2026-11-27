@@ -62,6 +62,13 @@ func TestTdarrStage(t *testing.T) {
 	if exists(filepath.Join(s.Tdarr.InDir, id)) || exists(out) {
 		t.Fatal("Tdarr folders must be cleared")
 	}
+	// The sizes before and after are kept, on the job and in the total.
+	if j.SizeIn != int64(len(body)) || j.SizeOut != int64(len(small)) {
+		t.Fatalf("sizes %d → %d", j.SizeIn, j.SizeOut)
+	}
+	if sv := u.eng.TdarrSavings(); sv.Files != 1 || sv.Before != int64(len(body)) || sv.After != int64(len(small)) || sv.Categories[j.Category].Files != 1 {
+		t.Fatalf("savings %+v", sv)
+	}
 }
 
 func TestTdarrBadOutputFails(t *testing.T) {

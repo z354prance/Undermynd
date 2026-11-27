@@ -555,3 +555,9 @@ body.ui .hv-gpul{font-size:14px}
 body.ui .hv-spark{width:100%;max-width:520px;height:60px;background:var(--raise);border-radius:6px}
 body.ui .hv-spark path{fill:none;stroke:var(--st-convert);stroke-width:2}
 body.ui .hv-spark .lim{stroke:var(--bad);stroke-dasharray:4 4;stroke-width:1;opacity:.6}
+body.ui .hv-saved{display:flex;flex-direction:column;gap:5px;padding:12px 14px;border-radius:10px;background:rgba(63,185,80,.08);border:1px solid #2c5a35}
+body.ui .hv-saved b{color:#7ee08a}
+body.ui .hv-saved span{font-size:14px;color:#c4c7ca}
+body.ui .hv-savebar{height:6px;border-radius:3px;background:var(--line)}
+body.ui .hv-savebar span{display:block;height:6px;border-radius:3px;background:var(--st-convert)}
+body.ui .hv-stat.ok b{color:#7ee08a}

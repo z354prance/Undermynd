@@ -151,6 +151,7 @@ func main() {
 		logger.Fatalf("auth: %v", err)
 	}
 	eng := pipeline.New(st, cfg, logger)
+	eng.Blobs = blobs
 	qb := qbitapi.New(st, eng, cfg, logger)
 	sab := sabapi.New(st, eng, cfg, logger)
 	machine := http.NewServeMux()
