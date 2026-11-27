@@ -466,3 +466,8 @@ body.ui .hv-needt b{color:var(--text);font-weight:600}
 body.ui .hv-mrow .hv-bar{width:100%;max-width:none}
 body.ui .hv-pipedet .hv-linkbtn{align-self:flex-start}
 body.ui .hv-body .fld textarea{width:100%;box-sizing:border-box;min-height:96px;font:12px var(--mono);background:var(--raise);color:var(--text);border:1px solid var(--line2);border-radius:8px;padding:8px 10px}
+body.ui .hv-mt b{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+body.ui .hv-mt span{flex:0 0 auto;white-space:nowrap}
+body.ui .hv-ft{overflow-wrap:anywhere}
+body.ui .hv-frow .hv-age{flex:0 0 auto;white-space:nowrap}
+body.ui .hv-fk{flex:0 0 56px}
