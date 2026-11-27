@@ -122,7 +122,7 @@ func TestWireGuardFileNoPortForwarding(t *testing.T) {
 	done := make(chan struct{})
 	go func() { tun.Run(ctx); close(done) }()
 	defer func() { cancel(); <-done }()
-	waitFor(t, "up", func() bool { return tun.Up() })
+	waitFor(t, "up", func() bool { return tun.Up() && tun.Status().Error != "" })
 	if s := tun.Status(); s.Port != 0 || !strings.Contains(s.Error, "no forwarded port") || s.RegionName != "Mullvad" {
 		t.Fatalf("status %+v", s)
 	}

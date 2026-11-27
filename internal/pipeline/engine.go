@@ -8,6 +8,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"github.com/z354prance/undermynd/internal/state"
 	"io"
 	"io/fs"
 	"log"
@@ -38,9 +39,12 @@ type DownloadFailer interface {
 
 type Engine struct {
 	Store *store.Store
-	Cfg   *config.Config
-	Log   *log.Logger
-	Now   func() time.Time
+	// Blobs keeps small state (Tdarr savings); nil: in memory.
+	Blobs      state.Blobs
+	savingsMem *Savings
+	Cfg        *config.Config
+	Log        *log.Logger
+	Now        func() time.Time
 
 	// Override replaces every backend (tests).
 	Override backend.Backend

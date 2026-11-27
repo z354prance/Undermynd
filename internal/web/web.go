@@ -186,6 +186,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/api/requests", s.admin(s.requestsAdminList))
 	mux.HandleFunc("PUT /admin/api/requests/auto", s.guard(s.admin(s.requestsAuto)))
 	mux.HandleFunc("GET /admin/api/gpus", s.admin(s.gpusList))
+	mux.HandleFunc("GET /admin/api/tdarr/savings", s.admin(s.tdarrSavings))
 	mux.HandleFunc("POST /admin/api/music-requests/{id}/{action}", s.guard(s.admin(s.musicDecide)))
 	mux.HandleFunc("POST /admin/api/requests/{id}/{action}", s.guard(s.admin(s.requestsDecide)))
 	mux.HandleFunc("POST /admin/api/playback/test", s.guard(s.admin(s.playbackTest)))
@@ -475,6 +476,8 @@ type jobRow struct {
 	Flag     string    `json:"flag"`
 	Attn     bool      `json:"attention"`
 	FailedAt string    `json:"failedAt,omitempty"`
+	SizeIn   int64     `json:"sizeIn,omitempty"` // before and after Tdarr
+	SizeOut  int64     `json:"sizeOut,omitempty"`
 	Progress float64   `json:"progress"`
 	Backend  string    `json:"backend"`
 	Node     string    `json:"transcodeNode,omitempty"`
@@ -488,7 +491,7 @@ func (s *Server) jobRows() []jobRow {
 	for _, j := range s.Store.List() {
 		out = append(out, jobRow{ID: j.ID, Name: j.Name, Source: j.Source, Category: j.Category, State: j.State, Group: job.Group(j.State),
 			Reason: j.Reason, Flag: j.Flag, Attn: j.State == job.Failed || j.Flag != "" || cleanupStuck(j), Progress: job.Overall(j), Backend: j.Backend,
-			Node: j.TranscodeNode, Worker: j.TranscodeWorker, Created: j.Created, Changed: j.StateChanged, FailedAt: job.FailedStage(j)})
+			Node: j.TranscodeNode, Worker: j.TranscodeWorker, Created: j.Created, Changed: j.StateChanged, FailedAt: job.FailedStage(j), SizeIn: j.SizeIn, SizeOut: j.SizeOut})
 	}
 	return out
 }

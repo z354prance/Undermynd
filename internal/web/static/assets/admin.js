@@ -62,7 +62,7 @@
     // requests from visitors, the library it watches, and its settings.
     var NAV=[
       {id:'home',label:'Home',icon:'s_over',pages:[['overview','Home']]},
-      {id:'downloads',label:'Downloads',icon:'s_dl',pages:[['jobs','Pipeline'],['torbox','TorBox'],['usenetq','Usenet'],['torrents','Torrents'],['rss','Feeds'],['add','Add a download']]},
+      {id:'downloads',label:'Downloads',icon:'s_dl',pages:[['jobs','Pipeline'],['torbox','TorBox'],['usenetq','Usenet'],['torrents','Torrents'],['tdarrstats','Tdarr'],['rss','Feeds'],['add','Add a download']]},
       {id:'requests',label:'Requests',icon:'s_req',pages:[['requests','Requests']]},
       {id:'library',label:'Library',icon:'s_lib',pages:[['missing','Missing'],['upgrades','Upgrades'],['anime','Anime']]},
       {id:'settings',label:'Settings',icon:'s_sys',pages:[['start','Settings']],settings:true}];
@@ -99,7 +99,7 @@
     var main=el('main','main'),body=el('div');main.appendChild(body);bodyWrap.appendChild(main);shell.appendChild(side);shell.appendChild(mainCol);root.appendChild(shell);
     if(cur.settings){settingsShell(body,SETTINGS,go);}
     else if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else if(tab==='requests')requestsView(body);else if(tab==='missing')missingView(body);else if(tab==='upgrades')upgradesView(body);else if(tab==='anime')animeView(body);
-    else if(tab==='torbox'||tab==='usenetq'||tab==='torrents')clientsView(body,tab);else if(tab==='add')addView(body);else settingsView(body);
+    else if(tab==='torbox'||tab==='usenetq'||tab==='torrents')clientsView(body,tab);else if(tab==='tdarrstats')tdarrStatsView(body);else if(tab==='add')addView(body);else settingsView(body);
   }
   var homeCount=null,dlCount=null;
   function railCounts(rows){var bad=rows.filter(function(r){return r.attention&&r.state!=='cleaned'}).length,mv=rows.filter(function(r){return WORKING[r.group]}).length;
@@ -198,7 +198,7 @@
     function row(j){var m=jobStage(j),g=groupOf(j);var r=el('button','hv-prow '+(m[1]==='failed'?'bad':m[1]==='stalled'?'warn':'')+(selected===j.id?' sel':''));r.type='button';
       var t=el('div','hv-prt');t.appendChild(el('b','',j.name));var k=KIND[j.source]||[j.source||'',''];var src=el('span','hv-prs',[k[0],j.category,j.backend?({torbox:'TorBox',usenet:'Usenet',local:'Torrent'}[j.backend]||j.backend):''].filter(Boolean).join(' · '));t.appendChild(src);r.appendChild(t);
       if(g!=='done')r.appendChild(stepBar(j));
-      var why=g==='need'?((j.flag?j.flag+' ':'')+(j.reason||'')).trim():'';r.appendChild(el('span','hv-prl',why||jobStageText(j)));
+      var why=g==='need'?((j.flag?j.flag+' ':'')+(j.reason||'')).trim():'';r.appendChild(el('span','hv-prl',why||jobStageText(j)+(j.sizeIn>0&&j.sizeOut<j.sizeIn?' · Tdarr saved '+gb(j.sizeIn-j.sizeOut):'')));
       r.onclick=function(){selected=j.id;detailId=j.id;drawRows();drawDet()};return r}
     function drawRows(){
       if(tab!=='jobs')return;
@@ -221,6 +221,7 @@
       var v=el('div','hv-verdict '+(m[1]==='failed'?'bad':m[1]==='stalled'?'warn':m[1]==='done'?'ok':''));
       v.appendChild(el('strong','',m[1]==='failed'?'This did not work':m[1]==='stalled'?'This looks stuck':m[1]==='done'?'Done':jobStageText(j)));
       if(why)v.appendChild(el('span','',why));else if(m[1]==='working'||m[1]==='waiting')v.appendChild(el('span','',m[1]==='waiting'?'Waiting its turn.':'Moving along.'));det.appendChild(v);
+      if(j.sizeIn>0)det.appendChild(savedLine(j.sizeIn,j.sizeOut));
       var acts=jobActions(j);acts.className='hv-acts';[].forEach.call(acts.querySelectorAll('button'),function(b){b.className='hv-btn'+(/\bgo\b/.test(b.className)?' primary':/\bbad\b/.test(b.className)?' bad':'');b.textContent=cap(b.textContent)});if(acts.children.length)det.appendChild(acts);
       var tl=el('ol','hv-tl');det.appendChild(tl);var logBtn=el('button','hv-linkbtn',pipeLog?'Hide the full log':'Show the full log');logBtn.type='button';logBtn.onclick=function(){pipeLog=!pipeLog;drawDet()};det.appendChild(logBtn);
       var pre=el('div','hv-log');if(pipeLog)det.appendChild(pre);det.appendChild(el('div','hv-rel',j.name));
@@ -949,19 +950,37 @@
     if(tab==='transcode'){var gs=el('div');var first=body.querySelector('.hv-erows');if(first&&first.nextSibling)body.insertBefore(gs,first.nextSibling);else body.appendChild(gs);gpuSection(gs)}
     else if(tab!=='system'&&tab!=='rss')split(body);
   }
+  function gb(b){b=b||0;var a=Math.abs(b);return a>=1099511627776?(b/1099511627776).toFixed(2)+' TB':a>=1073741824?(b/1073741824).toFixed(2)+' GB':Math.round(b/1048576)+' MB'}
+  function savedLine(a,b){var d=el('div','hv-saved');var pct=a?Math.round(b/a*100):0;var bar=el('div','hv-savebar');var f=el('span');f.style.width=Math.min(100,pct)+'%';bar.appendChild(f);
+    d.appendChild(el('b','',b<=a?'Tdarr saved '+gb(a-b):'Tdarr made it '+gb(b-a)+' larger'));d.appendChild(el('span','',gb(a)+' → '+gb(b)+' · '+pct+'% of the original'));d.appendChild(bar);return d}
+  // Downloads › Tdarr: what converting has saved, and the cards it runs on.
+  function tdarrStatsView(body){
+    var tops=el('div','hv-stats');body.appendChild(tops);var cats=el('div');body.appendChild(cats);var gs=el('div');body.appendChild(gs);var rb=hvBox('Converted lately');var rl=el('div','hv-scroll');rb.appendChild(rl);body.appendChild(rb);
+    api('GET','/tdarr/savings').then(function(d){var t=d.total||{};var saved=(t.before||0)-(t.after||0);
+      function stat(l,v,tone){var c=el('div','hv-stat'+(tone?' '+tone:''));c.appendChild(el('span','',l));c.appendChild(el('b','',v));tops.appendChild(c)}
+      stat('Space saved',gb(saved),'ok');stat('Files converted',String(t.files||0));stat('Before → after',gb(t.before)+' → '+gb(t.after));stat('Average size',t.before?Math.round(t.after/t.before*100)+'% of the original':'—');
+      if(t.since&&t.since[0]!=='0')tops.appendChild(el('p','hv-note','Counted since '+new Date(t.since).toLocaleDateString()+'.'));
+      var ks=Object.keys(t.categories||{});if(ks.length){cats.appendChild(el('h2','hv-grph','BY CATEGORY'));var wrap=el('div','hv-twrap');var tb=el('table','hv-table');var hr=el('tr');['Category','Files','Before','After','Saved',''].forEach(function(h){var th=el('th','',h);th.scope='col';hr.appendChild(th)});var th0=el('thead');th0.appendChild(hr);tb.appendChild(th0);var bd=el('tbody');
+        ks.sort().forEach(function(k){var c=t.categories[k];var r=el('tr');[k,String(c.files),gb(c.before),gb(c.after),gb(c.before-c.after),c.before?Math.round(c.after/c.before*100)+'% of the original':''].forEach(function(v){r.appendChild(el('td','',v))});bd.appendChild(r)});tb.appendChild(bd);wrap.appendChild(tb);cats.appendChild(wrap)}
+      var rec=d.recent||[];if(!rec.length){rl.appendChild(el('div','hv-empty','Nothing converted yet. Sizes are kept from now on, for each download Tdarr finishes.'));}
+      else{var wrap2=el('div','hv-twrap');var t2=el('table','hv-table');var h2=el('tr');['Name','Category','Before','After','Saved','When'].forEach(function(h){var th=el('th','',h);th.scope='col';h2.appendChild(th)});var hh=el('thead');hh.appendChild(h2);t2.appendChild(hh);var b2=el('tbody');
+        rec.forEach(function(x){var r=el('tr');var n=el('td');var nm=el('div','hv-tname');nm.appendChild(el('b','',x.name));n.appendChild(nm);r.appendChild(n);[x.category,gb(x.before),gb(x.after),(x.after<=x.before?gb(x.before-x.after):'+'+gb(x.after-x.before))+' ('+Math.round(x.after/x.before*100)+'%)',ago(x.at)+' ago'].forEach(function(v){r.appendChild(el('td','',v))});b2.appendChild(r)});t2.appendChild(b2);wrap2.appendChild(t2);rl.appendChild(wrap2)}
+    }).catch(fail);
+    gpuSection(gs,'tdarrstats');
+  }
   function gpuLine(g){var p=[];if(g.video>=0)p.push('video '+Math.round(g.video)+'%');if(g.render>=0&&g.vendor!=='amd')p.push('render '+Math.round(g.render)+'%');else if(g.busy>=0&&g.video<0)p.push(Math.round(g.busy)+'% busy');
     if(g.freq>=0)p.push(Math.round(g.freq)+(g.freqMax>0?'/'+Math.round(g.freqMax):'')+' MHz');if(g.power>=0)p.push(Math.round(g.power)+' W');if(g.temp>0)p.push(Math.round(g.temp)+'°C');return p.join(' · ')}
   function gpuSpark(g){var NS='http://www.w3.org/2000/svg';var w=360,h=60,pts=(g.history||[]);var sv=document.createElementNS(NS,'svg');sv.setAttribute('viewBox','0 0 '+w+' '+h);sv.setAttribute('class','hv-spark');sv.setAttribute('role','img');sv.setAttribute('aria-label','load over the last hour');
     var lim=document.createElementNS(NS,'line');lim.setAttribute('x1',0);lim.setAttribute('x2',w);lim.setAttribute('y1',h*(1-.9));lim.setAttribute('y2',h*(1-.9));lim.setAttribute('class','lim');sv.appendChild(lim);
     if(pts.length>1){var d=pts.map(function(p,i){return (i?'L':'M')+(i*(w/(pts.length-1))).toFixed(1)+' '+(h-(p.load/100)*h).toFixed(1)}).join(' ');var pa=document.createElementNS(NS,'path');pa.setAttribute('d',d);sv.appendChild(pa)}return sv}
-  function gpuSection(host){var sec=el('section','hv-gpus');host.appendChild(sec);
+  function gpuSection(host,page){page=page||'transcode';var sec=el('section','hv-gpus');host.appendChild(sec);
     function draw(d){sec.replaceChildren();sec.appendChild(el('h2','hv-grph','GRAPHICS CARDS'));
       if(!d||!d.on){sec.appendChild(el('p','hv-note','GPU watching is off (HYVEMYND_GPU=off).'));return}
       if(!d.cards.length){sec.appendChild(el('p','hv-note','No graphics card is visible to HyveMynd. To watch the cards Tdarr uses: Intel or AMD, add the device /dev/dri to the HyveMynd container (Intel also needs --cap-add=PERFMON under Extra Parameters for the load); NVIDIA, add --runtime=nvidia and the variable NVIDIA_VISIBLE_DEVICES=all.'));return}
       d.cards.forEach(function(g){var c=el('div','hv-gpu'+(g.overloaded?' bad':''));var t=el('div','hv-gpuh');t.appendChild(el('b','',g.name));t.appendChild(el('span','hv-note',[g.slot,g.driver,g.source].filter(Boolean).join(' · ')));c.appendChild(t);
         var L=g.video>=0?g.video:g.busy;c.appendChild(el('div','hv-gpul',L<0?(g.note||'load unknown'):gpuLine(g)+(g.overloaded?' · overloaded':'')));if(g.note&&L>=0)c.appendChild(el('div','hv-note',g.note));
         if((g.history||[]).length>1){c.appendChild(gpuSpark(g));c.appendChild(el('div','hv-note','The last hour, one point a minute; the line is 90%.'))}sec.appendChild(c)})}
-    function load(){api('GET','/gpus').then(draw).catch(function(){})}load();var iv=setInterval(function(){if(tab!=='transcode'){clearInterval(iv);return}load()},5000)}
+    function load(){api('GET','/gpus').then(draw).catch(function(){})}load();var iv=setInterval(function(){if(tab!==page){clearInterval(iv);return}load()},5000)}
   // A settings card becomes a row (pinned v4): a status dot, its name and
   // state on one line, and its fields under Edit.
   function rowify(body){
