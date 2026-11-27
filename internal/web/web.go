@@ -103,6 +103,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /admin/api/clients/add", s.guard(s.admin(s.adminClientAdd)))
 	mux.HandleFunc("PUT /admin/api/clients/limits", s.admin(s.adminClientLimits))
 	mux.HandleFunc("POST /admin/api/clients/{id}/{action}", s.guard(s.admin(s.adminClientAction)))
+	mux.HandleFunc("GET /admin/api/clients/{id}/log", s.admin(s.adminClientLog))
 	mux.HandleFunc("GET /admin/api/usenet", s.admin(s.adminUsenet))
 	mux.HandleFunc("PUT /admin/api/usenet", s.admin(s.adminUsenetSave))
 	mux.HandleFunc("POST /admin/api/usenet/test", s.admin(s.adminUsenetTest))

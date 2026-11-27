@@ -310,3 +310,10 @@ body.ui .up-pct.full{color:#3fb97a}
 /* Clients page: a thin progress bar under each download */
 .hv-bar{height:4px;border-radius:2px;background:var(--line);margin-top:6px;overflow:hidden;max-width:520px}
 .hv-bar>span{display:block;height:100%;border-radius:2px;transition:width .6s ease}
+
+/* Clients page: a download's details and timeline */
+.hv-details{margin:0 0 14px 0;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.02)}
+.hv-details .hv-note{margin-bottom:4px;word-break:break-all}
+.hv-log{margin-top:8px;max-height:320px;overflow:auto;font:12px/1.55 var(--mono);color:var(--dim)}
+.hv-log .c{color:var(--text)}
+.hv-log .t{color:var(--dim);margin-right:10px;opacity:.7}

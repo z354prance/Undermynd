@@ -65,6 +65,20 @@ func TestClientsAddByHandAndList(t *testing.T) {
 	if len(out.Items) != 1 || out.Items[0].Name != "Some.App.v2" {
 		t.Fatalf("items %s", b)
 	}
+	code, b = e.do("GET", "/admin/api/clients/"+j.ID+"/log", nil, false)
+	var lg struct {
+		State string `json:"state"`
+		Lines []struct {
+			Msg string `json:"msg"`
+		} `json:"lines"`
+	}
+	_ = json.Unmarshal(b, &lg)
+	if code != 200 || lg.State == "" || len(lg.Lines) == 0 || !strings.Contains(lg.Lines[0].Msg, "received from manual") {
+		t.Fatalf("log %d %s", code, b)
+	}
+	if code, _ := e.do("GET", "/admin/api/clients/nope/log", nil, false); code != 404 {
+		t.Fatalf("unknown id: %d", code)
+	}
 	if code, _ := e.do("POST", "/admin/api/clients/"+j.ID+"/remove", nil, true); code != 200 {
 		t.Fatalf("remove %d", code)
 	}

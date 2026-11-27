@@ -104,7 +104,7 @@
     if(j.state!=='cleaned')b('bad','cancel',function(){if(confirm('Cancel and clean up this job?'))doAction(j.id,'cancel')});
     return act}
   // Small pieces of the HyveMynd look (pinned v2 admin).
-  var IC={s_over:'<path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 8h6V4h-6z"/>',s_lib:'<path d="M4 4h4v16H4zM10 4h4v16h-4zM16 5l3.5-1 2.5 15.5-3.5 1z"/>',s_act:'<path d="M3 12h4l3-8 4 16 3-8h4"/>',s_src:'<circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l3 3M16 16l3 3M5 19l3-3M16 8l3-3"/>',s_sys:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',s_dl:'<path d="M12 3v12M7 10l5 5 5-5M4 20h16"/>',s_req:'<path d="M4 5h16v11H8l-4 4z"/><path d="M12 8v5M9.5 10.5h5"/>',s_pub:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',s_out:'<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/>',refresh:'<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',search:'<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',user:'<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',plus:'<path d="M12 5v14M5 12h14"/>',edit:'<path d="M4 20h4L19 9l-4-4L4 16v4z"/>',filter:'<path d="M3 5h18l-7 8v6l-4 2v-8L3 5z"/>',book:'<path d="M6 3h12v18l-6-4-6 4V3z" fill="currentColor"/>',bookoff:'<path d="M6 3h12v18l-6-4-6 4V3z"/>',dl:'<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',x:'<path d="M6 6l12 12M18 6L6 18"/>',warn:'<path d="M12 3l10 18H2L12 3z"/><path d="M12 10v5M12 18h.01"/>',folder:'<path d="M3 6h7l2 2h9v11H3z"/>',drive:'<rect x="3" y="12" width="18" height="7" rx="1"/><path d="M5 12l3-7h8l3 7"/>',rss:'<path d="M5 19h.01M5 12a7 7 0 0 1 7 7M5 5a14 14 0 0 1 14 14"/>',up:'<path d="M12 19V5M6 11l6-6 6 6"/>',down:'<path d="M12 5v14M6 13l6 6 6-6"/>',back:'<path d="M15 6l-6 6 6 6"/>',cal:'<rect x="3" y="5" width="18" height="16" rx="1.5"/><path d="M3 10h18M8 3v4M16 3v4"/>'};
+  var IC={s_over:'<path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 8h6V4h-6z"/>',s_lib:'<path d="M4 4h4v16H4zM10 4h4v16h-4zM16 5l3.5-1 2.5 15.5-3.5 1z"/>',s_act:'<path d="M3 12h4l3-8 4 16 3-8h4"/>',s_src:'<circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l3 3M16 16l3 3M5 19l3-3M16 8l3-3"/>',s_sys:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',s_dl:'<path d="M12 3v12M7 10l5 5 5-5M4 20h16"/>',s_req:'<path d="M4 5h16v11H8l-4 4z"/><path d="M12 8v5M9.5 10.5h5"/>',s_pub:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',s_out:'<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/>',refresh:'<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',search:'<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',user:'<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',plus:'<path d="M12 5v14M5 12h14"/>',edit:'<path d="M4 20h4L19 9l-4-4L4 16v4z"/>',filter:'<path d="M3 5h18l-7 8v6l-4 2v-8L3 5z"/>',book:'<path d="M6 3h12v18l-6-4-6 4V3z" fill="currentColor"/>',bookoff:'<path d="M6 3h12v18l-6-4-6 4V3z"/>',dl:'<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',x:'<path d="M6 6l12 12M18 6L6 18"/>',warn:'<path d="M12 3l10 18H2L12 3z"/><path d="M12 10v5M12 18h.01"/>',folder:'<path d="M3 6h7l2 2h9v11H3z"/>',drive:'<rect x="3" y="12" width="18" height="7" rx="1"/><path d="M5 12l3-7h8l3 7"/>',rss:'<path d="M5 19h.01M5 12a7 7 0 0 1 7 7M5 5a14 14 0 0 1 14 14"/>',up:'<path d="M12 19V5M6 11l6-6 6 6"/>',down:'<path d="M12 5v14M6 13l6 6 6-6"/>',back:'<path d="M15 6l-6 6 6 6"/>',cal:'<rect x="3" y="5" width="18" height="16" rx="1.5"/><path d="M3 10h18M8 3v4M16 3v4"/>',list:'<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>'};
   function svg(n,label){var s='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" '+(label?'role="img" aria-label="'+label+'"':'aria-hidden="true"')+'>'+IC[n]+'</svg>';var w=el('span','a-ic');w.innerHTML=s;return w}
   function hvPill(text,color,fill){var p=el('span','hv-pill'+(fill?' fill':''),text);if(color){p.style.borderColor=color;p.style.color=fill?'#151617':color;if(fill)p.style.background=color}return p}
   function hvBtn(label,icon,fn,primary){var b=el('button','hv-btn'+(primary?' primary':''));b.type='button';if(icon)b.appendChild(svg(icon));b.appendChild(el('span','',label));b.onclick=function(){fn(b)};return b}
@@ -508,7 +508,19 @@
     function eta(s){if(!s)return '';if(s<60)return s+'s';if(s<3600)return Math.round(s/60)+'m';return Math.floor(s/3600)+'h '+Math.round(s%3600/60)+'m'}
     var colors={TorBox:'var(--accent)',Torrent:'var(--tv)',Usenet:'var(--movie)',qBittorrent:'var(--tv)',NZBGet:'var(--movie)'};
     var labels={pause:['Pause','x'],resume:['Resume','refresh'],top:['Move to top','up'],builtin:['Download here instead','dl'],remove:['Remove','x'],retry:['Retry','refresh']};
-    var first=true,tops,list,hist,addBox,limBox,msg=el('span','msg');
+    var first=true,tops,list,hist,addBox,limBox,msg=el('span','msg'),open={},logs={},lastData=null;
+    function hms(t){var d=new Date(t);return isNaN(d)?'':d.toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'})}
+    function fetchLog(id){return api('GET','/clients/'+encodeURIComponent(id)+'/log').then(function(x){logs[id]=x}).catch(function(e){logs[id]={error:e.message}})}
+    function details(x){var p=el('div','hv-details');var L=logs[x.id];
+      if(!L){p.appendChild(el('div','hv-note','loading…'));return p}
+      if(L.error){p.appendChild(el('div','err',L.error));return p}
+      var facts=[(L.where||'not sent yet'),L.state];if(L.attempts)facts.push('try '+(L.attempts+1));if(L.nextRun&&L.nextRun[0]!=='0')facts.push('next try '+hms(L.nextRun));
+      p.appendChild(el('div','hv-note',facts.join(' · ')));
+      if(L.reason)p.appendChild(el('div','hv-note',L.reason));
+      if(L.folder)p.appendChild(el('div','hv-note','folder: '+L.folder));
+      if(L.files&&L.files.length)p.appendChild(el('div','hv-note','files: '+L.files.join(', ')));
+      var pre=el('div','hv-log');(L.lines||[]).forEach(function(l){var r=el('div',l.from==='client'?'c':'p');r.appendChild(el('span','t',hms(l.at)));r.appendChild(document.createTextNode(l.msg));pre.appendChild(r)});
+      p.appendChild(pre);setTimeout(function(){pre.scrollTop=pre.scrollHeight},0);return p}
     function act(id,a,name,b){if(a==='remove'&&!confirm('Remove '+name+'? Its files are deleted.'))return;b.disabled=true;
       api('POST','/clients/'+encodeURIComponent(id)+'/'+a).then(load).catch(function(e){b.disabled=false;alertMsg(e.message)})}
     function item(x,past){var r=el('div','hv-item');r.appendChild(hvPill(x.where||'Waiting',colors[x.where]||'',!!x.where));
@@ -524,8 +536,13 @@
       bits.push(x.category);t.appendChild(el('span','hv-note',bits.join(' · ')));
       if(x.note&&(past?x.state==='failed':true))t.appendChild(el('div',past?'err':'hv-note',x.note));
       if(!past){var bar=el('div','hv-bar');var fill=el('span');fill.style.width=Math.round((x.progress||0)*100)+'%';fill.style.background=colors[x.where]||'var(--dim)';bar.appendChild(fill);t.appendChild(bar)}
-      r.appendChild(t);var acts=el('div','hv-acts');(x.can||[]).forEach(function(a){var L=labels[a];if(L)acts.appendChild(hvBtn(L[0],L[1],function(b){act(x.id,a,x.name,b)}))});r.appendChild(acts);return r}
+      r.appendChild(t);var acts=el('div','hv-acts');
+      acts.appendChild(hvBtn(open[x.id]?'Hide details':'Details','list',function(){if(open[x.id]){delete open[x.id];draw(lastData)}else{open[x.id]=true;draw(lastData);fetchLog(x.id).then(function(){draw(lastData)})}}));
+      (x.can||[]).forEach(function(a){var L=labels[a];if(L)acts.appendChild(hvBtn(L[0],L[1],function(b){act(x.id,a,x.name,b)}))});r.appendChild(acts);
+      if(open[x.id]){var wrap=el('div');wrap.appendChild(r);wrap.appendChild(details(x));return wrap}
+      return r}
     function draw(d){
+      if(!d)return;lastData=d;
       tops.replaceChildren();
       function card(name,color,lines){var c=el('div','hv-box');c.style.flex='1';c.style.minWidth='180px';var h=el('h3','',name);h.style.color=color;c.appendChild(h);lines.forEach(function(l){c.appendChild(el('div','hv-note',l))});tops.appendChild(c)}
       card('TorBox','var(--accent)',[d.torbox.set?d.torbox.active+' at TorBox':'not connected']);
@@ -557,7 +574,7 @@
       var un=row(c,'Usenet download (KB/s)',{type:'number',value:sp.usenetKb||0,help:'0 = no limit'});
       var sb=el('button','go','Save limits');var lm=el('span','msg');sb.onclick=function(){api('PUT','/clients/limits',{torrentDownKb:parseInt(td.value,10)||0,torrentUpKb:parseInt(tu.value,10)||0,usenetKb:parseInt(un.value,10)||0}).then(function(){lm.className='msg ok';lm.textContent='saved'}).catch(function(e){lm.className='msg err';lm.textContent=e.message})};
       c.appendChild(sb);c.appendChild(lm);limBox.appendChild(c)}
-    function load(){return api('GET','/clients').then(draw).catch(fail)}
+    function load(){return api('GET','/clients').then(function(d){var ids=Object.keys(open);return Promise.all(ids.map(fetchLog)).then(function(){draw(d)})}).catch(fail)}
     body.replaceChildren();
     body.appendChild(head('Download clients','Everything being downloaded, wherever it is: TorBox, HyveMynd’s own torrent client (through the VPN) and its own usenet downloader.'));
     tops=el('div');tops.style.display='flex';tops.style.gap='12px';tops.style.flexWrap='wrap';body.appendChild(tops);

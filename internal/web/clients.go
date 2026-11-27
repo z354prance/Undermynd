@@ -276,3 +276,56 @@ func (s *Server) adminClientLimits(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, map[string]any{"ok": true})
 }
+
+// adminClientLog is one download's whole story: the pipeline's steps and
+// the download client's own log, in time order, plus where it stands.
+func (s *Server) adminClientLog(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	j, ok := s.Engine.Store.Get(id)
+	if !ok {
+		jsonErr(w, http.StatusNotFound, "no such download")
+		return
+	}
+	type line struct {
+		At   time.Time `json:"at"`
+		Msg  string    `json:"msg"`
+		From string    `json:"from"` // pipeline | client
+	}
+	out := struct {
+		State    string    `json:"state"`
+		Reason   string    `json:"reason,omitempty"`
+		Where    string    `json:"where"`
+		Attempts int       `json:"attempts,omitempty"`
+		NextRun  time.Time `json:"nextRun,omitempty"`
+		Folder   string    `json:"folder,omitempty"`
+		Files    []string  `json:"files,omitempty"`
+		Lines    []line    `json:"lines"`
+	}{State: string(j.State), Reason: j.Reason, Where: whereName(j.Backend), Attempts: j.Attempts, NextRun: j.NextRun, Folder: j.SavePath, Files: j.Files, Lines: []line{}}
+	out.Lines = append(out.Lines, line{At: j.Created, Msg: "received from " + j.Source, From: "pipeline"})
+	for _, h := range j.History {
+		msg := string(h.From) + " → " + string(h.To)
+		if h.Reason != "" {
+			msg += ": " + h.Reason
+		}
+		out.Lines = append(out.Lines, line{At: h.At, Msg: msg, From: "pipeline"})
+	}
+	switch j.Backend {
+	case usenet.Name:
+		if s.News != nil {
+			for _, l := range s.News.LogOf(j.RemoteID) {
+				out.Lines = append(out.Lines, line{At: l.At, Msg: l.Msg, From: "client"})
+			}
+		}
+	case bt.Name:
+		if s.VPN != nil && s.VPN.Client != nil {
+			for _, l := range s.VPN.Client.LogOf(j.RemoteID) {
+				out.Lines = append(out.Lines, line{At: l.At, Msg: l.Msg, From: "client"})
+			}
+		}
+	}
+	sort.SliceStable(out.Lines, func(i, k int) bool { return out.Lines[i].At.Before(out.Lines[k].At) })
+	if len(out.Lines) > 300 {
+		out.Lines = out.Lines[len(out.Lines)-300:]
+	}
+	writeJSON(w, out)
+}
