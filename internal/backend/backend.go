@@ -57,3 +57,8 @@ type Backend interface {
 	// Remove deletes the remote item, with its data when deleteFiles is set.
 	Remove(ctx context.Context, remoteID string, deleteFiles bool) error
 }
+
+// Locator is implemented by backends that decide where the files land only when they finish.
+type Locator interface {
+	Location(ctx context.Context, remoteID string) (string, error)
+}

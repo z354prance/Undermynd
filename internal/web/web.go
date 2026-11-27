@@ -177,6 +177,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/api/playback/status", s.admin(s.playbackStatus))
 	mux.HandleFunc("POST /admin/api/requests/test", s.guard(s.admin(s.requestsTest)))
 	mux.HandleFunc("GET /admin/api/requests", s.admin(s.requestsAdminList))
+	mux.HandleFunc("PUT /admin/api/requests/auto", s.guard(s.admin(s.requestsAuto)))
 	mux.HandleFunc("POST /admin/api/requests/{id}/{action}", s.guard(s.admin(s.requestsDecide)))
 	mux.HandleFunc("POST /admin/api/playback/test", s.guard(s.admin(s.playbackTest)))
 	mux.HandleFunc("POST /admin/api/metadata/test", s.guard(s.admin(s.metadataTest)))
@@ -605,17 +606,10 @@ type categoryView struct {
 
 type settingsView struct {
 	Categories []categoryView `json:"categories"`
-	QBit       struct {
-		URL         string `json:"url"`
-		Username    string `json:"username"`
-		Password    string `json:"password,omitempty"` // write-only
-		HasPassword bool   `json:"hasPassword"`
-		SaveDir     string `json:"saveDir"`
-	} `json:"qbit"`
-	Feeds   []config.Feed  `json:"feeds"`
-	Watches []config.Watch `json:"watches"`
-	Rules   []config.Rule  `json:"rules"`
-	Tdarr   struct {
+	Feeds      []config.Feed  `json:"feeds"`
+	Watches    []config.Watch `json:"watches"`
+	Rules      []config.Rule  `json:"rules"`
+	Tdarr      struct {
 		URL            string `json:"url"`
 		APIKey         string `json:"apiKey,omitempty"` // write-only
 		HasAPIKey      bool   `json:"hasApiKey"`
@@ -646,13 +640,6 @@ type settingsView struct {
 		PathFrom          string `json:"pathFrom"`
 		PathTo            string `json:"pathTo"`
 	} `json:"playback"`
-	NZBGet struct {
-		URL         string `json:"url"`
-		Username    string `json:"username"`
-		Password    string `json:"password,omitempty"` // write-only
-		HasPassword bool   `json:"hasPassword"`
-		DestRoot    string `json:"destRoot"`
-	} `json:"nzbget"`
 	TorBox struct {
 		Token          string `json:"token,omitempty"` // write-only
 		HasToken       bool   `json:"hasToken"`
@@ -683,7 +670,6 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 		v.Categories = append(v.Categories, categoryView{Name: k.Name, Kind: k.Kind, ArrURL: k.ArrURL,
 			HasArrAPIKey: k.ArrAPIKey != "", Transcode: k.Transcode, OnFail: k.OnTranscodeFail, LibraryDir: k.OwnLibrary(), KeepNames: k.KeepNames})
 	}
-	v.QBit.URL, v.QBit.Username, v.QBit.HasPassword, v.QBit.SaveDir = c.QBit.URL, c.QBit.Username, c.QBit.Password != "", c.QBit.SaveDir
 	v.Feeds, v.Rules, v.Watches = c.Feeds, c.Rules, c.Watches
 	if v.Watches == nil {
 		v.Watches = []config.Watch{}
@@ -702,7 +688,6 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	v.Playback.TracearrURL, v.Playback.HasTracearrKey = c.Playback.TracearrURL, c.Playback.TracearrKey != ""
 	v.Playback.EmbyURL, v.Playback.HasEmbyKey, v.Playback.HiddenLibraries = c.Playback.EmbyURL, c.Playback.EmbyKey != "", c.Playback.HiddenLibraries
 	v.Playback.RefreshAfterPlace, v.Playback.PathFrom, v.Playback.PathTo = c.Playback.RefreshAfterPlace, c.Playback.PathFrom, c.Playback.PathTo
-	v.NZBGet.URL, v.NZBGet.Username, v.NZBGet.HasPassword, v.NZBGet.DestRoot = c.NZBGet.URL, c.NZBGet.Username, c.NZBGet.Password != "", c.NZBGet.DestRoot
 	v.TorBox.HasToken, v.TorBox.CreatePerHour, v.TorBox.PullersAtOnce, v.TorBox.LinkGapSeconds = c.TorBox.Token != "", c.TorBox.CreatePerHour, c.TorBox.PullersAtOnce, c.TorBox.LinkGapSeconds
 	v.ClientUser, v.StallMinutes, v.ReconcileSeconds, v.FlagImportHours = c.ClientUser, c.StallMinutes, c.ReconcileSeconds, c.FlagImportHours
 	v.StorageScanMinutes = c.StorageScanMinutes
@@ -753,14 +738,6 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		next.Categories = append(next.Categories, nc)
 	}
-	next.QBit.URL, next.QBit.Username = strings.TrimSpace(in.QBit.URL), in.QBit.Username
-	if in.QBit.Password != "" {
-		next.QBit.Password = secret.String(in.QBit.Password)
-	}
-	if in.QBit.SaveDir != "" {
-		next.QBit.SaveDir = in.QBit.SaveDir
-	}
-	next.NZBGet.URL, next.NZBGet.Username, next.NZBGet.DestRoot = strings.TrimSpace(in.NZBGet.URL), in.NZBGet.Username, strings.TrimSpace(in.NZBGet.DestRoot)
 	next.Feeds, next.Rules = nil, nil
 	for _, f := range in.Feeds {
 		f.Name, f.URL = strings.TrimSpace(f.Name), strings.TrimSpace(f.URL)
@@ -851,9 +828,6 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.Tdarr.TimeoutMinutes > 0 {
 		next.Tdarr.TimeoutMinutes = in.Tdarr.TimeoutMinutes
-	}
-	if in.NZBGet.Password != "" {
-		next.NZBGet.Password = secret.String(in.NZBGet.Password)
 	}
 	if in.Metadata.TMDBKey != "" {
 		next.Metadata.TMDBKey = secret.String(strings.TrimSpace(in.Metadata.TMDBKey))

@@ -317,3 +317,5 @@ body.ui .up-pct.full{color:#3fb97a}
 .hv-log{margin-top:8px;max-height:320px;overflow:auto;font:12px/1.55 var(--mono);color:var(--dim)}
 .hv-log .c{color:var(--text)}
 .hv-log .t{color:var(--dim);margin-right:10px;opacity:.7}
+body.ui .hv-auto{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-left:16px}
+body.ui .hv-auto label{display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text)}

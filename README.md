@@ -5,7 +5,7 @@
 One container that owns the whole download-to-library path for Sonarr, Radarr and Lidarr.
 
 - Acts as their **qBittorrent** download client, so a grab keeps the same download ID from request to import.
-- Hands the grab to TorBox, a local qBittorrent or NZBGet (usenet arrives through a fake SABnzbd), sends videos through a Tdarr hand-off, keeps only the media files, moves them atomically into the complete folder, confirms the arr's import, then cleans up everything it created.
+- Hands the grab to TorBox, or to its own usenet downloader and torrent client (through a VPN) when TorBox is busy or not set up (usenet arrives through a fake SABnzbd), sends videos through a Tdarr hand-off, keeps only the media files, moves them atomically into the complete folder, confirms the arr's import, then cleans up everything it created.
 - Anime with no arr at all: RSS feeds and a watch folder feed the same pipeline, and finished episodes are placed straight into your show folders.
 - A public status page with requests, for your users, and a sign-in-protected admin side, in one app on one address.
 - Standard library only. One static binary of about 7 MB, about 7 MB of memory at idle.
@@ -17,7 +17,7 @@ One container that owns the whole download-to-library path for Sonarr, Radarr an
 | Core | Job table and state machine, fake qBittorrent API, local qBittorrent backend, staging, hand-back, import confirmation, cleanup, status page, admin sign-in | built, tested, in daily use |
 | TorBox | Usenet and torrents (limiter, batched polling, resumable pull, tracked delete) | built, tested, running against real TorBox |
 | Transcode | Folder hand-off to a dedicated Tdarr library, progress, stall detection, verification gate | built, tested, running against real Tdarr |
-| Usenet | Fake SABnzbd, TorBox usenet backend, NZBGet fallback | built and tested; TorBox usenet in real use; NZBGet tested against a stand-in only |
+| Usenet | Fake SABnzbd, TorBox usenet backend, built-in usenet downloader | built and tested; in real use |
 | Import confirmation | Arr history check (`downloadId` + import event) | confirmed against real Sonarr and Radarr |
 | RSS and watch folder | Feeds, regex rules, first-poll baseline, dedupe, manual download, watch folder | built, in real use |
 | Anime library | Places episodes in show folders by name, never guesses or overwrites; handles SubsPlease, Trix and Judas-style names | built, in real use |
@@ -105,7 +105,7 @@ Logo files are in `assets/`; the Unraid icon is `unraid/undermynd-icon.png`.
 
 Add HyveMynd to Sonarr/Radarr/Lidarr as a **SABnzbd** client on the machine port (host 18081 by default).
 The **API key is the client password** (shown once in the log on first run, rotatable in the admin page).
-Usenet goes to TorBox when a token is set, otherwise to NZBGet when its address is set.
+Usenet goes to TorBox when a token is set, and to HyveMynd's own usenet downloader (your providers) when TorBox is busy, down or not set up.
 
 ## Tdarr hand-off
 

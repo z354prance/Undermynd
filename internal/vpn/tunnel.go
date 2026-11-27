@@ -60,6 +60,12 @@ type Tunnel struct {
 	// PFRetry is the gap between port-forward tries right after connecting
 	// (later tries are 40 times further apart). Default 3 seconds.
 	PFRetry time.Duration
+	// Nord reaches NordVPN's API (nil: the real one). NATEvery renews a
+	// NAT-PMP port mapping (default 45 seconds; mappings last 60).
+	Nord     *Nord
+	NATEvery time.Duration
+	// NATGateway is where NAT-PMP is asked (default Proton's 10.2.0.1).
+	NATGateway string
 
 	mu       sync.RWMutex
 	dev      *device.Device
@@ -67,6 +73,7 @@ type Tunnel struct {
 	gw       Server
 	local    netip.Addr // this end's address in the tunnel
 	pfWanted bool       // the region forwards ports
+	mode     string     // how the port is forwarded: pia | natpmp | static | none
 	token    string
 	sig      Signature
 	status   Status
@@ -214,7 +221,7 @@ func (t *Tunnel) run(ctx context.Context) {
 	wait := 30 * time.Second
 	for ctx.Err() == nil {
 		c := t.Cfg()
-		if !c.On || c.User == "" || c.Pass == "" {
+		if !c.On || !c.Ready() {
 			t.down("off", "")
 			if !t.sleep(ctx, time.Minute) {
 				return
@@ -266,9 +273,16 @@ func (t *Tunnel) down(state, why string) {
 	}
 }
 
+// providerNames are shown on the VPN page and in the log.
+var providerNames = map[string]string{"pia": "Private Internet Access", "proton": "Proton VPN", "mullvad": "Mullvad", "airvpn": "AirVPN",
+	"windscribe": "Windscribe", "nord": "NordVPN", "surfshark": "Surfshark", "ivpn": "IVPN", "other": "your VPN"}
+
 func (t *Tunnel) connect(ctx context.Context, c config.VPN) error {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
+	if c.Kind() != "pia" {
+		return t.connectWG(ctx, c)
+	}
 	token, err := t.API.Token(ctx, c.User, string(c.Pass))
 	if err != nil {
 		return err
@@ -313,30 +327,15 @@ func (t *Tunnel) connect(ctx context.Context, c config.VPN) error {
 	if endpointIP == "" {
 		endpointIP = srv.IP
 	}
-	tdev, tnet, err := netstack.CreateNetTUN([]netip.Addr{local}, dns, 1420)
+	dev, tnet, err := t.bringUp(local, dns, 1420, priv, serverKey, nil, net.JoinHostPort(endpointIP, fmt.Sprint(k.ServerPort)))
 	if err != nil {
-		return fmt.Errorf("starting the tunnel: %w", err)
-	}
-	bind := t.Bind
-	if bind == nil {
-		bind = conn.NewDefaultBind()
-	}
-	dev := device.NewDevice(tdev, bind, device.NewLogger(device.LogLevelError, "vpn: "))
-	cfg := fmt.Sprintf("private_key=%s\npublic_key=%s\nendpoint=%s\nallowed_ip=0.0.0.0/0\npersistent_keepalive_interval=25\n",
-		hex.EncodeToString(priv), hex.EncodeToString(serverKey), net.JoinHostPort(endpointIP, fmt.Sprint(k.ServerPort)))
-	if err := dev.IpcSet(cfg); err != nil {
-		dev.Close()
-		return fmt.Errorf("setting up the tunnel: %w", err)
-	}
-	if err := dev.Up(); err != nil {
-		dev.Close()
-		return fmt.Errorf("starting the tunnel: %w", err)
+		return err
 	}
 	// Port forwarding is asked of the server's public address, through the
 	// tunnel (as PIA's own scripts do), not of its address inside the tunnel.
 	gw := Server{IP: srv.IP, CN: srv.CN}
 	t.mu.Lock()
-	t.dev, t.tnet, t.gw, t.local, t.pfWanted = dev, tnet, gw, local, region.PortForward
+	t.dev, t.tnet, t.gw, t.local, t.pfWanted, t.mode = dev, tnet, gw, local, region.PortForward, "pia"
 	t.status = Status{State: "up", Region: region.ID, RegionName: region.Name, Server: srv.CN, Address: k.PeerIP, Since: time.Now(), Generation: t.status.Generation + 1}
 	t.mu.Unlock()
 	t.logf("connected to PIA %s (%s)", region.Name, srv.CN)
@@ -361,6 +360,141 @@ func (t *Tunnel) connect(ctx context.Context, c config.VPN) error {
 			s.Error = "this region has no port forwarding; downloads work, but fewer peers can connect"
 		})
 	}
+	return nil
+}
+
+// bringUp starts WireGuard inside HyveMynd with one server.
+func (t *Tunnel) bringUp(local netip.Addr, dns []netip.Addr, mtu int, priv, serverKey, shared []byte, endpoint string) (*device.Device, *netstack.Net, error) {
+	tdev, tnet, err := netstack.CreateNetTUN([]netip.Addr{local}, dns, mtu)
+	if err != nil {
+		return nil, nil, fmt.Errorf("starting the tunnel: %w", err)
+	}
+	bind := t.Bind
+	if bind == nil {
+		bind = conn.NewDefaultBind()
+	}
+	dev := device.NewDevice(tdev, bind, device.NewLogger(device.LogLevelError, "vpn: "))
+	cfg := fmt.Sprintf("private_key=%s\npublic_key=%s\n", hex.EncodeToString(priv), hex.EncodeToString(serverKey))
+	if len(shared) == 32 {
+		cfg += "preshared_key=" + hex.EncodeToString(shared) + "\n"
+	}
+	cfg += fmt.Sprintf("endpoint=%s\nallowed_ip=0.0.0.0/0\npersistent_keepalive_interval=25\n", endpoint)
+	if err := dev.IpcSet(cfg); err != nil {
+		dev.Close()
+		return nil, nil, fmt.Errorf("setting up the tunnel: %w", err)
+	}
+	if err := dev.Up(); err != nil {
+		dev.Close()
+		return nil, nil, fmt.Errorf("starting the tunnel: %w", err)
+	}
+	return dev, tnet, nil
+}
+
+// connectWG connects with a WireGuard file, or NordVPN's API.
+func (t *Tunnel) connectWG(ctx context.Context, c config.VPN) error {
+	kind := c.Kind()
+	name := providerNames[kind]
+	if name == "" {
+		name = "your VPN"
+	}
+	var wc WGConf
+	server := ""
+	if kind == "nord" {
+		n := t.Nord
+		if n == nil {
+			n = &Nord{}
+		}
+		var err error
+		if wc, server, err = n.Conf(ctx, string(c.Token), c.Country); err != nil {
+			return err
+		}
+	} else {
+		var err error
+		if wc, err = ParseWG(string(c.WireGuard)); err != nil {
+			return err
+		}
+	}
+	host, port, _ := net.SplitHostPort(wc.Endpoint)
+	if server == "" {
+		server = host
+	}
+	ip := host
+	if _, err := netip.ParseAddr(host); err != nil {
+		addrs, err := net.DefaultResolver.LookupHost(ctx, host)
+		if err != nil || len(addrs) == 0 {
+			return fmt.Errorf("could not look up the VPN server %s: %v", host, err)
+		}
+		ip = addrs[0]
+		for _, a := range addrs {
+			if ad, err := netip.ParseAddr(a); err == nil && ad.Is4() {
+				ip = a
+				break
+			}
+		}
+	}
+	dns := wc.DNS
+	if len(dns) == 0 {
+		dns = []netip.Addr{netip.MustParseAddr("1.1.1.1")}
+	}
+	dev, tnet, err := t.bringUp(wc.Address, dns, wc.MTU, wc.Private, wc.Public, wc.Shared, net.JoinHostPort(ip, port))
+	if err != nil {
+		return err
+	}
+	mode := "none"
+	switch {
+	case kind == "proton":
+		mode = "natpmp"
+	case c.Port > 0 && (kind == "airvpn" || kind == "windscribe" || kind == "other"):
+		mode = "static"
+	}
+	t.mu.Lock()
+	t.dev, t.tnet, t.gw, t.local, t.pfWanted, t.mode = dev, tnet, Server{}, wc.Address, mode != "none", mode
+	t.sig = Signature{}
+	t.status = Status{State: "up", Region: kind, RegionName: name, Server: server, Address: wc.Address.String(), Since: time.Now(), Generation: t.status.Generation + 1}
+	if mode == "static" {
+		t.status.Port = c.Port
+	}
+	t.mu.Unlock()
+	t.logf("connected to %s (%s)", name, server)
+	switch mode {
+	case "natpmp":
+		if err := t.mapPort(ctx); err != nil {
+			t.logf("%v", err)
+			t.set(func(s *Status) { s.Error = "no forwarded port: " + err.Error() })
+		}
+	case "none":
+		t.set(func(s *Status) {
+			s.Error = "no forwarded port with this provider: downloads work, but fewer peers can connect"
+		})
+	}
+	return nil
+}
+
+// mapPort asks for (or renews) the NAT-PMP mapping, for UDP and TCP.
+func (t *Tunnel) mapPort(ctx context.Context) error {
+	gw := t.NATGateway
+	if gw == "" {
+		gw = "10.2.0.1"
+	}
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	port, err := natPMP(ctx, t.DialContext, gw, "udp", 60*time.Second)
+	if err != nil {
+		return err
+	}
+	if p2, err := natPMP(ctx, t.DialContext, gw, "tcp", 60*time.Second); err != nil {
+		return err
+	} else if p2 != port {
+		t.logf("the VPN forwarded UDP %d and TCP %d; using %d", port, p2, port)
+	}
+	t.mu.Lock()
+	if t.status.Port != port {
+		t.status.Generation++ // the torrent client must listen on the new port
+		t.status.Port = port
+		t.logf("forwarded port %d", port)
+	}
+	t.status.Error = ""
+	t.mu.Unlock()
 	return nil
 }
 
@@ -389,6 +523,9 @@ func (t *Tunnel) forward(ctx context.Context, token string) error {
 	}
 	t.mu.Lock()
 	t.sig = sg
+	if t.status.Port != sg.Port {
+		t.status.Generation++ // the torrent client must listen on the new port
+	}
 	t.status.Port, t.status.PortExpires, t.status.Error = sg.Port, sg.Expires, ""
 	t.mu.Unlock()
 	t.logf("forwarded port %d", sg.Port)
@@ -403,6 +540,15 @@ func (t *Tunnel) maintain(ctx context.Context, c config.VPN) string {
 	defer bind.Stop()
 	retry := time.NewTicker(t.PFRetry * 40)
 	defer retry.Stop()
+	every := t.NATEvery
+	if every <= 0 {
+		every = 45 * time.Second
+	}
+	nat := time.NewTicker(every)
+	defer nat.Stop()
+	t.mu.RLock()
+	mode := t.mode
+	t.mu.RUnlock()
 	for {
 		select {
 		case <-ctx.Done():
@@ -413,7 +559,17 @@ func (t *Tunnel) maintain(ctx context.Context, c config.VPN) string {
 			if !t.healthy() {
 				return "the tunnel stopped answering"
 			}
+		case <-nat.C:
+			if mode != "natpmp" {
+				continue
+			}
+			if err := t.mapPort(ctx); err != nil {
+				t.set(func(s *Status) { s.Error = "no forwarded port: " + err.Error() })
+			}
 		case <-retry.C:
+			if mode != "pia" {
+				continue
+			}
 			t.mu.RLock()
 			need := t.pfWanted && t.sig.Payload == ""
 			t.mu.RUnlock()
@@ -432,6 +588,9 @@ func (t *Tunnel) maintain(ctx context.Context, c config.VPN) string {
 				t.set(func(s *Status) { s.Error = "" })
 			}
 		case <-bind.C:
+			if mode != "pia" {
+				continue
+			}
 			t.mu.RLock()
 			sg, gw := t.sig, t.gw
 			t.mu.RUnlock()

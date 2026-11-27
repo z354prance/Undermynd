@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -20,19 +21,31 @@ type VPN struct {
 }
 
 type vpnView struct {
-	On          bool       `json:"on"`
-	User        string     `json:"user"`
-	HasPassword bool       `json:"hasPassword"`
-	Region      string     `json:"region"`
-	Torrents    string     `json:"torrents"`
-	Status      vpn.Status `json:"status"`
-	Client      bt.Stats   `json:"client"`
-	TorBox      bool       `json:"torbox"` // a TorBox token is set
+	On           bool       `json:"on"`
+	Provider     string     `json:"provider"`
+	Providers    []string   `json:"providers"`
+	User         string     `json:"user"`
+	HasPassword  bool       `json:"hasPassword"`
+	Region       string     `json:"region"`
+	HasWireGuard bool       `json:"hasWireGuard"`
+	WGServer     string     `json:"wgServer,omitempty"` // the file's server, to show which file is saved
+	HasToken     bool       `json:"hasToken"`
+	Country      string     `json:"country"`
+	Port         int        `json:"port"`
+	Torrents     string     `json:"torrents"`
+	Status       vpn.Status `json:"status"`
+	Client       bt.Stats   `json:"client"`
+	TorBox       bool       `json:"torbox"` // a TorBox token is set
 }
 
 func (s *Server) adminVPN(w http.ResponseWriter, r *http.Request) {
 	c := s.Cfg.Get()
-	v := vpnView{On: c.VPN.On, User: c.VPN.User, HasPassword: c.VPN.Pass != "", Region: c.VPN.Region, Torrents: c.VPN.Torrents, TorBox: c.TorBox.Token != ""}
+	v := vpnView{On: c.VPN.On, Provider: c.VPN.Kind(), Providers: config.VPNProviders, User: c.VPN.User, HasPassword: c.VPN.Pass != "", Region: c.VPN.Region,
+		HasWireGuard: c.VPN.WireGuard != "", HasToken: c.VPN.Token != "", Country: c.VPN.Country, Port: c.VPN.Port,
+		Torrents: c.VPN.Torrents, TorBox: c.TorBox.Token != ""}
+	if wc, err := vpn.ParseWG(string(c.VPN.WireGuard)); err == nil {
+		v.WGServer = wc.Endpoint
+	}
 	if s.VPN != nil && s.VPN.Tunnel != nil {
 		v.Status = s.VPN.Tunnel.Status()
 	} else {
@@ -46,21 +59,50 @@ func (s *Server) adminVPN(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) adminVPNSave(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		On       bool   `json:"on"`
-		User     string `json:"user"`
-		Password string `json:"password"` // blank: unchanged
-		Region   string `json:"region"`
-		Torrents string `json:"torrents"`
+		On        bool   `json:"on"`
+		Provider  string `json:"provider"`
+		User      string `json:"user"`
+		Password  string `json:"password"` // blank: unchanged
+		Region    string `json:"region"`
+		WireGuard string `json:"wireguard"` // blank: unchanged
+		Token     string `json:"token"`     // blank: unchanged
+		Country   string `json:"country"`
+		Port      int    `json:"port"`
+		Torrents  string `json:"torrents"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&in); err != nil {
 		jsonErr(w, http.StatusBadRequest, "bad settings")
 		return
 	}
 	cur := s.Cfg.Get()
-	next := config.VPN{On: in.On, User: strings.TrimSpace(in.User), Pass: cur.VPN.Pass, Region: strings.TrimSpace(in.Region)}
+	prov := strings.TrimSpace(in.Provider)
+	if prov == "" {
+		prov = "pia"
+	}
+	if !slices.Contains(config.VPNProviders, prov) {
+		jsonErr(w, http.StatusBadRequest, "unknown VPN provider")
+		return
+	}
+	next := config.VPN{On: in.On, Provider: prov, User: strings.TrimSpace(in.User), Pass: cur.VPN.Pass, Region: strings.TrimSpace(in.Region),
+		WireGuard: cur.VPN.WireGuard, Token: cur.VPN.Token, Country: strings.ToUpper(strings.TrimSpace(in.Country))}
 	if in.Password != "" {
 		next.Pass = secret.String(in.Password)
 	}
+	if strings.TrimSpace(in.WireGuard) != "" {
+		if _, err := vpn.ParseWG(in.WireGuard); err != nil {
+			jsonErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		next.WireGuard = secret.String(in.WireGuard)
+	}
+	if t := strings.TrimSpace(in.Token); t != "" {
+		next.Token = secret.String(t)
+	}
+	if in.Port < 0 || in.Port > 65535 {
+		jsonErr(w, http.StatusBadRequest, "the forwarded port must be between 1 and 65535")
+		return
+	}
+	next.Port = in.Port
 	switch in.Torrents {
 	case "", "local", "torbox":
 		next.Torrents = in.Torrents
@@ -68,8 +110,15 @@ func (s *Server) adminVPNSave(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadRequest, "unknown torrent choice")
 		return
 	}
-	if next.On && (next.User == "" || next.Pass == "") {
-		jsonErr(w, http.StatusBadRequest, "enter your PIA username and password")
+	if next.On && !next.Ready() {
+		switch next.Kind() {
+		case "pia":
+			jsonErr(w, http.StatusBadRequest, "enter your PIA username and password")
+		case "nord":
+			jsonErr(w, http.StatusBadRequest, "paste a NordVPN access token")
+		default:
+			jsonErr(w, http.StatusBadRequest, "add the WireGuard file from your VPN provider")
+		}
 		return
 	}
 	cur.VPN = next

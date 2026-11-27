@@ -140,6 +140,17 @@ func (s *Server) requestCreate(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	if s.Cfg.Get().Requests.Auto(in.MediaType) {
+		if a := s.seerrAdmin(); a != nil {
+			// Seerr may already have approved it (the request user's own
+			// permissions); either way it goes ahead.
+			if err := a.Decide(ctx, id, "approve"); err != nil {
+				if s.Log != nil && !strings.Contains(err.Error(), "no longer awaiting") {
+					s.Log.Printf("requests: auto-approve of %d: %v", id, err)
+				}
+			}
+		}
+	}
 	w.WriteHeader(http.StatusCreated)
 	writeJSON(w, map[string]int64{"id": id})
 }
@@ -174,7 +185,49 @@ func (s *Server) requestsAdminList(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, map[string]any{"requests": list})
+	writeJSON(w, map[string]any{"requests": list, "auto": s.autoView()})
+}
+
+type autoApprove struct {
+	Movies bool `json:"movies"`
+	TV     bool `json:"tv"`
+	Music  bool `json:"music"`
+}
+
+func (s *Server) autoView() autoApprove {
+	r := s.Cfg.Get().Requests
+	return autoApprove{r.AutoMovies, r.AutoTV, r.AutoMusic}
+}
+
+// requestsAuto sets which kinds of request are approved by themselves; those
+// already waiting of a kind just switched on are approved now.
+func (s *Server) requestsAuto(w http.ResponseWriter, r *http.Request) {
+	var in autoApprove
+	if !readJSON(w, r, &in) {
+		return
+	}
+	cur := s.Cfg.Get()
+	was := cur.Requests
+	cur.Requests.AutoMovies, cur.Requests.AutoTV, cur.Requests.AutoMusic = in.Movies, in.TV, in.Music
+	if err := s.Cfg.Set(cur); err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	approved := 0
+	if c := s.seerrAdmin(); c != nil && ((in.Movies && !was.AutoMovies) || (in.TV && !was.AutoTV)) {
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		if list, err := c.PendingRequests(ctx); err == nil {
+			for _, p := range list {
+				if (p.MediaType == "movie" && in.Movies && !was.AutoMovies) || (p.MediaType == "tv" && in.TV && !was.AutoTV) {
+					if c.Decide(ctx, p.SourceID, "approve") == nil {
+						approved++
+					}
+				}
+			}
+		}
+	}
+	writeJSON(w, map[string]any{"auto": s.autoView(), "approved": approved})
 }
 
 func (s *Server) requestsDecide(w http.ResponseWriter, r *http.Request) {

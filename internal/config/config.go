@@ -96,6 +96,9 @@ type Metadata struct {
 	AnimeIDsURL    string `json:"animeIdsUrl,omitempty"`
 }
 
+// QBit is an outside qBittorrent. It is no longer offered in the settings
+// (TorBox is the only outside client); one already in settings.json is used
+// only for torrents when neither TorBox nor the VPN is set up.
 type QBit struct {
 	URL      string        `json:"url"`
 	Username string        `json:"username"`
@@ -111,14 +114,6 @@ type TorBox struct {
 	CreatePerHour  int           `json:"createPerHour"`
 	PullersAtOnce  int           `json:"pullersAtOnce"`
 	LinkGapSeconds int           `json:"linkGapSeconds"`
-}
-
-type NZBGet struct {
-	URL      string        `json:"url"`
-	Username string        `json:"username"`
-	Password secret.String `json:"password"`
-	// DestRoot is NZBGet's destination folder, the same path in both containers.
-	DestRoot string `json:"destRoot"`
 }
 
 // Tdarr hands videos to a Tdarr library by folder. Create a library in Tdarr that
@@ -167,7 +162,7 @@ type Usenet struct {
 	//   "" (default): TorBox first; the built-in downloader when TorBox is
 	//                 busy, unreachable or not set up
 	//   "local":  always the built-in downloader
-	//   "torbox": always TorBox (or NZBGet), never the built-in downloader
+	//   "torbox": always TorBox, never the built-in downloader
 	Mode string `json:"mode,omitempty"`
 }
 
@@ -205,15 +200,28 @@ func (s NewsServer) Label() string {
 	return s.Host
 }
 
-// VPN is the tunnel HyveMynd's own downloads go through (Private Internet
-// Access over WireGuard, run inside HyveMynd: nothing to set up on the host).
-// Only the built-in clients use it; the web pages, arrs and media server do
-// not.
+// VPN is the tunnel HyveMynd's own downloads go through (WireGuard, run
+// inside HyveMynd: nothing to set up on the host). Only the built-in clients
+// use it; the web pages, arrs and media server do not.
 type VPN struct {
-	On     bool          `json:"on"`
-	User   string        `json:"user"`     // PIA username (p1234567)
-	Pass   secret.String `json:"password"` // PIA password
-	Region string        `json:"region"`   // PIA region id; "" = the first port-forwarding region
+	On bool `json:"on"`
+	// Provider: "" or "pia" (Private Internet Access, signed in with User
+	// and Pass), "nord" (an access token), or one that gives a WireGuard
+	// file: "proton", "mullvad", "airvpn", "windscribe", "surfshark",
+	// "ivpn", "other".
+	Provider string        `json:"provider,omitempty"`
+	User     string        `json:"user"`     // PIA username (p1234567)
+	Pass     secret.String `json:"password"` // PIA password
+	Region   string        `json:"region"`   // PIA region id; "" = the fastest port-forwarding region
+	// WireGuard is the provider's WireGuard file (it holds the private key).
+	WireGuard secret.String `json:"wireguard,omitempty"`
+	// Token is a NordVPN access token; Country a two-letter country code
+	// ("" = Nord's recommendation).
+	Token   secret.String `json:"token,omitempty"`
+	Country string        `json:"country,omitempty"`
+	// Port is a port the provider forwards to this account (AirVPN,
+	// Windscribe's static IP, another provider); 0 = none.
+	Port int `json:"port,omitempty"`
 	// Torrents says where torrents go while the VPN is on:
 	//   "" (default): TorBox first; HyveMynd's own client (through the VPN)
 	//                 when TorBox is busy, unreachable or not set up
@@ -222,9 +230,32 @@ type VPN struct {
 	Torrents string `json:"torrents,omitempty"`
 }
 
+// VPNProviders are the providers HyveMynd can connect to.
+var VPNProviders = []string{"pia", "proton", "mullvad", "airvpn", "windscribe", "nord", "surfshark", "ivpn", "other"}
+
+// Kind is the provider, "pia" when unset.
+func (v VPN) Kind() string {
+	if v.Provider == "" {
+		return "pia"
+	}
+	return v.Provider
+}
+
+// Ready says whether the provider's details are filled in.
+func (v VPN) Ready() bool {
+	switch v.Kind() {
+	case "pia":
+		return v.User != "" && v.Pass != ""
+	case "nord":
+		return v.Token != ""
+	default:
+		return v.WireGuard != ""
+	}
+}
+
 // LocalTorrents says whether HyveMynd's own client takes torrents at all.
 func (v VPN) LocalTorrents() bool {
-	return v.On && v.User != "" && v.Pass != "" && v.Torrents != "torbox"
+	return v.On && v.Ready() && v.Torrents != "torbox"
 }
 
 // Attention moves what people watch a lot to an upgrade profile in the arr and
@@ -254,6 +285,23 @@ type Requests struct {
 	URL     string        `json:"url"`
 	APIKey  secret.String `json:"apiKey"`
 	UserID  int64         `json:"userId"`
+	// Approved without waiting, per kind of request. Account requests always wait.
+	AutoMovies bool `json:"autoMovies,omitempty"`
+	AutoTV     bool `json:"autoTv,omitempty"`
+	AutoMusic  bool `json:"autoMusic,omitempty"`
+}
+
+// Auto says whether a request of kind ("movie", "tv", "music") is approved by itself.
+func (r Requests) Auto(kind string) bool {
+	switch kind {
+	case "movie":
+		return r.AutoMovies
+	case "tv":
+		return r.AutoTV
+	case "music", "artist":
+		return r.AutoMusic
+	}
+	return false
 }
 
 // Access lets visitors ask for a media server account; see the access package.
@@ -307,7 +355,6 @@ type Settings struct {
 	Donations    Donations  `json:"donations"`
 	Requests     Requests   `json:"requests"`
 	Access       Access     `json:"access"`
-	NZBGet       NZBGet     `json:"nzbget"`
 	TorBox       TorBox     `json:"torbox"`
 	Categories   []Category `json:"categories"`
 	QBit         QBit       `json:"qbit"`

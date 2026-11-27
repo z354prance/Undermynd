@@ -150,7 +150,7 @@ func TestSettingsNeverReturnSecrets(t *testing.T) {
 	if strings.Contains(string(b), "TOP-SECRET") || strings.Contains(string(b), string(e.cfg.Get().ClientPassword)) {
 		t.Fatalf("settings leaked a secret: %s", b)
 	}
-	if !strings.Contains(string(b), `"hasArrApiKey":true`) || !strings.Contains(string(b), `"hasPassword":true`) {
+	if !strings.Contains(string(b), `"hasArrApiKey":true`) || !strings.Contains(string(b), `"hasTmdbKey":true`) {
 		t.Fatalf("should say whether a secret is set: %s", b)
 	}
 	// saving with blank secret fields keeps the stored values
