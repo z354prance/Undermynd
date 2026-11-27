@@ -545,3 +545,13 @@ body.ui .hv-pipelist .hv-done{max-height:420px;overflow-y:auto;display:flex;flex
 /* a long reason stays inside its tile */
 body.ui .hv-tile6 .hv-tline{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;max-width:100%}
 body.ui .hv-tile6{min-width:0;overflow:hidden}
+/* graphics cards */
+body.ui .hv-gpus{display:flex;flex-direction:column;gap:10px;margin:8px 0 18px}
+body.ui .hv-gpu{display:flex;flex-direction:column;gap:6px;padding:14px 16px;border-radius:10px;background:var(--panel);border:1px solid var(--line)}
+body.ui .hv-gpu.bad{background:#2a1a1c;border-color:#6e2a2f}
+body.ui .hv-gpuh{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+body.ui .hv-gpuh b{font-weight:600}
+body.ui .hv-gpul{font-size:14px}
+body.ui .hv-spark{width:100%;max-width:520px;height:60px;background:var(--raise);border-radius:6px}
+body.ui .hv-spark path{fill:none;stroke:var(--st-convert);stroke-width:2}
+body.ui .hv-spark .lim{stroke:var(--bad);stroke-dasharray:4 4;stroke-width:1;opacity:.6}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/z354prance/undermynd/internal/attention"
+	"github.com/z354prance/undermynd/internal/gpu"
 	"io"
 	"log"
 	"net/http"
@@ -211,6 +212,11 @@ func main() {
 	site.VPN = &web.VPN{Tunnel: tunnel, Client: local}
 	site.Attention = &attention.Service{Cfg: cfg, Log: logger, State: blobs}
 	go site.Attention.Run(ctx)
+	// Graphics cards (for Tdarr's load), when the container can see any.
+	if os.Getenv("HYVEMYND_GPU") != "off" {
+		site.GPU = &gpu.Monitor{Log: logger}
+		go site.GPU.Run(ctx)
+	}
 	if dbh != nil {
 		if n, err := metadata.Renormalize(dbh); err != nil {
 			logger.Printf("metadata: renormalising titles: %v", err)
