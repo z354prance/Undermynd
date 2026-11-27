@@ -157,6 +157,7 @@ func main() {
 	machine.Handle("/sabnzbd/", sab.Handler())
 	machine.Handle("/", qb.Handler())
 	site := web.New(st, eng, cfg, au, logger)
+	site.Blobs = blobs
 	site.Logs = logs
 
 	if am, err := web.NewAccessWith(blobs, cfg); err != nil {

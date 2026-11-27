@@ -254,3 +254,13 @@ button.more{border:0;background:none;padding:4px 0 0;color:var(--accent);font-si
 .rp-x:hover{background:#2b2e32}
 .dlg .notice{font-size:13px;line-height:1.45;margin:0;padding:10px 12px;border-radius:10px;background:rgba(233,184,0,.1);border:1px solid rgba(233,184,0,.35);color:var(--text)}
 .dlg .notice b{color:#e9b800}
+.rp-artists{padding:6px 22px 4px}
+.rp-artists h3{margin:10px 0 8px;font-size:15px}
+.rp-alist{display:flex;flex-direction:column;gap:8px}
+.rp-artist{display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:10px 12px;border-radius:10px;background:var(--panel,#1e2022);border:1px solid var(--line,#303336)}
+.rp-artist .ph{flex:0 0 56px;height:56px;border-radius:50%;overflow:hidden;background:#26292c}
+.rp-artist .ph img{width:100%;height:100%;object-fit:cover;display:block}
+.rp-artist .t{flex:1 1 180px;min-width:0;display:flex;flex-direction:column;gap:2px}
+.rp-artist .t span{color:var(--dim);font-size:13px}
+.rp-artist .a{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.rp-artist .a .m{font-size:12px;color:var(--dim);max-width:220px;text-align:right}

@@ -351,8 +351,8 @@
   };
 
   // ------------------------------------------------------------ request media, Seerr-style
-  var panel = $("reqPanel"), input = $("reqInput"), reqOn = false, admin = false, pending = 0, view = { tab: "discover", detail: null, filter: "all" }, timer = null, cache = {};
-  api("/api/v1/media-request/status").then(function (d) { reqOn = !!d.enabled; if (!reqOn) { input.placeholder = "Requests are closed"; } }).catch(function () { });
+  var panel = $("reqPanel"), input = $("reqInput"), reqOn = false, musicOn = false, admin = false, pending = 0, view = { tab: "discover", detail: null, filter: "all" }, timer = null, cache = {};
+  api("/api/v1/media-request/status").then(function (d) { reqOn = !!d.enabled; musicOn = !!d.music; if (!reqOn) { input.placeholder = "Requests are closed"; } else if (musicOn) { input.placeholder = "Search movies, series or artists"; } }).catch(function () { });
   api("/api/v1/auth/status").then(function (d) { admin = !!d.admin; if (admin) pendingCount(); }).catch(function () { });
   function pendingCount() {
     api("/api/v1/requests").then(function (d) { pending = (d.requests || []).length; var c = $("reqCount"); c.hidden = !pending; c.textContent = pending; c.setAttribute("aria-label", pending + " requests waiting for approval"); }).catch(function () { });
@@ -408,10 +408,11 @@
     var pr = pendRow(); if (pr) panel.appendChild(pr);
     if (q.length >= 2) return results(q);
     var tabs = el("div", "rp-tabs"); tabs.setAttribute("role", "tablist");
-    [["discover", "Discover"], ["movies", "Movies"], ["series", "Series"]].forEach(function (t) {
+    [["discover", "Discover"], ["movies", "Movies"], ["series", "Series"]].concat(musicOn ? [["music", "Music"]] : []).forEach(function (t) {
       var b = el("button", view.tab === t[0] ? "on" : "", t[1]); b.type = "button"; b.setAttribute("role", "tab"); b.setAttribute("aria-selected", view.tab === t[0] ? "true" : "false"); b.onclick = function () { view.tab = t[0]; render(); }; tabs.appendChild(b);
     });
     panel.appendChild(tabs);
+    if (view.tab === "music") { panel.appendChild(el("p", "rp-msg", "Search for an artist above. Requesting an artist asks for everything they have released.")); return; }
     var rows = { discover: [["trending", "Trending"], ["popular-movies", "Popular movies"], ["upcoming", "Upcoming"]], movies: [["popular-movies", "Popular movies"], ["upcoming", "Upcoming"], ["trending-movies", "Trending movies"]], series: [["popular-tv", "Popular series"], ["trending-tv", "Trending series"]] }[view.tab] || [];
     rows.forEach(function (rw) {
       var sec = el("section", "rp-row"); sec.appendChild(el("h3", "", rw[1])); var strip = el("div", "rp-strip"); strip.appendChild(el("span", "empty", "Loading…")); var sw = el("div", "rp-sw"); sw.appendChild(strip);
@@ -422,13 +423,36 @@
   }
   function results(q) {
     var head = el("div", "rp-head"); head.appendChild(el("span", "", "Results for")); head.appendChild(el("span", "q", "“" + q + "”"));
-    var f = el("div", "rp-filter"); [["all", "All"], ["movie", "Movies"], ["tv", "Series"]].forEach(function (o) { var b = el("button", view.filter === o[0] ? "on" : "", o[1]); b.type = "button"; b.onclick = function () { view.filter = o[0]; render(); }; f.appendChild(b); }); head.appendChild(f);
-    panel.appendChild(head); var grid = el("div", "rp-grid"); grid.appendChild(el("span", "empty", "Searching…")); panel.appendChild(grid);
+    var f = el("div", "rp-filter"); [["all", "All"], ["movie", "Movies"], ["tv", "Series"]].concat(musicOn ? [["music", "Artists"]] : []).forEach(function (o) { var b = el("button", view.filter === o[0] ? "on" : "", o[1]); b.type = "button"; b.onclick = function () { view.filter = o[0]; render(); }; f.appendChild(b); }); head.appendChild(f);
+    panel.appendChild(head);
+    if (musicOn && (view.filter === "all" || view.filter === "music")) artists(q, view.filter === "music");
+    if (view.filter === "music") return;
+    var grid = el("div", "rp-grid"); grid.appendChild(el("span", "empty", "Searching…")); panel.appendChild(grid);
     api("/api/v1/media-request/search?query=" + encodeURIComponent(q)).then(function (d) {
       if (input.value.trim() !== q) return; grid.replaceChildren();
       var items = (d.results || []).filter(function (x) { return view.filter === "all" || x.mediaType === view.filter; });
       if (!items.length) grid.appendChild(el("p", "rp-msg", "Nothing found.")); items.forEach(function (x) { grid.appendChild(card(x)); });
     }).catch(function (e) { grid.replaceChildren(el("p", "rp-msg", e.message)); });
+  }
+  // Artists: whole artists only, the way the owner adds them to Lidarr.
+  function artists(q, only) {
+    var sec = el("section", "rp-artists"); if (!only) sec.appendChild(el("h3", "", "Artists")); var box = el("div", "rp-alist"); box.appendChild(el("span", "empty", "Searching…")); sec.appendChild(box); panel.appendChild(sec);
+    api("/api/v1/music-request/search?query=" + encodeURIComponent(q)).then(function (d) {
+      if (input.value.trim() !== q) return; box.replaceChildren();
+      var items = d.results || []; if (!only) items = items.slice(0, 4);
+      if (!items.length) { if (only) box.appendChild(el("p", "rp-msg", "No artists found.")); else sec.remove(); return; }
+      items.forEach(function (a) {
+        var r = el("div", "rp-artist"); var ph = el("span", "ph"); if (a.image) { var im = el("img"); im.src = a.image; im.alt = ""; im.loading = "lazy"; ph.appendChild(im); } r.appendChild(ph);
+        var t = el("div", "t"); t.appendChild(el("b", "", a.name)); if (a.detail) t.appendChild(el("span", "", a.detail)); r.appendChild(t);
+        var msg = el("span", "m");
+        var b = el("button", "btn" + (a.inLibrary || a.requested ? "" : " primary"), a.inLibrary ? "In the library" : a.requested ? "Requested" : "Request artist"); b.type = "button"; b.disabled = a.inLibrary || a.requested;
+        b.setAttribute("aria-label", (a.inLibrary ? "In the library: " : a.requested ? "Requested: " : "Request everything by ") + a.name);
+        b.onclick = function (e) { e.stopPropagation(); b.disabled = true; msg.textContent = "Sending…";
+          api("/api/v1/music-request", { method: "POST", body: { mbid: a.mbid, name: a.name, detail: a.detail || "" } }).then(function () { b.textContent = "Requested"; msg.textContent = "It waits for the admin's approval."; if (admin) pendingCount(); })
+            .catch(function (er) { b.disabled = false; msg.textContent = er.message; }); };
+        var act = el("div", "a"); act.appendChild(b); act.appendChild(msg); r.appendChild(act); box.appendChild(r);
+      });
+    }).catch(function (e) { box.replaceChildren(el("p", "rp-msg", e.message)); });
   }
   function detail() {
     var dv = view.detail, x = panel.firstChild; panel.appendChild(el("p", "rp-msg", "Loading…"));
