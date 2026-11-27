@@ -300,12 +300,22 @@ func (t *Tunnel) connect(ctx context.Context, c config.VPN) error {
 	if err != nil {
 		return err
 	}
-	srv := region.Servers.WG[randInt(len(region.Servers.WG))]
 	priv, pub, err := keyPair()
 	if err != nil {
 		return err
 	}
-	k, err := t.API.AddKey(ctx, srv, token, base64.StdEncoding.EncodeToString(pub))
+	// A server that does not answer is common: try up to three of the region's.
+	wg := region.Servers.WG
+	start := randInt(len(wg))
+	var srv Server
+	var k Key
+	for i := 0; i < len(wg) && i < 3; i++ {
+		srv = wg[(start+i)%len(wg)]
+		if k, err = t.API.AddKey(ctx, srv, token, base64.StdEncoding.EncodeToString(pub)); err == nil {
+			break
+		}
+		t.logf("%v", err)
+	}
 	if err != nil {
 		return err
 	}

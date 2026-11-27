@@ -256,11 +256,20 @@ func (a *API) serverGet(ctx context.Context, dial func(context.Context, string, 
 	}
 	resp, err := c.Do(req)
 	if err != nil {
-		return err
+		// Never the address: it carries the PIA token.
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			err = ue.Err
+		}
+		var ne net.Error
+		if errors.As(err, &ne) && ne.Timeout() || errors.Is(err, context.DeadlineExceeded) {
+			return fmt.Errorf("the PIA server %s did not answer in time", s.CN)
+		}
+		return fmt.Errorf("the PIA server %s could not be reached: %v", s.CN, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
+		return fmt.Errorf("the PIA server %s answered HTTP %d", s.CN, resp.StatusCode)
 	}
 	return json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(out)
 }

@@ -210,7 +210,7 @@
       listCol.replaceChildren();
       if(!show.length){listCol.appendChild(el('div','hv-empty',lastRows.length?'Nothing here.':'No downloads yet.'));}
       [['need','NEEDS YOU','bad'],['moving','MOVING',''],['waiting','WAITING',''],['done','DONE','']].forEach(function(g){var rows=show.filter(function(r){return groupOf(r)===g[0]});if(!rows.length)return;
-        listCol.appendChild(el('h2','hv-grph '+g[2],g[1]));rows.sort(function(a,b){return new Date(b.changed)-new Date(a.changed)}).forEach(function(j){listCol.appendChild(row(j))})});
+        listCol.appendChild(el('h2','hv-grph '+g[2],g[1]));var hostG=listCol;if(g[0]==='done'){hostG=el('div','hv-done');listCol.appendChild(hostG)}rows.sort(function(a,b){return new Date(b.changed)-new Date(a.changed)}).forEach(function(j){hostG.appendChild(row(j))})});
       if(!selected||!lastRows.some(function(r){return r.id===selected})){var f=show.filter(isProblem)[0]||show[0];selected=f?f.id:null;drawDet()}
       railCounts(lastRows)}
     function drawDet(){det.replaceChildren();var j=lastRows.filter(function(r){return r.id===selected})[0];
@@ -666,12 +666,12 @@
     var sys=null;
     function load(){if(WHERE==='TorBox')api('GET','/system').then(function(x){sys=x}).catch(function(){});return api('GET','/clients').then(function(d){var ids=Object.keys(open);return Promise.all(ids.map(fetchLog)).then(function(){draw(d)})}).catch(fail)}
     body.replaceChildren();
-    if(only==='add'){addBox=hvBox('');body.appendChild(addBox);tops=el('div');list=el('div');hist=el('div','hv-list');var b3=hvBox('Your recent manual downloads');b3.appendChild(hist);body.appendChild(b3);
+    if(only==='add'){addBox=hvBox('');body.appendChild(addBox);tops=el('div');list=el('div');hist=el('div','hv-list');hist.classList.add('hv-scroll');var b3=hvBox('Your recent manual downloads');b3.appendChild(hist);body.appendChild(b3);
       load();timer=setInterval(function(){if(tab==='add')load()},5000);return}
     if(only==='limits'){limBox=hvBox('');body.appendChild(limBox);tops=el('div');list=el('div');hist=el('div');load();return}
     tops=el('div','hv-stats');body.appendChild(tops);
     var b1=hvBox(WHERE==='Usenet'?'Queue':'Downloading');list=el('div','hv-list');b1.appendChild(list);body.appendChild(b1);
-    var b2=hvBox('History · last three days');hist=el('div','hv-list');b2.appendChild(hist);body.appendChild(b2);
+    var b2=hvBox('History · last three days');hist=el('div','hv-list hv-scroll');b2.appendChild(hist);body.appendChild(b2);
     load();timer=setInterval(function(){if(tab===only)load()},3000);
   }
   function addView(body){clientsView(body,'add')}
@@ -940,7 +940,22 @@
   function pane(body){
     body.replaceChildren();
     ({arrs:arrsPane,clients:clientsPane,transcode:transcodePane,metadata:metadataPane,playback:playbackPane,public:publicPane,rss:rssPane,system:systemPane})[tab](body);
-    if(tab!=='system'&&tab!=='rss')split(body);
+    if(/^(playback|public|transcode|metadata|clients)$/.test(tab))rowify(body);
+    else if(tab!=='system'&&tab!=='rss')split(body);
+  }
+  // A settings card becomes a row (pinned v4): a status dot, its name and
+  // state on one line, and its fields under Edit.
+  function rowify(body){
+    [].filter.call(body.children,function(c){return c.classList.contains('card')&&c.firstChild&&c.firstChild.tagName==='H4'}).forEach(function(c){
+      var h=c.firstChild,chip=h.querySelector('.chip2'),title=h.firstChild&&h.firstChild.nodeType===3?h.firstChild.textContent.trim():h.textContent.replace(chip?chip.textContent:'','').trim();
+      h.remove();var w=el('div','hv-erow');c.parentNode.insertBefore(w,c);var top=el('div','hv-erow-top');w.appendChild(top);c.className='hv-erow-ed hv-cardbody';w.appendChild(c);
+      var ok=chip?chip.classList.contains('ok'):true,state=chip?chip.textContent.trim():'';
+      function addr(){var v='';[].some.call(c.querySelectorAll('input[type=text],input:not([type])'),function(i){if(/^https?:\/\//.test(i.value)){v=i.value;return true}});return v}
+      c.hidden=ok;
+      function sum(){top.replaceChildren();top.appendChild(el('i','hv-dot2 '+(ok?'ok':'off')));var t=el('div','hv-erow-t');t.appendChild(el('b','',title));var hn=c.querySelector('.hint');var hs=hn?hn.textContent.split(/(?<=\.)\s/)[0]:'';t.appendChild(el('span','',[state,addr()].filter(Boolean).join(' · ')||hs));top.appendChild(t);
+        top.appendChild(hvBtn(c.hidden?(ok?'Edit':'Set up'):'Done','',function(){c.hidden=!c.hidden;sum()},!ok&&c.hidden))}
+      c.addEventListener('input',sum);sum()});
+    var rows=[].filter.call(body.children,function(x){return x.classList.contains('hv-erow')});if(rows.length){var box=el('div','hv-erows');body.insertBefore(box,rows[0]);rows.forEach(function(r){box.appendChild(r)})}
   }
   // A settings card becomes a row: its title and explanation on the left, the fields on the right.
   function split(body){
