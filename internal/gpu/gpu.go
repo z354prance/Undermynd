@@ -74,10 +74,19 @@ type Monitor struct {
 	NvidiaSMI string
 	open      opener // performance counters; nil = the kernel's
 
-	mu      sync.RWMutex
-	cards   map[string]*state
-	readers []reader
-	found   bool
+	mu       sync.RWMutex
+	cards    map[string]*state
+	readers  []reader
+	found    bool
+	prepared bool
+}
+
+// Prepare finds the cards and opens their counters now. Call it before the
+// process gives up root: Intel's engine counters need CAP_PERFMON to open,
+// and an open counter keeps working after the switch to PUID.
+func (m *Monitor) Prepare() {
+	m.discover()
+	m.prepared = true
 }
 
 type state struct {
@@ -103,7 +112,9 @@ func (m *Monitor) Run(ctx context.Context) {
 	if every <= 0 {
 		every = 5 * time.Second
 	}
-	m.discover()
+	if !m.prepared {
+		m.discover()
+	}
 	defer func() {
 		for _, r := range m.readers {
 			r.close()

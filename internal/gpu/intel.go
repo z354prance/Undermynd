@@ -214,7 +214,7 @@ func newIntel(sys, id, dev, slot, driver string, open opener, logf func(string, 
 	}
 	switch {
 	case len(g.engines) == 0 && denied != nil:
-		g.note = "load needs one more permission: add --cap-add=PERFMON to the HyveMynd container"
+		g.note = "load needs one more permission: add --cap-add=PERFMON to the HyveMynd container under Extra Parameters"
 	case len(g.engines) == 0:
 		g.note = "the card's engine counters could not be opened"
 	default:
