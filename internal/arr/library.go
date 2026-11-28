@@ -404,3 +404,16 @@ func (c *Client) GrabbedResolution(ctx context.Context, downloadID string) (int,
 	}
 	return best, nil
 }
+
+// Get reads any API path (with its leading slash) into out.
+func (c *Client) Get(ctx context.Context, path string, out any) error { return c.get(ctx, path, out) }
+
+// Total is the record count of a paged list (such as /wanted/cutoff),
+// monitored items only, read from one small page.
+func (c *Client) Total(ctx context.Context, path string) (int, error) {
+	var r struct {
+		TotalRecords int `json:"totalRecords"`
+	}
+	err := c.get(ctx, path+"?pageSize=1&monitored=true", &r)
+	return r.TotalRecords, err
+}

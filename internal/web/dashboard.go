@@ -27,6 +27,7 @@ func (s *Server) dashboardRoutes(mux *http.ServeMux, files http.Handler) {
 	})
 	mux.HandleFunc("GET /api/v1/recently-added", s.v1Recent)
 	mux.HandleFunc("GET /api/v1/storage", s.v1Storage)
+	mux.HandleFunc("GET /api/v1/insights", s.v1Insights)
 	mux.HandleFunc("GET /api/v1/playback", s.v1Playback)
 	mux.HandleFunc("GET /api/v1/playback/poster", s.v1Poster)
 	mux.HandleFunc("GET /api/v1/missing", func(w http.ResponseWriter, r *http.Request) {

@@ -57,6 +57,7 @@ type Server struct {
 	Blobs    state.Blobs
 	musicMem []musicRequest
 	Engine   *pipeline.Engine
+	ins      insights
 	Cfg      *config.Config
 	Auth     *auth.Auth
 	Log      *log.Logger
