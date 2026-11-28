@@ -208,3 +208,24 @@ func (s Server) AddedSince(ctx context.Context, libraryID, types string, since t
 	}
 	return out, nil
 }
+
+// Runtimes is the length in milliseconds of each item, by id.
+func (s Server) Runtimes(ctx context.Context, ids []string) (map[string]int64, error) {
+	var r struct {
+		Items []struct {
+			ID    string `json:"Id"`
+			Ticks int64  `json:"RunTimeTicks"`
+		} `json:"Items"`
+	}
+	q := url.Values{"Ids": {strings.Join(ids, ",")}, "Fields": {"RunTimeTicks"}, "Recursive": {"true"}}
+	if err := s.Do(ctx, http.MethodGet, "/Items?"+q.Encode(), nil, &r); err != nil {
+		return nil, err
+	}
+	out := map[string]int64{}
+	for _, it := range r.Items {
+		if it.Ticks > 0 {
+			out[it.ID] = it.Ticks / 10000
+		}
+	}
+	return out, nil
+}

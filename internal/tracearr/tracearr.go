@@ -342,7 +342,9 @@ type Play struct {
 	DurationMs  int64 `json:"duration_ms"`
 	WatchedMs   int64 `json:"watched_ms"`
 	IsTranscode *bool `json:"is_transcode"`
-	User        struct {
+	// Raw holds every field Tracearr sent, for the ones not named here.
+	Raw  map[string]any `json:"-"`
+	User struct {
 		ID       string `json:"id"`
 		Username string `json:"username"`
 	} `json:"user"`
@@ -359,7 +361,7 @@ func (c *Client) History(ctx context.Context, mediaType string, since time.Time)
 			q.Set("cursor", cursor)
 		}
 		var r struct {
-			Data []Play `json:"data"`
+			Data []json.RawMessage `json:"data"`
 			Meta struct {
 				NextCursor *string `json:"nextCursor"`
 			} `json:"meta"`
@@ -367,7 +369,14 @@ func (c *Client) History(ctx context.Context, mediaType string, since time.Time)
 		if err := c.get(ctx, "history?"+q.Encode(), &r); err != nil {
 			return out, err
 		}
-		out = append(out, r.Data...)
+		for _, raw := range r.Data {
+			var p Play
+			if json.Unmarshal(raw, &p) != nil {
+				continue
+			}
+			_ = json.Unmarshal(raw, &p.Raw)
+			out = append(out, p)
+		}
 		if r.Meta.NextCursor == nil || *r.Meta.NextCursor == "" || len(r.Data) == 0 {
 			break
 		}

@@ -191,3 +191,49 @@ func TestInsightsFromMediaServer(t *testing.T) {
 		t.Fatalf("added from the media server: %s", rec.Body.String())
 	}
 }
+
+// Watched time from Tracearr's history; when a play has no time played, the
+// media server's runtime times the share played.
+func TestWatchHistory(t *testing.T) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	tr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/public/history" {
+			http.NotFound(w, r)
+			return
+		}
+		switch r.URL.Query().Get("media_type") {
+		case "movie":
+			_, _ = io.WriteString(w, `{"data":[{"media_type":"movie","media_title":"Arrival","rating_key":"m1","percent_complete":50,"started_at":"`+now+`","is_transcode":true}],"meta":{}}`)
+		case "episode":
+			_, _ = io.WriteString(w, `{"data":[{"media_type":"episode","show_title":"Suits","rating_key":"e1","watched":true,"started_at":"`+now+`","play_duration":1800}],"meta":{}}`)
+		default:
+			_, _ = io.WriteString(w, `{"data":[],"meta":{}}`)
+		}
+	}))
+	defer tr.Close()
+	ms := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/Items" && r.URL.Query().Get("Ids") == "m1" {
+			_, _ = io.WriteString(w, `{"Items":[{"Id":"m1","RunTimeTicks":72000000000}]}`) // 2 h
+			return
+		}
+		_, _ = io.WriteString(w, `{"Items":[]}`)
+	}))
+	defer ms.Close()
+	dir := t.TempDir()
+	cfg, _ := config.Load(config.Env{ConfigDir: filepath.Join(dir, "c"), DataDir: filepath.Join(dir, "d")})
+	s0 := cfg.Get()
+	s0.Playback.TracearrURL, s0.Playback.TracearrKey = tr.URL, "k"
+	s0.Playback.EmbyURL, s0.Playback.EmbyKey = ms.URL, "k"
+	cfg.Set(s0)
+	st, _ := store.Open(filepath.Join(dir, "c", "jobs.json"))
+	au, _ := auth.New(filepath.Join(dir, "c"))
+	srv := New(st, pipeline.New(st, cfg, log.New(io.Discard, "", 0)), cfg, au, log.New(io.Discard, "", 0))
+	days, direct, trans := srv.watchHistory(context.Background())
+	today := days[dayKey(time.Now())]
+	if today["movie"] < 0.99 || today["movie"] > 1.01 || today["tv"] < 0.49 || today["tv"] > 0.51 {
+		t.Fatalf("hours %v", today)
+	}
+	if trans < 0.99 || direct != 0 {
+		t.Fatalf("direct %v transcode %v", direct, trans)
+	}
+}
