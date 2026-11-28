@@ -173,6 +173,20 @@ func (s *newsServer) serve(c net.Conn) {
 			}
 			b.WriteString(".\r\n")
 			c.Write(b.Bytes())
+		case "STAT":
+			if !authed {
+				fmt.Fprint(c, "480 auth\r\n")
+				continue
+			}
+			id := strings.Trim(f[1], "<>")
+			s.mu.Lock()
+			_, ok := s.articles[id]
+			s.mu.Unlock()
+			if ok {
+				fmt.Fprintf(c, "223 0 <%s>\r\n", id)
+			} else {
+				fmt.Fprint(c, "430 no such article\r\n")
+			}
 		case "QUIT":
 			fmt.Fprint(c, "205 bye\r\n")
 			return
@@ -422,7 +436,7 @@ func TestTooMuchMissingFails(t *testing.T) {
 	defer stop()
 	addJob(t, d, "j3", rel.nzb)
 	it := waitDone(t, d, "j3")
-	if it.Status != backend.Errored || !strings.Contains(it.Error, "no par2") {
+	if it.Status != backend.Errored || !(strings.Contains(it.Error, "no par2") || strings.Contains(it.Error, "gone from your providers")) {
 		t.Fatalf("status %+v", it)
 	}
 }
@@ -661,7 +675,7 @@ func TestUnrepairableFailsEarly(t *testing.T) {
 	defer stop()
 	addJob(t, d, "ju", rel.nzb)
 	it := waitDone(t, d, "ju")
-	if it.Status != backend.Errored || !strings.Contains(it.Error, "too much of this release is gone") {
+	if it.Status != backend.Errored || !(strings.Contains(it.Error, "too much of this release is gone") || strings.Contains(it.Error, "gone from your providers")) {
 		t.Fatalf("status %+v", it)
 	}
 }
@@ -742,7 +756,7 @@ func TestAddedProviderFillsTheGaps(t *testing.T) {
 	partial := map[string][]byte{}
 	n := 0
 	for id, b := range rel.articles {
-		if n%4 != 0 {
+		if n%10 != 0 { // one in ten gone: past the dead-release check
 			partial[id] = b
 		}
 		n++
@@ -852,5 +866,23 @@ func TestStatsListsIdleProviders(t *testing.T) {
 	s := d.Stats()
 	if len(s.Servers) != 1 || s.Servers[0].Name != "A" || s.Servers[0].Problem != "" {
 		t.Fatalf("servers %+v", s.Servers)
+	}
+}
+
+// A release gone everywhere fails at the sample check, before downloading.
+func TestDeadReleaseFailsFast(t *testing.T) {
+	secret.SetKeyForTest(make([]byte, 32))
+	rel := makeRelease(map[string][]byte{"x.mkv": randBytes(200 << 10)}, 10<<10, func(n string) string { return n })
+	srv := startNews(t, map[string][]byte{}, "")
+	cfg := config.Usenet{Servers: []config.NewsServer{srv.cfg("A", 0)}}
+	d := &Downloader{Cfg: func() config.Usenet { return cfg }, Dir: t.TempDir(), State: &blobs{}}
+	defer d.closePools()
+	tk := fetchTask(t, d, rel.nzb)
+	_, err := d.fetch(context.Background(), tk)
+	if err == nil || !strings.Contains(err.Error(), "gone from your providers") {
+		t.Fatalf("err %v", err)
+	}
+	if srv.served.Load() != 0 {
+		t.Fatalf("%d articles downloaded; none should be", srv.served.Load())
 	}
 }

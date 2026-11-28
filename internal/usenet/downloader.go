@@ -119,6 +119,8 @@ type progress struct {
 	// they are asked again when a provider is added.
 	Lost  map[string]bool `json:"lost,omitempty"`
 	Tried []string        `json:"tried,omitempty"`
+	// Checked: the dead-release check has passed.
+	Checked bool `json:"checked,omitempty"`
 }
 
 const progressFile = ".hyvemynd-usenet.json"
@@ -970,6 +972,12 @@ func (d *Downloader) fetch(ctx context.Context, t *task) (*progress, error) {
 	} else {
 		d.note(t, "downloading %d files, %d MB, from %s", files, total>>20, strings.Join(names, ", "))
 	}
+	if already == 0 && !pr.Checked {
+		if err := d.deadCheck(ctx, t, nzb, pr); err != nil {
+			return nil, err
+		}
+		pr.Checked = true
+	}
 	repairWanted := func(i int) bool { return !isRepairVolume(pr.Names[i]) || pr.Repair }
 	if err := d.download(ctx, t, nzb, pr, repairWanted); err != nil {
 		return nil, err
@@ -1305,3 +1313,99 @@ func (d *Downloader) saveProgress(t *task, pr *progress) {
 }
 
 var _ backend.Backend = (*Downloader)(nil)
+
+// deadSample is how many articles the dead-release check asks about.
+const deadSample = 40
+
+// deadCheck asks the providers about a sample of the release's articles before
+// downloading it. A release that is mostly gone everywhere (taken down) fails
+// in seconds, instead of after its whole download.
+func (d *Downloader) deadCheck(ctx context.Context, t *task, nzb NZB, pr *progress) error {
+	var data, repair int64
+	var segs []Segment
+	for i, f := range nzb.Files {
+		if isRepairVolume(pr.Names[i]) {
+			repair += f.Bytes
+			continue
+		}
+		data += f.Bytes
+		segs = append(segs, f.Segments...)
+	}
+	if len(segs) < 10 || data == 0 {
+		return nil
+	}
+	n := min(deadSample, len(segs))
+	pick := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		pick = append(pick, segs[i*len(segs)/n].ID)
+	}
+	tiers := d.providers()
+	var mu sync.Mutex
+	var missing, answered int
+	ids := make(chan string)
+	var wg sync.WaitGroup
+	for w := 0; w < 8; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for id := range ids {
+				found, reached := d.statArticle(ctx, tiers, id)
+				mu.Lock()
+				if reached {
+					answered++
+					if !found {
+						missing++
+					}
+				}
+				mu.Unlock()
+			}
+		}()
+	}
+	for _, id := range pick {
+		select {
+		case ids <- id:
+		case <-ctx.Done():
+		}
+	}
+	close(ids)
+	wg.Wait()
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if answered < n/2 {
+		return nil // too few answers to judge: download as usual
+	}
+	gone := float64(missing) / float64(answered)
+	canRebuild := float64(repair) / float64(data)
+	d.note(t, "checked %d sample articles: %d missing everywhere", answered, missing)
+	if gone >= 0.3 && gone > canRebuild+0.15 {
+		return fmt.Errorf("this release is gone from your providers: %d of %d sample articles exist nowhere (likely taken down); another release is needed", missing, answered)
+	}
+	return nil
+}
+
+// statArticle asks each provider, main first, whether it has an article.
+func (d *Downloader) statArticle(ctx context.Context, tiers [][]*pool, id string) (found, reached bool) {
+	for _, tier := range tiers {
+		for _, p := range tier {
+			for try := 0; try < 2; try++ {
+				c, err := p.get(ctx)
+				if err != nil {
+					break
+				}
+				err = c.stat(id)
+				if err == nil {
+					p.put(c, true)
+					return true, true
+				}
+				if errors.Is(err, ErrNoArticle) {
+					p.put(c, true)
+					reached = true
+					break
+				}
+				p.put(c, false)
+			}
+		}
+	}
+	return false, reached
+}
