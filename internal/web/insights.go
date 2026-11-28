@@ -808,6 +808,7 @@ func (s *Server) watchHistory(ctx context.Context) (map[string]map[string]float6
 		sort.Strings(keys)
 		s.Log.Printf("insights: Tracearr history: %d plays in %d days, %.1f h counted, %d without a play time; fields: %s",
 			len(all), insightDays, total, missing, strings.Join(keys, ", "))
+		s.Log.Printf("insights: Tracearr history paging: %s", c.LastHistory)
 	}
 	if total == 0 {
 		return nil, 0, 0
@@ -819,6 +820,11 @@ func (s *Server) watchHistory(ctx context.Context) (map[string]map[string]float6
 func playedMs(p tracearr.Play) int64 {
 	if p.WatchedMs > 0 {
 		return p.WatchedMs
+	}
+	// Tracearr: duration_ms is the session's play time when total_duration_ms
+	// carries the item's length.
+	if p.TotalMs > 0 && p.DurationMs > 0 {
+		return min(p.DurationMs, 24*3600*1000)
 	}
 	if p.ProgressMs > 0 {
 		return p.ProgressMs

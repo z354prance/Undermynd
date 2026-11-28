@@ -205,7 +205,7 @@ func TestWatchHistory(t *testing.T) {
 		case "movie":
 			_, _ = io.WriteString(w, `{"data":[{"media_type":"movie","media_title":"Arrival","rating_key":"m1","percent_complete":50,"started_at":"`+now+`","is_transcode":true}],"meta":{}}`)
 		case "episode":
-			_, _ = io.WriteString(w, `{"data":[{"media_type":"episode","show_title":"Suits","rating_key":"e1","watched":true,"started_at":"`+now+`","play_duration":1800}],"meta":{}}`)
+			_, _ = io.WriteString(w, `{"data":[{"media_type":"episode","show_title":"Suits","rating_key":"e1","watched":true,"started_at":"`+now+`","duration_ms":1800000,"total_duration_ms":2700000,"progress_ms":2700000}],"meta":{}}`)
 		default:
 			_, _ = io.WriteString(w, `{"data":[],"meta":{}}`)
 		}
