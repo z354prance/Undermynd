@@ -373,8 +373,9 @@ type arrMovie struct {
 	HasFile bool   `json:"hasFile"`
 }
 
-func (s *Server) refreshSlow(ctx context.Context) {
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+func (s *Server) refreshSlow(parent context.Context) {
+	started := time.Now()
+	ctx, cancel := context.WithTimeout(parent, 10*time.Minute)
 	defer cancel()
 	var out insSlow
 	out.Library = map[string]libCounts{}
@@ -490,7 +491,9 @@ func (s *Server) refreshSlow(ctx context.Context) {
 			out.Added = embyAdded
 		}
 	}
-	out.Watch, out.Direct, out.Transcode = s.watchHistory(ctx)
+	wctx, wcancel := context.WithTimeout(parent, 2*time.Minute)
+	out.Watch, out.Direct, out.Transcode = s.watchHistory(wctx)
+	wcancel()
 	if cutoffKnown && withFiles > 0 {
 		out.Upgrades.Share = 1 - float64(min(belowCutoff, withFiles))/float64(withFiles)
 	}
@@ -505,6 +508,7 @@ func (s *Server) refreshSlow(ctx context.Context) {
 		out.Picks = []pick{}
 	}
 	out.At = time.Now()
+	s.Log.Printf("insights: library and trends read in %s", time.Since(started).Round(time.Second))
 	s.ins.mu.Lock()
 	s.ins.slow = out
 	s.ins.mu.Unlock()
@@ -758,6 +762,7 @@ func (s *Server) watchHistory(ctx context.Context) (map[string]map[string]float6
 			s.Log.Printf("insights: Tracearr history (%s): %v", mt, err)
 			return nil, 0, 0
 		}
+		s.Log.Printf("insights: Tracearr history (%s): %d plays; %s", mt, len(plays), c.LastHistory)
 		all = append(all, plays...)
 	}
 	runtimes := s.runtimesFor(ctx, all)
@@ -808,7 +813,6 @@ func (s *Server) watchHistory(ctx context.Context) (map[string]map[string]float6
 		sort.Strings(keys)
 		s.Log.Printf("insights: Tracearr history: %d plays in %d days, %.1f h counted, %d without a play time; fields: %s",
 			len(all), insightDays, total, missing, strings.Join(keys, ", "))
-		s.Log.Printf("insights: Tracearr history paging: %s", c.LastHistory)
 	}
 	if total == 0 {
 		return nil, 0, 0
