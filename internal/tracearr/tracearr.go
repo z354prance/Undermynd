@@ -377,12 +377,11 @@ func (c *Client) History(ctx context.Context, mediaType string, since time.Time)
 			c.LastHistory = fmt.Sprintf("first page %d records, meta %s", len(r.Data), b)
 		}
 		for _, raw := range r.Data {
-			var p Play
-			if json.Unmarshal(raw, &p) != nil {
+			var m map[string]any
+			if json.Unmarshal(raw, &m) != nil {
 				continue
 			}
-			_ = json.Unmarshal(raw, &p.Raw)
-			out = append(out, p)
+			out = append(out, playFrom(m))
 		}
 		next := ""
 		for _, k := range []string{"nextCursor", "next_cursor", "cursor"} {
@@ -411,4 +410,75 @@ func (c *Client) ShowIDs(ctx context.Context, showMediaID string) (tvdb, tmdb in
 		return 0, 0, "", err
 	}
 	return r.TVDB, r.TMDB, r.Title, nil
+}
+
+// playFrom reads one history record field by field, taking numbers whether
+// Tracearr sends them as numbers or as text, so one odd field never drops the
+// whole play.
+func playFrom(m map[string]any) Play {
+	str := func(k string) string {
+		switch v := m[k].(type) {
+		case string:
+			return v
+		case float64:
+			return strconv.FormatFloat(v, 'f', -1, 64)
+		}
+		return ""
+	}
+	num := func(k string) float64 {
+		switch v := m[k].(type) {
+		case float64:
+			return v
+		case string:
+			f, _ := strconv.ParseFloat(strings.TrimSpace(v), 64)
+			return f
+		case bool:
+			if v {
+				return 1
+			}
+		}
+		return 0
+	}
+	p := Play{MediaType: str("media_type"), Title: str("media_title"), ShowTitle: str("show_title"),
+		Season: int(num("season_number")), Episode: int(num("episode_number")), Year: int(num("year")),
+		TMDB: int64(num("tmdb_id")), TVDB: int64(num("tvdb_id")), ShowMediaID: str("show_media_id"),
+		LibraryID: str("library_id"), RatingKey: str("rating_key"), Percent: num("percent_complete"),
+		ProgressMs: int64(num("progress_ms")), DurationMs: int64(num("duration_ms")), TotalMs: int64(num("total_duration_ms")),
+		WatchedMs: int64(num("watched_ms")), Raw: m}
+	if p.ShowTitle == "" {
+		p.ShowTitle = str("grandparent_title")
+	}
+	switch v := m["watched"].(type) {
+	case bool:
+		p.Watched = v
+	case float64:
+		p.Watched = v != 0
+	case string:
+		p.Watched = v == "true" || v == "1"
+	}
+	if v, ok := m["is_transcode"].(bool); ok {
+		p.IsTranscode = &v
+	}
+	if g, ok := m["genres"].([]any); ok {
+		for _, x := range g {
+			if s, ok := x.(string); ok {
+				p.Genres = append(p.Genres, s)
+			}
+		}
+	}
+	for _, k := range []string{"started_at", "startedAt", "stopped_at"} {
+		if t, err := time.Parse(time.RFC3339Nano, str(k)); err == nil {
+			p.StartedAt = &t
+			break
+		}
+	}
+	if u, ok := m["user"].(map[string]any); ok {
+		if v, ok := u["id"].(string); ok {
+			p.User.ID = v
+		} else if f, ok := u["id"].(float64); ok {
+			p.User.ID = strconv.FormatFloat(f, 'f', -1, 64)
+		}
+		p.User.Username, _ = u["username"].(string)
+	}
+	return p
 }
