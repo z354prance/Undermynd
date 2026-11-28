@@ -66,7 +66,7 @@
     // requests from visitors, the library it watches, and its settings.
     var NAV=[
       {id:'home',label:'Home',icon:'s_over',pages:[['overview','Home']]},
-      {id:'downloads',label:'Downloads',icon:'s_dl',pages:[['jobs','Pipeline'],['torbox','TorBox'],['usenetq','Usenet'],['torrents','Torrents'],['tdarrstats','Tdarr'],['rss','Feeds'],['add','Add a download']]},
+      {id:'downloads',label:'Downloads',icon:'s_dl',pages:[['jobs','Pipeline'],['torbox','TorBox'],['usenetq','Usenet'],['torrents','Torrents'],['tdarrstats','Tdarr'],['reports','Reports'],['rss','Feeds'],['add','Add a download']]},
       {id:'requests',label:'Requests',icon:'s_req',pages:[['requests','Requests']]},
       {id:'library',label:'Library',icon:'s_lib',pages:[['missing','Missing'],['upgrades','Upgrades'],['anime','Anime']]},
       {id:'settings',label:'Settings',icon:'s_sys',pages:[['start','Settings']],settings:true}];
@@ -103,7 +103,7 @@
     var main=el('main','main'),body=el('div');main.appendChild(body);bodyWrap.appendChild(main);shell.appendChild(side);shell.appendChild(mainCol);root.appendChild(shell);
     if(cur.settings){settingsShell(body,SETTINGS,go);}
     else if(tab==='overview')overviewView(body);else if(tab==='jobs')jobsView(body);else if(tab==='requests')requestsView(body);else if(tab==='missing')missingView(body);else if(tab==='upgrades')upgradesView(body);else if(tab==='anime')animeView(body);
-    else if(tab==='torbox'||tab==='usenetq'||tab==='torrents')clientsView(body,tab);else if(tab==='tdarrstats')tdarrStatsView(body);else if(tab==='add')addView(body);else settingsView(body);
+    else if(tab==='torbox'||tab==='usenetq'||tab==='torrents')clientsView(body,tab);else if(tab==='tdarrstats')tdarrStatsView(body);else if(tab==='reports')reportsView(body);else if(tab==='add')addView(body);else settingsView(body);
   }
   var homeCount=null,dlCount=null;
   function railCounts(rows){var bad=rows.filter(function(r){return r.attention&&r.state!=='cleaned'}).length,mv=rows.filter(function(r){return WORKING[r.group]}).length;
@@ -979,6 +979,39 @@
         rec.forEach(function(x){var r=el('tr');var n=el('td');var nm=el('div','hv-tname');nm.appendChild(el('b','',x.name));n.appendChild(nm);r.appendChild(n);[x.category,gb(x.before),gb(x.after),(x.after<=x.before?gb(x.before-x.after):'+'+gb(x.after-x.before))+' ('+Math.round(x.after/x.before*100)+'%)',ago(x.at)+' ago'].forEach(function(v){r.appendChild(el('td','',v))});b2.appendChild(r)});t2.appendChild(b2);wrap2.appendChild(t2);rl.appendChild(wrap2)}
     }).catch(fail);
     gpuSection(gs,'tdarrstats');
+  }
+  // Downloads › Reports: providers, indexers, clients and why downloads fail.
+  function rtable(cols,rows){var wrap=el('div','hv-twrap');var t=el('table','hv-table');var hd=el('thead');var hr=el('tr');cols.forEach(function(c){var th=el('th','',c);th.scope='col';hr.appendChild(th)});hd.appendChild(hr);t.appendChild(hd);var bd=el('tbody');
+    rows.forEach(function(r){var tr=el('tr');r.forEach(function(v,i){var td=el('td');if(v&&v.nodeType)td.appendChild(v);else td.textContent=v==null?'':String(v);if(i===0)td.className='hv-tname';tr.appendChild(td)});bd.appendChild(tr)});t.appendChild(bd);wrap.appendChild(t);return wrap}
+  function pct(x){return x==null?'—':Math.round(x*100)+'%'}
+  function rateBar(x){var w=el('span','hv-rate');var b=el('i');b.style.width=Math.round((x||0)*100)+'%';b.style.background=x>=.9?'var(--ok,#3fb950)':x>=.7?'#e3b341':'#f05454';w.appendChild(b);var t=el('span','');t.textContent=' '+pct(x);var d=el('span');d.appendChild(w);d.appendChild(t);return d}
+  function reportsView(body){
+    var days=30;var bar=el('div','hv-chips');body.appendChild(bar);var out=el('div');body.appendChild(out);
+    function chips(){bar.replaceChildren();[[7,'Last 7 days'],[30,'Last 30 days']].forEach(function(x){var b=el('button','hv-chip'+(days===x[0]?' on':''),x[1]);b.type='button';b.onclick=function(){days=x[0];chips();load()};bar.appendChild(b)})}
+    function load(){out.replaceChildren(el('p','hint','Loading…'));api('GET','/reports?days='+days).then(function(d){out.replaceChildren();
+      var st=el('div','hv-stats');function stat(l,v,tone){var c=el('div','hv-stat'+(tone?' '+tone:''));c.appendChild(el('span','',l));c.appendChild(el('b','',v));st.appendChild(c)}
+      stat('Downloads finished or failed',String(d.total));stat('Reached the library',d.total?pct(d.ok/d.total):'—',d.total&&d.ok/d.total>=.9?'ok':'');stat('Failed',String(d.total-d.ok),d.total-d.ok?'warn':'');stat('Rescued from TorBox by your providers',String(d.rescued));out.appendChild(st);
+      out.appendChild(el('p','hv-note','Counted from this version on, so the first days show little.'));
+      var pb=hvBox('Usenet providers');out.appendChild(pb);
+      if(!d.providers.length)pb.appendChild(el('div','hv-empty','No usenet providers set up.'));
+      else{pb.appendChild(help('Share is how much of what your providers downloaded came from each. Had is how often it had the articles asked of it. Only it had counts articles it served after another provider lacked them: what you would lose without it.'));
+        pb.appendChild(rtable(['Provider','Role','Downloaded','Share','Had','Only it had','Speed per connection','Errors'],d.providers.map(function(p){return [p.name+(p.on?'':' (off)'),p.priority<0?'removed':p.priority===0?'Main':'Backup '+p.priority,gb(p.bytes),pct(p.share),p.articles+p.missing?rateBar(p.complete):'—',(p.rescued||0).toLocaleString(),p.speed?(p.speed/1048576).toFixed(1)+' MB/s':'—',String(p.errors||0)]})))}
+      var ib=hvBox('Indexers');out.appendChild(ib);
+      if(!d.indexers.length)ib.appendChild(el('div','hv-empty','Nothing grabbed through the arrs yet in this period.'));
+      else{ib.appendChild(help('From the arrs’ grab history: how many of each indexer’s releases reached the library.'));
+        ib.appendChild(rtable(['Indexer','Grabs','In the library','Failed','Success','Most common failure'],d.indexers.map(function(t){return [t.name,String(t.total),String(t.ok),String(t.failed),rateBar(t.rate),(t.topFails&&t.topFails[0])?t.topFails[0].name+' ('+t.topFails[0].count+')':'—']})))}
+      var cb=hvBox('TorBox and your own clients');out.appendChild(cb);
+      if(!d.clients.length)cb.appendChild(el('div','hv-empty','No downloads in this period.'));
+      else{cb.appendChild(help('Speed is the average while downloading. Rescued: downloads TorBox failed that your own usenet providers then finished.'));
+        cb.appendChild(rtable(['Client','Downloads','Success','Average speed','Rescued','Most common failure'],d.clients.map(function(t){return [t.name,String(t.total),rateBar(t.rate),t.speed?(t.speed/1048576).toFixed(1)+' MB/s':'—',t.rescued?String(t.rescued):'—',(t.topFails&&t.topFails[0])?t.topFails[0].name+' ('+t.topFails[0].count+')':'—']})))}
+      var wb=hvBox('Why downloads fail');out.appendChild(wb);
+      if(!d.why.length)wb.appendChild(el('div','hv-empty','No failures in this period.'));
+      else{var mx=d.why[0].count;var wl=el('div','hv-why');d.why.forEach(function(x){var r=el('div','hv-whyrow');r.appendChild(el('span','n',x.name));var b=el('span','b');var f=el('i');f.style.width=Math.max(4,Math.round(x.count/mx*100))+'%';b.appendChild(f);r.appendChild(b);r.appendChild(el('b','',String(x.count)));wl.appendChild(r)});wb.appendChild(wl);
+        var two=el('div','hv-two');function lst(t,items){var c=el('div');c.appendChild(el('h4','',t));if(!items.length)c.appendChild(el('div','hv-note','—'));items.forEach(function(x){var r=el('div','hv-kvrow');r.appendChild(el('span','',x.name));r.appendChild(el('b','',String(x.count)));c.appendChild(r)});return c}
+        two.appendChild(lst('Failures by indexer',d.failIndexers));two.appendChild(lst('Failures by release group',d.failGroups));wb.appendChild(two);
+        var rl=el('div','hv-scroll');rl.appendChild(rtable(['Download','Why','When'],d.recentFails.map(function(x){var n=el('div');n.appendChild(el('b','',x.name||x.id));if(x.reason)n.appendChild(el('div','hv-note',x.reason));return [n,x.why,ago(x.at)+' ago']})));wb.appendChild(el('h4','','Recent failures'));wb.appendChild(rl)}
+    }).catch(fail)}
+    chips();load();
   }
   function gpuLine(g){var p=[];if(g.video>=0)p.push('video '+Math.round(g.video)+'%');if(g.render>=0&&g.vendor!=='amd')p.push('render '+Math.round(g.render)+'%');else if(g.busy>=0&&g.video<0)p.push(Math.round(g.busy)+'% busy');
     if(g.freq>=0)p.push(Math.round(g.freq)+(g.freqMax>0?'/'+Math.round(g.freqMax):'')+' MHz');if(g.power>=0)p.push(Math.round(g.power)+' W');if(g.temp>0)p.push(Math.round(g.temp)+'°C');return p.join(' · ')}

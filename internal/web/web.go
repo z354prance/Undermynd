@@ -59,6 +59,7 @@ type Server struct {
 	booksMem []bookRequest
 	Engine   *pipeline.Engine
 	ins      insights
+	outs     outcomeLog
 	Cfg      *config.Config
 	Auth     *auth.Auth
 	Log      *log.Logger
@@ -185,6 +186,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /admin/api/library/sweep", s.guard(s.admin(s.librarySweep)))
 	mux.HandleFunc("GET /admin/api/playback/status", s.admin(s.playbackStatus))
 	mux.HandleFunc("GET /admin/api/insights/status", s.admin(s.insightsStatus))
+	mux.HandleFunc("GET /admin/api/reports", s.admin(s.adminReports))
 	mux.HandleFunc("POST /admin/api/insights/refresh", s.admin(s.insightsRefresh))
 	mux.HandleFunc("POST /admin/api/requests/test", s.guard(s.admin(s.requestsTest)))
 	mux.HandleFunc("GET /admin/api/requests", s.admin(s.requestsAdminList))
