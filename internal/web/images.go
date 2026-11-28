@@ -22,7 +22,7 @@ import (
 // hosts, and a copy is kept on disk for 30 days.
 
 var imageHosts = []string{"image.tmdb.org", "artworks.thetvdb.com", "thetvdb.com", "assets.fanart.tv", "coverartarchive.org",
-	"archive.org", "theaudiodb.com", "lastfm.freetls.fastly.net", "s4.anilist.co", "imagecache.lidarr.audio"}
+	"archive.org", "theaudiodb.com", "lastfm.freetls.fastly.net", "s4.anilist.co", "imagecache.lidarr.audio", "covers.openlibrary.org"}
 
 func imageHostOK(h string) bool {
 	h = strings.ToLower(h)

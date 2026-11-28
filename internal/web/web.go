@@ -56,6 +56,7 @@ type Server struct {
 	// Blobs keeps small state (music requests); nil: in memory.
 	Blobs    state.Blobs
 	musicMem []musicRequest
+	booksMem []bookRequest
 	Engine   *pipeline.Engine
 	ins      insights
 	Cfg      *config.Config
@@ -191,6 +192,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/api/gpus", s.admin(s.gpusList))
 	mux.HandleFunc("GET /admin/api/tdarr/savings", s.admin(s.tdarrSavings))
 	mux.HandleFunc("POST /admin/api/music-requests/{id}/{action}", s.guard(s.admin(s.musicDecide)))
+	mux.HandleFunc("POST /admin/api/book-requests/{id}/{action}", s.guard(s.admin(s.bookDecide)))
+	mux.HandleFunc("GET /admin/api/bookorbit", s.admin(s.adminBookOrbit))
+	mux.HandleFunc("PUT /admin/api/bookorbit", s.guard(s.admin(s.adminBookOrbitSave)))
+	mux.HandleFunc("POST /admin/api/bookorbit/test", s.guard(s.admin(s.adminBookOrbitTest)))
 	mux.HandleFunc("POST /admin/api/requests/{id}/{action}", s.guard(s.admin(s.requestsDecide)))
 	mux.HandleFunc("POST /admin/api/playback/test", s.guard(s.admin(s.playbackTest)))
 	mux.HandleFunc("POST /admin/api/metadata/test", s.guard(s.admin(s.metadataTest)))
@@ -636,7 +641,11 @@ type settingsView struct {
 		TimeoutMinutes int    `json:"timeoutMinutes"`
 	} `json:"tdarr"`
 	Donations config.Donations `json:"donations"`
-	Requests  struct {
+	BookOrbit struct {
+		URL    string `json:"url"`
+		HasKey bool   `json:"hasKey"`
+	} `json:"bookorbit"`
+	Requests struct {
 		Enabled   bool   `json:"enabled"`
 		URL       string `json:"url"`
 		APIKey    string `json:"apiKey,omitempty"` // write-only
@@ -705,6 +714,7 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	v.Playback.EmbyURL, v.Playback.HasEmbyKey, v.Playback.HiddenLibraries = c.Playback.EmbyURL, c.Playback.EmbyKey != "", c.Playback.HiddenLibraries
 	v.Playback.RefreshAfterPlace, v.Playback.PathFrom, v.Playback.PathTo = c.Playback.RefreshAfterPlace, c.Playback.PathFrom, c.Playback.PathTo
 	v.TorBox.HasToken, v.TorBox.CreatePerHour, v.TorBox.PullersAtOnce, v.TorBox.LinkGapSeconds = c.TorBox.Token != "", c.TorBox.CreatePerHour, c.TorBox.PullersAtOnce, c.TorBox.LinkGapSeconds
+	v.BookOrbit.URL, v.BookOrbit.HasKey = c.BookOrbit.URL, c.BookOrbit.APIKey != ""
 	tbOn := !c.TorBox.Off
 	v.TorBox.On = &tbOn
 	v.ClientUser, v.StallMinutes, v.ReconcileSeconds, v.FlagImportHours = c.ClientUser, c.StallMinutes, c.ReconcileSeconds, c.FlagImportHours

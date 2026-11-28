@@ -72,8 +72,9 @@ type insSlow struct {
 		Movies   int     `json:"movies"`
 		Share    float64 `json:"share"` // part of the library at the better quality; -1 unknown
 	} `json:"upgrades"`
-	Picks []pick `json:"picks"`
-	At    time.Time
+	Picks     []pick `json:"picks"`
+	BookOrbit bool   `json:"-"`
+	At        time.Time
 	// From the media server and Tracearr, when they answer: per day, per kind.
 	Added     map[string]map[string]int
 	Watch     map[string]map[string]float64 // hours
@@ -118,7 +119,7 @@ func kindOf(c config.Category) string {
 		return "movie"
 	case c.Kind == "lidarr":
 		return "music"
-	case strings.Contains(n, "book"):
+	case c.Books() || strings.Contains(n, "book"):
 		return "book"
 	}
 	return ""
@@ -524,6 +525,17 @@ func (s *Server) refreshSlow(parent context.Context) {
 	wctx, wcancel := context.WithTimeout(parent, 2*time.Minute)
 	out.Watch, out.Direct, out.Transcode = s.watchHistory(wctx)
 	wcancel()
+	if bo := s.bookOrbit(); bo != nil {
+		eb, au, err := bo.bookCounts(ctx)
+		s.insNote("BookOrbit: %d ebooks, %d audiobooks%s", eb, au, errNote(err))
+		if err == nil {
+			if out.Library == nil {
+				out.Library = map[string]libCounts{}
+			}
+			out.Library["book"] = libCounts{Ebooks: eb, Audio: au}
+			out.BookOrbit = true
+		}
+	}
 	if cutoffKnown && withFiles > 0 {
 		out.Upgrades.Share = 1 - float64(min(belowCutoff, withFiles))/float64(withFiles)
 	}
@@ -650,7 +662,7 @@ func (s *Server) v1Insights(w http.ResponseWriter, r *http.Request) {
 	}
 	out := map[string]any{
 		"days": days, "play": play,
-		"library": slow.Library, "libraries": slow.ByName, "upgrades": slow.Upgrades, "picks": slow.Picks,
+		"library": slow.Library, "libraries": slow.ByName, "booksFromBookOrbit": slow.BookOrbit, "upgrades": slow.Upgrades, "picks": slow.Picks,
 		"watchKnown": s.Cfg.Get().Playback.TracearrURL != "",
 	}
 	if s.Engine != nil {

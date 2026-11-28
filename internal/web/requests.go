@@ -73,7 +73,7 @@ func (s *Server) seerrAdmin() *seerr.Client {
 }
 
 func (s *Server) requestStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, map[string]bool{"enabled": s.seerrPublic() != nil, "music": s.musicOn()})
+	writeJSON(w, map[string]bool{"enabled": s.seerrPublic() != nil, "music": s.musicOn(), "books": s.booksOn()})
 }
 
 func (s *Server) requestSearch(w http.ResponseWriter, r *http.Request) {
@@ -178,6 +178,10 @@ func (s *Server) requestsPending(w http.ResponseWriter, r *http.Request) {
 		for _, m := range waiting {
 			all = append(all, map[string]any{"id": "music:" + m.ID, "source": "hyvemynd", "media_type": "music", "title": m.Name, "status": "pending", "created_at": m.RequestedAt})
 		}
+		books, _ := s.bookLists()
+		for _, m := range books {
+			all = append(all, map[string]any{"id": "book:" + m.ID, "source": "hyvemynd", "media_type": "book", "title": m.Title, "status": "pending", "created_at": m.RequestedAt})
+		}
 	}
 	writeJSON(w, map[string]any{"requests": all, "errors": []string{}})
 }
@@ -186,7 +190,9 @@ func (s *Server) requestsAdminList(w http.ResponseWriter, r *http.Request) {
 	c := s.seerrAdmin()
 	if c == nil {
 		waiting, decided := s.musicLists()
-		writeJSON(w, map[string]any{"requests": []any{}, "auto": s.autoView(), "music": waiting, "musicDecided": decided, "musicOn": s.musicOn()})
+		bw, bd := s.bookLists()
+		writeJSON(w, map[string]any{"requests": []any{}, "auto": s.autoView(), "music": waiting, "musicDecided": decided, "musicOn": s.musicOn(),
+			"books": bw, "booksDecided": bd, "booksOn": s.booksOn()})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
@@ -197,18 +203,21 @@ func (s *Server) requestsAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	waiting, decided := s.musicLists()
-	writeJSON(w, map[string]any{"requests": list, "auto": s.autoView(), "music": waiting, "musicDecided": decided, "musicOn": s.musicOn()})
+	bw, bd := s.bookLists()
+	writeJSON(w, map[string]any{"requests": list, "auto": s.autoView(), "music": waiting, "musicDecided": decided, "musicOn": s.musicOn(),
+		"books": bw, "booksDecided": bd, "booksOn": s.booksOn()})
 }
 
 type autoApprove struct {
 	Movies bool `json:"movies"`
 	TV     bool `json:"tv"`
 	Music  bool `json:"music"`
+	Books  bool `json:"books"`
 }
 
 func (s *Server) autoView() autoApprove {
 	r := s.Cfg.Get().Requests
-	return autoApprove{r.AutoMovies, r.AutoTV, r.AutoMusic}
+	return autoApprove{r.AutoMovies, r.AutoTV, r.AutoMusic, r.AutoBooks}
 }
 
 // requestsAuto sets which kinds of request are approved by themselves; those
@@ -220,7 +229,7 @@ func (s *Server) requestsAuto(w http.ResponseWriter, r *http.Request) {
 	}
 	cur := s.Cfg.Get()
 	was := cur.Requests
-	cur.Requests.AutoMovies, cur.Requests.AutoTV, cur.Requests.AutoMusic = in.Movies, in.TV, in.Music
+	cur.Requests.AutoMovies, cur.Requests.AutoTV, cur.Requests.AutoMusic, cur.Requests.AutoBooks = in.Movies, in.TV, in.Music, in.Books
 	if err := s.Cfg.Set(cur); err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -245,6 +254,16 @@ func (s *Server) requestsAuto(w http.ResponseWriter, r *http.Request) {
 		waiting, _ := s.musicLists()
 		for _, m := range waiting {
 			if _, err := s.decideMusic(ctx, m.ID, "approve"); err == nil {
+				approved++
+			}
+		}
+	}
+	if in.Books && !was.AutoBooks {
+		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+		defer cancel()
+		waiting, _ := s.bookLists()
+		for _, m := range waiting {
+			if _, err := s.decideBook(ctx, m.ID, "approve"); err == nil {
 				approved++
 			}
 		}
