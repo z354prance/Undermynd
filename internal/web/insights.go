@@ -748,30 +748,39 @@ func (s *Server) watchHistory(ctx context.Context) (map[string]map[string]float6
 	anime := s.animeNames()
 	out := map[string]map[string]float64{}
 	var direct, trans, total float64
+	var all []tracearr.Play
 	for _, mt := range []string{"movie", "episode", "track"} {
 		plays, err := c.History(ctx, mt, since)
 		if err != nil && len(plays) == 0 {
 			if mt == "track" {
 				continue
 			}
+			s.Log.Printf("insights: Tracearr history (%s): %v", mt, err)
 			return nil, 0, 0
 		}
+		all = append(all, plays...)
+	}
+	runtimes := s.runtimesFor(ctx, all)
+	missing := 0
+	{
+		plays := all
 		for _, p := range plays {
 			if p.StartedAt == nil || p.StartedAt.Before(since) {
 				continue
 			}
-			ms := p.WatchedMs
-			if ms <= 0 {
-				ms = p.ProgressMs
-			}
+			ms := playedMs(p)
 			if ms <= 0 && p.DurationMs > 0 {
-				pc := p.Percent
-				if pc <= 0 && p.Watched {
-					pc = 100
-				}
-				ms = int64(float64(p.DurationMs) * pc / 100)
+				ms = int64(float64(p.DurationMs) * playedShare(p))
 			}
 			if ms <= 0 {
+				// No play time from Tracearr: the item's length from the
+				// media server, times how much of it was played.
+				if rt := runtimes(p.RatingKey); rt > 0 {
+					ms = int64(float64(rt) * playedShare(p))
+				}
+			}
+			if ms <= 0 {
+				missing++
 				continue
 			}
 			h := float64(ms) / 3.6e6
@@ -791,8 +800,80 @@ func (s *Server) watchHistory(ctx context.Context) (map[string]map[string]float6
 			}
 		}
 	}
+	if len(all) > 0 {
+		keys := make([]string, 0, len(all[0].Raw))
+		for k := range all[0].Raw {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		s.Log.Printf("insights: Tracearr history: %d plays in %d days, %.1f h counted, %d without a play time; fields: %s",
+			len(all), insightDays, total, missing, strings.Join(keys, ", "))
+	}
 	if total == 0 {
 		return nil, 0, 0
 	}
 	return out, direct, trans
+}
+
+// playedMs is the time played, from whichever field Tracearr fills.
+func playedMs(p tracearr.Play) int64 {
+	if p.WatchedMs > 0 {
+		return p.WatchedMs
+	}
+	if p.ProgressMs > 0 {
+		return p.ProgressMs
+	}
+	for _, k := range []string{"play_duration_ms", "watch_duration_ms", "duration_watched_ms", "played_ms", "viewed_ms", "watchedMs", "playDurationMs", "progressMs"} {
+		if v, ok := p.Raw[k].(float64); ok && v > 0 {
+			return int64(v)
+		}
+	}
+	for _, k := range []string{"play_duration", "watch_duration", "duration_watched", "watched_seconds", "played_seconds"} {
+		if v, ok := p.Raw[k].(float64); ok && v > 0 {
+			return int64(v * 1000)
+		}
+	}
+	return 0
+}
+
+// playedShare is how much of the item was played, 0 to 1.
+func playedShare(p tracearr.Play) float64 {
+	pc := p.Percent
+	if pc > 100 {
+		pc = 100
+	}
+	if pc <= 0 && p.Watched {
+		pc = 100
+	}
+	return pc / 100
+}
+
+// runtimesFor asks the media server for the length of each played item that
+// Tracearr gave no play time for (Tracearr's rating key is the item's id).
+func (s *Server) runtimesFor(ctx context.Context, plays []tracearr.Play) func(string) int64 {
+	set := s.Cfg.Get()
+	got := map[string]int64{}
+	look := func(id string) int64 { return got[id] }
+	if set.Playback.EmbyURL == "" || set.Playback.EmbyKey == "" {
+		return look
+	}
+	var ids []string
+	seen := map[string]bool{}
+	for _, p := range plays {
+		if p.RatingKey != "" && !seen[p.RatingKey] && playedMs(p) == 0 && p.DurationMs == 0 {
+			seen[p.RatingKey] = true
+			ids = append(ids, p.RatingKey)
+		}
+	}
+	ms := mediaserver.Server{Kind: set.Access.Provider, URL: set.Playback.EmbyURL, Key: string(set.Playback.EmbyKey)}
+	for len(ids) > 0 {
+		n := min(100, len(ids))
+		if m, err := ms.Runtimes(ctx, ids[:n]); err == nil {
+			for k, v := range m {
+				got[k] = v
+			}
+		}
+		ids = ids[n:]
+	}
+	return look
 }
