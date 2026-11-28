@@ -16,9 +16,11 @@ import (
 )
 
 type Client struct {
-	BaseURL string
-	Token   string
-	HTTP    *http.Client
+	// LastHistory describes the first page of the last History call, for the log.
+	LastHistory string
+	BaseURL     string
+	Token       string
+	HTTP        *http.Client
 }
 
 func New(baseURL, token string) *Client {
@@ -339,7 +341,8 @@ type Play struct {
 	// How long it was played, when Tracearr says: the time watched, else the
 	// item's length (with Percent).
 	ProgressMs  int64 `json:"progress_ms"`
-	DurationMs  int64 `json:"duration_ms"`
+	DurationMs  int64 `json:"duration_ms"`       // time played in this session, beside total_duration_ms
+	TotalMs     int64 `json:"total_duration_ms"` // the item's length
 	WatchedMs   int64 `json:"watched_ms"`
 	IsTranscode *bool `json:"is_transcode"`
 	// Raw holds every field Tracearr sent, for the ones not named here.
@@ -355,19 +358,23 @@ type Play struct {
 func (c *Client) History(ctx context.Context, mediaType string, since time.Time) ([]Play, error) {
 	var out []Play
 	cursor := ""
+	c.LastHistory = ""
 	for page := 0; page < 50; page++ {
-		q := url.Values{"pageSize": {"100"}, "media_type": {mediaType}, "since": {since.UTC().Format(time.RFC3339)}}
+		ts := since.UTC().Format(time.RFC3339)
+		q := url.Values{"pageSize": {"100"}, "media_type": {mediaType}, "since": {ts}}
 		if cursor != "" {
 			q.Set("cursor", cursor)
 		}
 		var r struct {
 			Data []json.RawMessage `json:"data"`
-			Meta struct {
-				NextCursor *string `json:"nextCursor"`
-			} `json:"meta"`
+			Meta map[string]any    `json:"meta"`
 		}
 		if err := c.get(ctx, "history?"+q.Encode(), &r); err != nil {
 			return out, err
+		}
+		if page == 0 {
+			b, _ := json.Marshal(r.Meta)
+			c.LastHistory = fmt.Sprintf("first page %d records, meta %s", len(r.Data), b)
 		}
 		for _, raw := range r.Data {
 			var p Play
@@ -377,10 +384,17 @@ func (c *Client) History(ctx context.Context, mediaType string, since time.Time)
 			_ = json.Unmarshal(raw, &p.Raw)
 			out = append(out, p)
 		}
-		if r.Meta.NextCursor == nil || *r.Meta.NextCursor == "" || len(r.Data) == 0 {
+		next := ""
+		for _, k := range []string{"nextCursor", "next_cursor", "cursor"} {
+			if v, ok := r.Meta[k].(string); ok && v != "" && v != cursor {
+				next = v
+				break
+			}
+		}
+		if next == "" || len(r.Data) == 0 {
 			break
 		}
-		cursor = *r.Meta.NextCursor
+		cursor = next
 	}
 	return out, nil
 }
