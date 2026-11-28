@@ -133,6 +133,24 @@ func (c *conn) body(msgID string, w io.Writer) error {
 	return err
 }
 
+// stat asks whether the provider has an article, without fetching it.
+func (c *conn) stat(msgID string) error {
+	c.nc.SetDeadline(time.Now().Add(30 * time.Second))
+	defer c.nc.SetDeadline(time.Time{})
+	code, msg, err := c.cmd("STAT <" + strings.Trim(msgID, "<>") + ">")
+	if err != nil {
+		return err
+	}
+	c.used = time.Now()
+	switch code {
+	case 223:
+		return nil
+	case 430, 423:
+		return ErrNoArticle
+	}
+	return fmt.Errorf("provider answered %d %s", code, msg)
+}
+
 // pool holds a provider's connections, at most Conns at once.
 type pool struct {
 	srv  config.NewsServer
