@@ -651,3 +651,54 @@ func TestLowQueueStartsNextShow(t *testing.T) {
 		t.Fatalf("up to three shows at once with a short queue: %d %v", count(), son.calls)
 	}
 }
+
+// Titles sent from the Tdarr page wait behind watched ones, share the daily
+// limit, are worked without Tracearr, and a movie Radarr lacks is added at
+// its folder.
+func TestEnqueueFromTdarr(t *testing.T) {
+	secret.SetKeyForTest(make([]byte, 32))
+	dir := t.TempDir()
+	cfg, _ := config.Load(config.Env{ConfigDir: filepath.Join(dir, "c"), DataDir: filepath.Join(dir, "d"), TickInterval: time.Second})
+	st := cfg.Get()
+	st.Categories = []config.Category{{Name: "movies", Kind: "radarr", ArrURL: "http://r"}}
+	st.Attention = config.Attention{On: false, MovieProfile: "Upgrade", MoviePerDay: 2}
+	cfg.Set(st)
+	now := time.Date(2026, 11, 28, 20, 0, 0, 0, time.UTC)
+	root := arr.Folder{Path: "/movies"}
+	root.Unmapped = append(root.Unmapped, struct {
+		Name string `json:"name"`
+		Path string `json:"path"`
+	}{"Heat (1995)", "/movies/Heat (1995)"})
+	rad := &fakeArr{profile: 9, items: map[int64]arr.Item{
+		1: {ID: 1, Title: "Dune", ProfileID: 1},
+		2: {ID: 2, Title: "Alien", ProfileID: 1},
+	}, roots: []arr.Folder{root}, lookups: map[int64]arr.MovieLookup{604: {Title: "Heat", Year: 1995, TMDB: 604, Folder: "Heat (1995)"}}}
+	s := &Service{Cfg: cfg, Log: log.New(io.Discard, "", 0), Now: func() time.Time { return now }, Arr: func(config.Category) Arr { return rad }}
+
+	if _, _, err := s.Enqueue([]Request{{Kind: "movie", TMDB: 1}}); err != ErrOff {
+		t.Fatalf("Upgrades off: %v", err)
+	}
+	st.Attention.On = true
+	cfg.Set(st)
+	added, waiting, err := s.Enqueue([]Request{{Kind: "movie", TMDB: 604, Title: "Heat", Year: 1995}, {Kind: "movie", TMDB: 1, Title: "Dune"}, {Kind: "movie", TMDB: 2, Title: "Alien"}, {Kind: "show", TVDB: 5, Title: "No TV profile"}})
+	if err != nil || added != 3 || waiting != 0 {
+		t.Fatalf("enqueue %d %d %v", added, waiting, err)
+	}
+	if _, w, _ := s.Enqueue([]Request{{Kind: "movie", TMDB: 1}}); w != 1 {
+		t.Fatal("a title already waiting was added twice")
+	}
+	// No Tracearr set up: the queue is still worked, two a day.
+	s.Check(context.Background())
+	if got := join(rad.calls); got != "add:/movies/Heat (1995) profile movie" {
+		t.Fatalf("calls %q", got)
+	}
+	if q := s.Snapshot().Queue; len(q) != 1 || q[0].TMDB != 2 || q[0].From != "tdarr" {
+		t.Fatalf("queue %+v", q)
+	}
+	// Kept past the 60 days a watched title waits.
+	s.Now = func() time.Time { return now.Add(90 * 24 * time.Hour) }
+	s.Check(context.Background())
+	if got := join(rad.calls); got != "add:/movies/Heat (1995) profile movie profile movie" {
+		t.Fatalf("the last title was not worked later: %q", join(rad.calls))
+	}
+}

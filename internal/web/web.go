@@ -197,6 +197,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /admin/api/settings/import", s.guard(s.admin(s.adminSettingsImport)))
 	mux.HandleFunc("POST /admin/api/leftovers/clear", s.guard(s.admin(s.adminLeftoversClear)))
 	mux.HandleFunc("POST /admin/api/tdarr/potential/scan", s.guard(s.admin(s.adminPotentialScan)))
+	mux.HandleFunc("POST /admin/api/tdarr/potential/upgrade", s.guard(s.admin(s.adminPotentialUpgrade)))
 	mux.HandleFunc("POST /admin/api/insights/refresh", s.admin(s.insightsRefresh))
 	mux.HandleFunc("POST /admin/api/requests/test", s.guard(s.admin(s.requestsTest)))
 	mux.HandleFunc("GET /admin/api/requests", s.admin(s.requestsAdminList))

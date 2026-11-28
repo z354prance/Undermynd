@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -226,6 +227,41 @@ func (s Server) Runtimes(ctx context.Context, ids []string) (map[string]int64, e
 		if it.Ticks > 0 {
 			out[it.ID] = it.Ticks / 10000
 		}
+	}
+	return out, nil
+}
+
+// Movie is one movie the media server has, with its file and TMDB id.
+type Movie struct {
+	Title string
+	Year  int
+	Path  string // the file, as the media server sees it
+	TMDB  int64
+}
+
+// Movies lists every movie in every library (at most 50000).
+func (s Server) Movies(ctx context.Context) ([]Movie, error) {
+	var r struct {
+		Items []struct {
+			Name        string            `json:"Name"`
+			Year        int               `json:"ProductionYear"`
+			Path        string            `json:"Path"`
+			ProviderIds map[string]string `json:"ProviderIds"`
+		} `json:"Items"`
+	}
+	q := url.Values{"Recursive": {"true"}, "IncludeItemTypes": {"Movie"}, "Fields": {"Path,ProviderIds,ProductionYear"}, "Limit": {"50000"}}
+	if err := s.Do(ctx, http.MethodGet, "/Items?"+q.Encode(), nil, &r); err != nil {
+		return nil, err
+	}
+	out := make([]Movie, 0, len(r.Items))
+	for _, it := range r.Items {
+		m := Movie{Title: it.Name, Year: it.Year, Path: it.Path}
+		for k, v := range it.ProviderIds {
+			if strings.EqualFold(k, "tmdb") {
+				m.TMDB, _ = strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+			}
+		}
+		out = append(out, m)
 	}
 	return out, nil
 }

@@ -1130,18 +1130,39 @@
       if(!sm){inner.appendChild(el('div','hv-empty',d.running?'Scanning the library… this can take a while on a large one.':'Not scanned yet.'));return}
       var keep=d.measured>=5&&d.keep>0?d.keep:0;var est=keep?sm.older.bytes*(1-keep):0;
       var st=el('div','hv-stats');function stat(l,v,tone){var c=el('div','hv-stat'+(tone?' '+tone:''));c.appendChild(el('span','',l));c.appendChild(el('b','',v));st.appendChild(c)}
-      stat('In older formats',sm.older.files.toLocaleString()+' videos · '+gb(sm.older.bytes));stat('Could free',keep?'about '+gb(est):'—',keep?'ok':'');stat('Already HEVC',sm.hevc.files.toLocaleString()+' · '+gb(sm.hevc.bytes));if(sm.unknown.files)stat('Format not read',sm.unknown.files.toLocaleString()+' · '+gb(sm.unknown.bytes));inner.appendChild(st);
+      stat('In older formats',sm.older.files.toLocaleString()+' videos · '+gb(sm.older.bytes));stat('Could free',keep?'about '+gb(est):'—',keep?'ok':'');if(sm.redownload)stat('Better downloaded again',(sm.titles||[]).length.toLocaleString()+' titles · '+gb(sm.redownload.bytes));stat('Already HEVC',sm.hevc.files.toLocaleString()+' · '+gb(sm.hevc.bytes));if(sm.unknown.files)stat('Format not read',sm.unknown.files.toLocaleString()+' · '+gb(sm.unknown.bytes));inner.appendChild(st);
       inner.appendChild(el('p','hv-note',keep?'Estimated at the size Tdarr has been reaching: '+Math.round(keep*100)+'% of the original, over '+d.measured+' files. HEVC files are not counted; they shrink less.':'The estimate appears once Tdarr has converted a few files (its results so far set how much it is likely to save).'));
       if(sm.byLibrary&&sm.byLibrary.length){var rows=sm.byLibrary.map(function(g){return [g.name,g.files.toLocaleString(),gb(g.bytes),keep?gb(g.bytes*(1-keep)):'—']});inner.appendChild(rtable(['Library folder','Videos','Size','Could free'],rows))}
-      var lg=d.largest||[];if(!lg.length)return;
-      inner.appendChild(el('h4','','Largest videos in older formats'));
-      var sel={};var acts=el('div','hv-acts');var msg=el('span','msg');var send=hvBtn('Send selected to Tdarr','',function(b){var paths=Object.keys(sel).filter(function(k){return sel[k]});if(!paths.length){msg.textContent='Tick some files first.';return}b.disabled=true;msg.className='msg';msg.textContent='queueing…';
+      var up=d.upgrades||{},uq={};(d.upgradeQueue||[]).forEach(function(k){uq[k]=true});function tkey(t){return t.kind+':'+(t.tmdb||0)+':'+(t.tvdb||0)}
+      function canUp(t){return t.kind==='movie'?up.movies:t.kind==='show'?up.shows:false}
+      function sendUp(titles,b,msg){if(!titles.length){msg.className='msg err';msg.textContent='Tick something first.';return}b.disabled=true;msg.className='msg';msg.textContent='sending…';
+        api('POST','/tdarr/potential/upgrade',{titles:titles.map(function(t){return {kind:t.kind,tmdb:t.tmdb||0,tvdb:t.tvdb||0,title:t.title,year:t.year||0,why:t.why||''}})}).then(function(r){msg.className='msg ok';msg.textContent=r.added+' sent to Upgrades'+(r.waiting?'; '+r.waiting+' already waiting':'')+(r.skipped?'; '+r.skipped+' skipped (no upgrade profile for that kind)':'');setTimeout(load,800)}).catch(function(e){b.disabled=false;msg.className='msg err';msg.textContent=e.message})}
+      if(sm.notes&&sm.notes.length)sm.notes.forEach(function(n){inner.appendChild(el('p','hv-note warn',n))});
+      // Better downloaded again
+      var ts=sm.titles||[];var rd=el('section','hv-potsec');inner.appendChild(rd);
+      rd.appendChild(el('h4','','Better downloaded again · '+ts.length.toLocaleString()+' title'+(ts.length===1?'':'s')+' · '+gb(sm.redownload.bytes)));
+      rd.appendChild(el('p','hv-note','These files are already someone\'s encode (WEBRip, HDTV, an x264 encode and the like), so converting them again loses quality a second time. Sent to Upgrades, each movie or series is moved to the upgrade profile and searched for a WEB-DL or Blu-ray, which Tdarr then converts as it does every download. A movie Radarr does not have is added at its folder first, as Upgrades does for watched movies. They wait behind the watched titles and share Upgrades\' limits ('+(((d.upgrades||{}).moviePerDay)||'a few')+' movies a day, shows one at a time), so a long list takes a while.'));
+      if(!up.on)rd.appendChild(el('div','hv-note warn','Upgrades is switched off. Switch it on and choose the upgrade profiles under Library › Upgrades to send these.'));
+      else if(!up.movies||!up.shows)rd.appendChild(el('div','hv-note warn','Upgrades has no '+(!up.movies?'movie':'TV')+' upgrade profile, so '+(!up.movies?'movies':'shows')+' cannot be sent yet (Library › Upgrades).'));
+      if(ts.length){var tsel={};var ta=el('div','hv-acts');var tm=el('span','msg');
+        var tb=hvBtn('Send ticked to Upgrades','',function(b){sendUp(ts.filter(function(t){return tsel[tkey(t)]}),b,tm)},true);tb.disabled=!up.on;
+        var t20=hvBtn('Tick the 20 largest','',function(){ts.filter(function(t){return !uq[tkey(t)]&&canUp(t)}).slice(0,20).forEach(function(t){tsel[tkey(t)]=true});tdraw()});
+        ta.appendChild(tb);ta.appendChild(t20);ta.appendChild(tm);rd.appendChild(ta);var tw=el('div','hv-scroll');rd.appendChild(tw);
+        var tdraw=function(){tw.replaceChildren(rtable(['','Title','Files','Size','Why','In'],ts.slice(0,400).map(function(t){var k=tkey(t),q=!!uq[k];var cb=el('input');cb.type='checkbox';cb.checked=!!tsel[k];cb.disabled=q||!canUp(t);cb.setAttribute('aria-label','Send '+t.title);cb.onchange=function(){tsel[k]=cb.checked};
+          return [cb,(t.title||'?')+(t.year?' ('+t.year+')':'')+(q?' · waiting in Upgrades':''),String(t.files),gb(t.bytes),t.why||'',t.kind==='movie'?(t.inArr?'Radarr':'not in Radarr: added at its folder'):'Sonarr']})))};tdraw();
+        if(ts.length>400)rd.appendChild(el('p','hv-note','Showing the 400 largest of '+ts.length+'.'))}
+      // Fine to re-encode
+      var lg=d.largest||[];var re=el('section','hv-potsec');inner.appendChild(re);
+      re.appendChild(el('h4','','Fine to re-encode · '+sm.reencode.files.toLocaleString()+' videos · '+gb(sm.reencode.bytes)));
+      re.appendChild(el('p','hv-note','Already the source (an untouched WEB-DL or a remux), anime, or not something the arrs or the media server can name. Tdarr converts the library file itself through Re-encode, and the file is replaced only once the result has passed the checks. Where it is not known what a file was made from, you can send it to Upgrades instead.'));
+      if(!lg.length)return;
+      var sel={};var acts=el('div','hv-acts');var msg=el('span','msg');var send=hvBtn('Send ticked to Tdarr','',function(b){var paths=Object.keys(sel).filter(function(k){return sel[k]});if(!paths.length){msg.className='msg err';msg.textContent='Tick some files first.';return}b.disabled=true;msg.className='msg';msg.textContent='queueing…';
         api('POST','/reencode',{paths:paths}).then(function(r){msg.className='msg ok';msg.textContent=r.queued+' queued for Tdarr'+(r.skipped&&r.skipped.length?'; '+r.skipped.length+' skipped':'');setTimeout(load,800)}).catch(function(e){b.disabled=false;msg.className='msg err';msg.textContent=e.message})},true);
-      var all=hvBtn('Tick the 20 largest','',function(){lg.filter(function(f){return !f.queued}).slice(0,20).forEach(function(f){sel[f.path]=true});draw()});acts.appendChild(send);acts.appendChild(all);acts.appendChild(msg);inner.appendChild(acts);
-      inner.appendChild(el('p','hv-note','They go through Re-encode: Tdarr converts a copy and the library file is replaced only once the result has passed the checks.'));
-      var lw=el('div','hv-scroll');inner.appendChild(lw);
-      function draw(){lw.replaceChildren(rtable(['','File','Format','Size','Could free'],lg.map(function(f){var cb=el('input');cb.type='checkbox';cb.checked=!!sel[f.path];cb.disabled=f.queued;cb.setAttribute('aria-label','Send '+f.rel);cb.onchange=function(){sel[f.path]=cb.checked};
-        return [cb,f.rel+(f.queued?' (queued)':''),f.codec.toUpperCase(),gb(f.size),keep?gb(f.size*(1-keep)):'—']})))}draw();
+      var inst=hvBtn('Download ticked again instead','',function(b){var seen={},titles=[];lg.forEach(function(f){if(sel[f.path]&&f.kind&&canUp(f)){var k=tkey(f);if(!seen[k]){seen[k]=true;titles.push(f)}}});if(!titles.length){msg.className='msg err';msg.textContent='None of the ticked files is a movie or series Upgrades can take.';return}sendUp(titles,b,msg)});inst.disabled=!up.on;
+      var all=hvBtn('Tick the 20 largest','',function(){lg.filter(function(f){return !f.queued}).slice(0,20).forEach(function(f){sel[f.path]=true});draw()});acts.appendChild(send);acts.appendChild(inst);acts.appendChild(all);acts.appendChild(msg);re.appendChild(acts);
+      var lw=el('div','hv-scroll');re.appendChild(lw);
+      function draw(){lw.replaceChildren(rtable(['','File','Format','Size','Could free','Why'],lg.map(function(f){var cb=el('input');cb.type='checkbox';cb.checked=!!sel[f.path];cb.disabled=f.queued;cb.setAttribute('aria-label','Send '+f.rel);cb.onchange=function(){sel[f.path]=cb.checked};
+        return [cb,f.rel+(f.queued?' (queued)':''),f.codec.toUpperCase(),gb(f.size),keep?gb(f.size*(1-keep)):'—',f.why||'']})))}draw();
     }).catch(function(e){inner.replaceChildren(el('div','hv-empty',e.message))})}
     load();
   }
