@@ -88,6 +88,22 @@ func (c Category) OwnLibrary() string {
 	return c.LibraryDir
 }
 
+// BookOrbit is the book library: its counts on the public page, and where
+// approved book requests go. Its own download client can point at HyveMynd
+// (category Category, kind "books").
+type BookOrbit struct {
+	URL      string        `json:"url"`
+	APIKey   secret.String `json:"apiKey"`
+	Category string        `json:"category,omitempty"` // default "books"
+}
+
+// Ready says whether BookOrbit is connected.
+func (b BookOrbit) Ready() bool { return strings.TrimSpace(b.URL) != "" && b.APIKey != "" }
+
+// Books says whether a category takes books (kept as they are: no Tdarr,
+// only book and audiobook files).
+func (c Category) Books() bool { return c.Kind == "books" }
+
 // Metadata is where show information comes from (roadmap B4).
 type Metadata struct {
 	TMDBKey secret.String `json:"tmdbKey"` // TMDB API key (v3) or read access token (v4)
@@ -295,6 +311,7 @@ type Requests struct {
 	AutoMovies bool `json:"autoMovies,omitempty"`
 	AutoTV     bool `json:"autoTv,omitempty"`
 	AutoMusic  bool `json:"autoMusic,omitempty"`
+	AutoBooks  bool `json:"autoBooks,omitempty"`
 }
 
 // Auto says whether a request of kind ("movie", "tv", "music") is approved by itself.
@@ -306,6 +323,8 @@ func (r Requests) Auto(kind string) bool {
 		return r.AutoTV
 	case "music", "artist":
 		return r.AutoMusic
+	case "book", "books":
+		return r.AutoBooks
 	}
 	return false
 }
@@ -369,6 +388,7 @@ type Settings struct {
 	VPN          VPN        `json:"vpn"`
 	Usenet       Usenet     `json:"usenet"`
 	Speed        Speed      `json:"speed"`
+	BookOrbit    BookOrbit  `json:"bookorbit"`
 
 	// Login the arrs use against the fake client API.
 	ClientUser     string        `json:"clientUser"`

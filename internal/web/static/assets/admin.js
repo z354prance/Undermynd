@@ -92,7 +92,7 @@
       b.onclick=function(){go(first(sec.pages[0]))};tabBtns['sec:'+sec.id]=b;side.appendChild(b)});
     side.appendChild(el('span','hv-sp'));var pub=el('a','hv-sec hv-extra');pub.href='/';pub.appendChild(svg('s_pub'));pub.appendChild(el('span','','Public'));side.appendChild(pub);
     var so=el('button','hv-sec hv-extra');so.type='button';so.appendChild(svg('s_out'));so.appendChild(el('span','','Sign out'));so.onclick=function(){api('POST','/logout').then(start)};side.appendChild(so);
-    api('GET','/requests').then(function(d){var n=(d.requests||[]).filter(function(r){return r.status==='pending'||r.Status==='pending'}).length+(d.music||[]).length;if(n&&actCount){actCount.textContent=n;actCount.hidden=false;actCount.setAttribute('aria-label',n+' requests waiting')}}).catch(function(){});
+    api('GET','/requests').then(function(d){var n=(d.requests||[]).filter(function(r){return r.status==='pending'||r.Status==='pending'}).length+(d.music||[]).length+(d.books||[]).length;if(n&&actCount){actCount.textContent=n;actCount.hidden=false;actCount.setAttribute('aria-label',n+' requests waiting')}}).catch(function(){});
     api('GET','/jobs').then(function(d){railCounts(Array.isArray(d)?d:(d.jobs||[]))}).catch(function(){});
     var mainCol=el('div','hv-main'),head=el('header','hv-head');head.appendChild(el('h1','',cur.label));
     if(cur.pages.length>1&&!cur.settings){var pl=el('div','hv-pills');pl.setAttribute('role','tablist');cur.pages.forEach(function(p){var b=el('button',p===curPage?'on':'',p[1]);b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-selected',p===curPage?'true':'false');b.onclick=function(){go(first(p))};tabBtns[p[0]]=b;pl.appendChild(b)});head.appendChild(pl)}
@@ -248,8 +248,8 @@
     banner();drawRows();drawDet();
   }
 
-  var reqAuto=null,reqMusic=[],reqMusicOn=false;
-  function loadReqs(){return api('GET','/requests').then(function(d){if(d.auto)reqAuto=d.auto;reqMusic=d.music||[];reqMusicOn=!!d.musicOn;return d.requests||[]}).catch(function(){return null})}
+  var reqAuto=null,reqMusic=[],reqMusicOn=false,reqBooks=[],reqBooksOn=false;
+  function loadReqs(){return api('GET','/requests').then(function(d){if(d.auto)reqAuto=d.auto;reqMusic=d.music||[];reqMusicOn=!!d.musicOn;reqBooks=d.books||[];reqBooksOn=!!d.booksOn;return d.requests||[]}).catch(function(){return null})}
   function reqRow(r,done,compact){
     var row=el('div',compact?'orow rrow':'jrow rrow');
     var n=el('div','jname');n.appendChild(el('div','',(r.title||'Untitled request')));
@@ -318,7 +318,7 @@
   function requestsView(body){
     var top=el('div','hv-pagehead');body.appendChild(top);var cards=el('div','hv-reqs');body.appendChild(cards);
     function drawTop(n){top.replaceChildren();top.appendChild(el('h2','',n===null?'Requests':n+' waiting'));top.appendChild(el('span','hv-sp'));top.appendChild(el('span','hv-note','Approving sends the request on in Seerr. Seerr keeps the history.'));
-      if(reqAuto){var f=el('div','hv-auto');f.appendChild(el('span','hv-note','Approve automatically:'));[['movies','Movies'],['tv','TV shows']].concat(reqMusicOn?[['music','Music']]:[]).forEach(function(k){var l=el('label','');var i=el('input');i.type='checkbox';i.checked=!!reqAuto[k[0]];i.onchange=function(){var next={movies:reqAuto.movies,tv:reqAuto.tv,music:reqAuto.music};next[k[0]]=i.checked;api('PUT','/requests/auto',next).then(function(r){reqAuto=r.auto;if(r.approved)draw()}).catch(function(e){i.checked=!i.checked;alert(e.message)})};l.appendChild(i);l.appendChild(document.createTextNode(' '+k[1]));f.appendChild(l)});top.appendChild(f)}}
+      if(reqAuto){var f=el('div','hv-auto');f.appendChild(el('span','hv-note','Approve automatically:'));[['movies','Movies'],['tv','TV shows']].concat(reqMusicOn?[['music','Music']]:[]).concat(reqBooksOn?[['books','Books']]:[]).forEach(function(k){var l=el('label','');var i=el('input');i.type='checkbox';i.checked=!!reqAuto[k[0]];i.onchange=function(){var next={movies:reqAuto.movies,tv:reqAuto.tv,music:reqAuto.music,books:reqAuto.books};next[k[0]]=i.checked;api('PUT','/requests/auto',next).then(function(r){reqAuto=r.auto;if(r.approved)draw()}).catch(function(e){i.checked=!i.checked;alert(e.message)})};l.appendChild(i);l.appendChild(document.createTextNode(' '+k[1]));f.appendChild(l)});top.appendChild(f)}}
     function card(r){var c=el('article','hv-req');var ph=el('div','hv-req-poster');reqPoster(r.media_type,r.tmdb_id,ph,r.title||'');c.appendChild(ph);
       var b=el('div','hv-req-body');var tl=el('div','hv-pills-row');tl.appendChild(hvPill(r.media_type==='tv'?'Series':'Movie',r.media_type==='tv'?'var(--tv)':'var(--movie)',true));b.appendChild(tl);
       b.appendChild(el('h3','',r.title||'Untitled request'));
@@ -327,10 +327,15 @@
       var a=el('div','hv-acts');a.appendChild(hvBtn('Approve','',function(x){x.disabled=true;decideReq(r,'approve',draw)},true));a.appendChild(hvBtn('Decline','',function(x){x.disabled=true;decideReq(r,'decline',draw)}));b.appendChild(a);c.appendChild(b);return c}
     function draw(){loadReqs().then(function(list){cards.replaceChildren();
       if(list===null){drawTop(null);cards.appendChild(el('div','hv-empty','Requests are not set up, or Seerr could not be reached. Set it under Settings › Public page.'));return}
-      setReqBadge(list.length+reqMusic.length);drawTop(list.length+reqMusic.length);
-      if(!list.length&&!reqMusic.length)cards.appendChild(el('div','hv-empty','Nothing is waiting for approval.'));
+      setReqBadge(list.length+reqMusic.length+reqBooks.length);drawTop(list.length+reqMusic.length+reqBooks.length);
+      if(!list.length&&!reqMusic.length&&!reqBooks.length)cards.appendChild(el('div','hv-empty','Nothing is waiting for approval.'));
       list.forEach(function(r){cards.appendChild(card(r))});
-      reqMusic.forEach(function(m){cards.appendChild(musicCard(m))})})}
+      reqMusic.forEach(function(m){cards.appendChild(musicCard(m))});reqBooks.forEach(function(m){cards.appendChild(bookCard(m))})})}
+    function bookCard(m){var c=el('article','hv-req');var ph=el('div','hv-req-poster');if(m.image){var im=el('img');im.src=m.image;im.alt='';ph.appendChild(im)}else ph.appendChild(el('span','',(m.title||'?').slice(0,1)));c.appendChild(ph);
+      var b=el('div','hv-req-body');var tl=el('div','hv-pills-row');tl.appendChild(hvPill(m.kind==='audiobook'?'Audiobook':'Ebook','var(--book,#2ec4b6)',true));b.appendChild(tl);b.appendChild(el('h3','',m.title));
+      var meta=[(m.authors||[]).join(', '),m.year||'',m.requestedAt&&m.requestedAt[0]!=='0'?ago(m.requestedAt)+' ago':''].filter(Boolean).join(' · ');if(meta)b.appendChild(el('div','hv-meta',meta));
+      var a=el('div','hv-acts');function go(action,x){x.disabled=true;api('POST','/book-requests/'+encodeURIComponent(m.id)+'/'+action).then(draw).catch(function(e){if(e.status===401)fail(e);else{alert(e.message);draw()}})}
+      a.appendChild(hvBtn('Approve','',function(x){go('approve',x)},true));a.appendChild(hvBtn('Decline','',function(x){go('decline',x)}));b.appendChild(a);c.appendChild(b);return c}
     function musicCard(m){var c=el('article','hv-req');var ph=el('div','hv-req-poster hv-artist');if(m.image){var im=el('img');im.src=m.image;im.alt='';ph.appendChild(im)}else ph.appendChild(el('span','',(m.name||'?').slice(0,1)));c.appendChild(ph);
       var b=el('div','hv-req-body');var tl=el('div','hv-pills-row');tl.appendChild(hvPill('Music · whole artist','var(--music)',true));b.appendChild(tl);b.appendChild(el('h3','',m.name));
       var meta=[m.detail||'',m.requestedAt&&m.requestedAt[0]!=='0'?ago(m.requestedAt)+' ago':''].filter(Boolean).join(' · ');if(meta)b.appendChild(el('div','hv-meta',meta));
@@ -805,6 +810,7 @@
       extra('Emby or Jellyfin','Account requests, Now Playing, and telling it about new files.','Address and API key.',!!(st.playback&&st.playback.hasEmbyKey),st.playback&&st.playback.hasEmbyKey?'Connected':'Not set up','playback');
       extra('Tracearr','Watch history, used to pick what to upgrade.','Address and API key.',!!(st.playback&&st.playback.hasTracearrKey),st.playback&&st.playback.hasTracearrKey?'Connected':'Not set up','playback');
       extra('Lidarr','Music, handled the same way as TV and movies, and artist requests on the public page.','Add it like Sonarr, with its own category.',has('lidarr'),has('lidarr')?'Connected':'Not set up','arrs');
+      extra('BookOrbit','Book counts on the public page, and book requests: approved ones are created in BookOrbit.','Settings › Connections, at the bottom: address and an API key with read and write access.',!!(st.bookorbit&&st.bookorbit.url),st.bookorbit&&st.bookorbit.url?'Connected':'Not set up','arrs');
       extra('GPU monitoring','Shows how busy the cards Tdarr encodes on are, and warns when one stays overloaded.','Intel or AMD: pass /dev/dri to HyveMynd (Intel also --cap-add=PERFMON). NVIDIA: --runtime=nvidia with NVIDIA_VISIBLE_DEVICES=all.',!!(gx&&gx.cards&&gx.cards.length),gx&&gx.cards&&gx.cards.length?gx.cards.length+' card'+(gx.cards.length===1?'':'s')+' watched':'No card visible','transcode');
       extra('TMDB','Titles and posters for anime and requests.','A free API key from themoviedb.org.',!!(st.metadata&&st.metadata.hasTmdbKey),st.metadata&&st.metadata.hasTmdbKey?'Key saved':'Not set up','metadata');
     }).catch(fail)}
@@ -891,7 +897,7 @@
         else btns.push(hvBtn('Retry now','',function(b){b.disabled=true;doAction(j.id,'retry')},true));
         btns.push(hvBtn('Details','',function(){tab='jobs';detailId=j.id;app()}));
         need.appendChild(needRow(failed?'FAILED':'STUCK',failed?'bad':'warn',j.name,why,btns))});
-      if(nreq){var parts=[];if(reqList.length)parts.push(reqList.length+' media');if(music.length)parts.push(music.length+' music');
+      if(nreq){var parts=[];if(reqList.length)parts.push(reqList.length+' media');if(music.length)parts.push(music.length+' music or book');
         need.appendChild(needRow('REQUESTS','req',nreq+' waiting for approval',parts.join(' and ')+' request'+(nreq===1?'':'s'),[hvBtn('Review','',function(){tab='requests';app()},true)]))}}
     var STEPS=[['found','Grabbed'],['download','Downloading'],['transfer','Transferring'],['convert','Tdarr'],['ready','Importing']];
     function drawMoving(){var b=mv.querySelector('.hv-steps6')||mv.appendChild(el('div','hv-steps6'));b.replaceChildren();
@@ -909,7 +915,7 @@
       var bad=lastRows.filter(function(r){return r.attention&&r.state!=='cleaned'}).length+(reqList.length+music.length?1:0),moving=lastRows.filter(function(r){return WORKING[r.group]}).length;
       hello.appendChild(el('p','',[bad?bad+(bad===1?' thing needs':' things need')+' you':'nothing needs you',moving?moving+' download'+(moving===1?'':'s')+' moving':'nothing moving'].join(' · ')))}
     function draw(){drawHello();drawNeed();drawMoving();drawFin();railCounts(lastRows)}
-    function refresh(){loadReqs().then(function(l){reqList=l||[];music=reqMusic||[];setReqBadge(reqList.length+music.length);draw()})}
+    function refresh(){loadReqs().then(function(l){reqList=l||[];music=(reqMusic||[]).concat(reqBooks||[]);setReqBadge(reqList.length+music.length);draw()})}
     function poll(){api('GET','/jobs').then(function(d){lastRows=Array.isArray(d)?d:(d.jobs||[]);draw()}).catch(fail)}
     function pollSys(){Promise.all([api('GET','/system').catch(function(){return null}),api('GET','/clients').catch(function(){return null}),api('GET','/vpn').catch(function(){return null}),api('GET','/gpus').catch(function(){return null})]).then(function(x){sysInfo=x[0]||sysInfo;cl=x[1]||cl;vp=x[2]||vp;if(x[3])gpus=x[3].cards||[];homeCache={sys:sysInfo,cl:cl,vp:vp,gpus:gpus};drawTiles();drawNeed()})}
     drawTiles();poll();pollSys();refresh();timer=setInterval(function(){if(tab!=='overview')return;poll();pollSys();refresh()},5000);
@@ -1020,7 +1026,7 @@
     function add(c){
       var cw=el('div','hv-erow');var top=el('div','hv-erow-top');cw.appendChild(top);var card=el('div','hv-erow-ed');card.hidden=!!c.name;cw.appendChild(card);var f={};var g=el('div','grid3');f.orig=c.name||'';
       f.name=row(g,'category name',{value:c.name,help:'what the arr sends, e.g. tv'});
-      var w=el('div','fld');w.appendChild(el('label','','arr type'));var k=el('select');[['sonarr','sonarr'],['radarr','radarr'],['lidarr','lidarr'],['rss','no arr (RSS / watch folder)'],['files','plain files (software and anything else, kept as it is)']].forEach(function(p){var x=p[0];var o=el('option','',p[1]);o.value=x;if(c.kind===x)o.selected=true;k.appendChild(o)});w.appendChild(k);g.appendChild(w);f.kind=k;
+      var w=el('div','fld');w.appendChild(el('label','','arr type'));var k=el('select');[['sonarr','sonarr'],['radarr','radarr'],['lidarr','lidarr'],['rss','no arr (RSS / watch folder)'],['files','plain files (software and anything else, kept as it is)'],['books','books (BookOrbit downloads: book and audiobook files, no Tdarr)']].forEach(function(p){var x=p[0];var o=el('option','',p[1]);o.value=x;if(c.kind===x)o.selected=true;k.appendChild(o)});w.appendChild(k);g.appendChild(w);f.kind=k;
       f.arrUrl=row(g,'arr address',{value:c.arrUrl,ph:'http://10.0.0.5:8989',help:'so HyveMynd can confirm the import'});
       f.arrApiKey=row(g,'arr API key',{type:'password',ph:c.hasArrApiKey?'set — leave blank to keep':'',help:'in the arr: Settings → General'});
       f.transcode=row(g,'transcode with Tdarr',{type:'checkbox',value:c.transcode,help:'off for music'});
@@ -1034,18 +1040,34 @@
       sw.onclick=function(){smsg.className='msg';smsg.textContent='placing…';api('POST','/library/sweep',{name:f.orig||f.name.value}).then(function(r){smsg.className='msg ok';smsg.textContent=r.result}).catch(function(e){smsg.className='msg err';smsg.textContent=e.message})};
       if(c.libraryDir&&c.kind!=='files'){card.appendChild(sw);card.appendChild(smsg)}card.appendChild(document.createElement('br'));
       var rm=el('button','bad','Remove category');rm.onclick=function(){cw.remove()};card.appendChild(rm);cw._f=f;cats.appendChild(cw);
-      var KN={sonarr:['Sonarr','var(--tv)'],radarr:['Radarr','var(--movie)'],lidarr:['Lidarr','var(--music)'],rss:['No arr: feeds and folders','var(--anime)'],files:['Plain files','var(--dim)']};
+      var KN={sonarr:['Sonarr','var(--tv)'],radarr:['Radarr','var(--movie)'],lidarr:['Lidarr','var(--music)'],rss:['No arr: feeds and folders','var(--anime)'],files:['Plain files','var(--dim)'],books:['Books','var(--book,#2ec4b6)']};
       function sum(){top.replaceChildren();var kn=KN[f.kind.value]||[f.kind.value,'var(--dim)'];var arr=/sonarr|radarr|lidarr/.test(f.kind.value);
         top.appendChild(el('i','hv-dot2 '+(arr&&!f.arrUrl.value?'bad':'ok')));var t=el('div','hv-erow-t');var nb=el('b','',f.name.value||'New category');t.appendChild(nb);
-        t.appendChild(el('span','',[arr?(f.arrUrl.value||'no address'):(f.libraryDir.value||'complete folder'),f.kind.value==='files'?'kept as it is':f.transcode.checked?'through Tdarr':'no Tdarr'].join(' · ')));top.appendChild(t);
+        t.appendChild(el('span','',[arr?(f.arrUrl.value||'no address'):(f.libraryDir.value||'complete folder'),f.kind.value==='files'?'kept as it is':f.kind.value==='books'?'BookOrbit imports it':f.transcode.checked?'through Tdarr':'no Tdarr'].join(' · ')));top.appendChild(t);
         top.appendChild(hvPill(kn[0],kn[1]));top.appendChild(hvBtn(card.hidden?'Edit':'Done','',function(){card.hidden=!card.hidden;sum()}))}
       [].forEach.call(card.querySelectorAll('input,select'),function(i){i.addEventListener('input',sum);i.addEventListener('change',sum)});sum()
     }
     S.categories.forEach(add);
     var a=hvBtn('Add a category','plus',function(){add({kind:'radarr',transcode:true})});a.style.marginTop='10px';body.appendChild(a);
     saveBar(body,function(m){save(function(b){b.categories=[].map.call(cats.children,function(c){var f=c._f;return {name:f.name.value,origName:f.orig,kind:f.kind.value,libraryDir:f.libraryDir.value,arrUrl:f.arrUrl.value,arrApiKey:f.arrApiKey.value,transcode:f.transcode.checked,onTranscodeFail:f.onFail.value,keepNames:f.keepNames.checked}})},m)})
+    bookOrbitCard(body);
   }
 
+  // Settings › Connections: BookOrbit, the book library (counts, book requests).
+  function bookOrbitCard(body){
+    body.appendChild(el('h2','hv-grph','BOOKORBIT'));var c=el('div','card');body.appendChild(c);c.appendChild(el('p','hint','Loading…'));
+    api('GET','/bookorbit').then(function(b){c.replaceChildren();
+      var h=el('div','');h.style.cssText='font-weight:700;font-size:16px;margin-bottom:6px';h.appendChild(document.createTextNode('BookOrbit '));h.appendChild(chip(!!(b.url&&b.hasKey),b.url&&b.hasKey?'connected':'not set'));c.appendChild(h);
+      c.appendChild(help('Optional. Book counts on the public page, and book requests: visitors ask in the Request media box, you approve under Requests, and the request is created in BookOrbit, which finds and downloads it.'));
+      var g=el('div','grid3');var u=row(g,'BookOrbit address',{value:b.url,ph:'http://10.0.0.8:3000'});
+      var k=row(g,'API key',{type:'password',ph:b.hasKey?'set — leave blank to keep':'',help:'BookOrbit → your account → API keys: read and write access'});
+      var cat=row(g,'download category',{value:b.category,ph:'books',help:'the category BookOrbit’s download client sends; created as a books category when you save'});c.appendChild(g);
+      var steps=el('div','hint');steps.style.marginTop='8px';steps.textContent='To route BookOrbit’s downloads through HyveMynd: in BookOrbit, Settings › Server › Requests › Download clients, add SABnzbd (usenet) and qBittorrent (torrents) with host '+location.hostname+', port 8081, the same key or login the arrs use, and category '+(b.category||'books')+'. BookOrbit must see the Complete folder at the same path HyveMynd does.';c.appendChild(steps);
+      var bar=el('div');bar.style.marginTop='10px';var t=hvBtn('Test BookOrbit','',null);t.style.marginLeft='8px';var sv=hvBtn('Save BookOrbit','',null,true);var m=el('span','msg');m.style.marginLeft='12px';bar.appendChild(sv);bar.appendChild(t);bar.appendChild(m);c.appendChild(bar);
+      t.onclick=function(){m.className='msg';m.textContent='testing…';api('POST','/bookorbit/test',{url:u.value,apiKey:k.value}).then(function(r){m.className='msg ok';m.textContent='connected: '+r.ebooks+' ebooks, '+r.audiobooks+' audiobooks'+(r.requests?'; book requests reachable':'; book requests not allowed for this key')}).catch(function(e){m.className='msg err';m.textContent=e.message})};
+      sv.onclick=function(){m.className='msg';m.textContent='saving…';api('PUT','/bookorbit',{url:u.value,apiKey:k.value,category:cat.value}).then(function(r){m.className='msg ok';m.textContent='saved'+(r.categoryExists?'; category '+r.category+' is ready':'');api('GET','/settings').then(function(x){S=x})}).catch(function(e){m.className='msg err';m.textContent=e.message})};
+    }).catch(function(e){c.replaceChildren(el('p','hint',e.message))});
+  }
   function clientsPane(body){
     body.appendChild(head('TorBox','HyveMynd sends downloads to TorBox first when a token is set. When TorBox is busy, down or not set up, its own usenet downloader (Downloads › Usenet) and torrent client (Downloads › VPN) take over.'));
     var tbOn=S.torbox.on!==false;

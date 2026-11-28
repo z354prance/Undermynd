@@ -876,6 +876,10 @@ func (e *Engine) retryHere(ctx context.Context, j job.Job, why string) bool {
 
 // ---------------------------------------------------- stage and hand back
 
+// bookExt are the files a books category keeps: ebooks, comics and audiobooks.
+var bookExt = map[string]bool{".epub": true, ".pdf": true, ".mobi": true, ".azw": true, ".azw3": true, ".kfx": true, ".fb2": true, ".djvu": true,
+	".cbz": true, ".cbr": true, ".cb7": true, ".m4b": true, ".m4a": true, ".mp3": true, ".aac": true, ".ogg": true, ".opus": true, ".flac": true, ".jpg": true, ".png": true, ".opf": true, ".nfo": false}
+
 var mediaExt = map[string]bool{
 	".mkv": true, ".mp4": true, ".m4v": true, ".avi": true, ".mov": true, ".ts": true, ".m2ts": true, ".wmv": true, ".webm": true,
 	".flac": true, ".mp3": true, ".m4a": true, ".aac": true, ".ogg": true, ".opus": true, ".wav": true, ".alac": true, ".ape": true, ".wv": true,
@@ -891,6 +895,9 @@ func (e *Engine) plain(j job.Job) bool {
 // keep says whether a downloaded file is staged: media only, or everything
 // for a plain category.
 func (e *Engine) keep(j job.Job, f backend.File) bool {
+	if c, ok := e.Cfg.Get().Category(j.Category); ok && c.Books() {
+		return bookExt[strings.ToLower(filepath.Ext(f.Path))]
+	}
 	if e.plain(j) {
 		return !strings.HasPrefix(filepath.Base(f.Path), ".hyvemynd")
 	}
