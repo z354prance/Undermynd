@@ -144,6 +144,15 @@ func TestInsightsFromMediaServer(t *testing.T) {
 		case "/Artists/AlbumArtists":
 			_, _ = io.WriteString(w, `{"TotalRecordCount":210}`)
 		case "/Items":
+			if r.URL.Query().Get("MinDateCreated") != "" {
+				if r.URL.Query().Get("ParentId") == "1" {
+					now := time.Now().UTC().Format(time.RFC3339)
+					_, _ = io.WriteString(w, `{"Items":[{"DateCreated":"`+now+`"},{"DateCreated":"`+now+`"},{"DateCreated":"2001-01-01T00:00:00Z"}]}`)
+				} else {
+					_, _ = io.WriteString(w, `{"Items":[]}`)
+				}
+				return
+			}
 			n := map[string]map[string]int{"1": {"Series": 412, "Season": 1960, "Episode": 18240}, "2": {"Series": 186, "Season": 402, "Episode": 6120},
 				"3": {"Movie": 1284}, "4": {"MusicAlbum": 932, "Audio": 11480}, "5": {"Book": 28, "AudioBook": 13}}[r.URL.Query().Get("ParentId")][r.URL.Query().Get("IncludeItemTypes")]
 			_, _ = io.WriteString(w, `{"TotalRecordCount":`+strconv.Itoa(n)+`}`)
@@ -168,5 +177,17 @@ func TestInsightsFromMediaServer(t *testing.T) {
 	}
 	if byName["anime"].Seasons != 402 || len(byName) != 5 {
 		t.Fatalf("by name %+v", byName)
+	}
+	// What the media server added, by day: two TV episodes today.
+	rec := httptest.NewRecorder()
+	srv.v1Insights(rec, httptest.NewRequest("GET", "/api/v1/insights", nil))
+	var m struct {
+		Days []struct {
+			Added map[string]int `json:"added"`
+		} `json:"days"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &m)
+	if len(m.Days) != 10 || m.Days[9].Added["tv"] != 2 {
+		t.Fatalf("added from the media server: %s", rec.Body.String())
 	}
 }

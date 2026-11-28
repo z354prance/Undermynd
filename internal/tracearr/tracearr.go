@@ -336,6 +336,12 @@ type Play struct {
 	Watched     bool       `json:"watched"`
 	Percent     float64    `json:"percent_complete"`
 	StartedAt   *time.Time `json:"started_at"`
+	// How long it was played, when Tracearr says: the time watched, else the
+	// item's length (with Percent).
+	ProgressMs  int64 `json:"progress_ms"`
+	DurationMs  int64 `json:"duration_ms"`
+	WatchedMs   int64 `json:"watched_ms"`
+	IsTranscode *bool `json:"is_transcode"`
 	User        struct {
 		ID       string `json:"id"`
 		Username string `json:"username"`

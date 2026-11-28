@@ -186,3 +186,25 @@ func (s Server) AlbumArtists(ctx context.Context, libraryID string) (int, error)
 	err := s.Do(ctx, http.MethodGet, "/Artists/AlbumArtists?"+q.Encode(), nil, &r)
 	return r.Total, err
 }
+
+// AddedSince lists when each item of the given types in a library was added,
+// since a time (at most 5000 items).
+func (s Server) AddedSince(ctx context.Context, libraryID, types string, since time.Time) ([]time.Time, error) {
+	var r struct {
+		Items []struct {
+			DateCreated time.Time `json:"DateCreated"`
+		} `json:"Items"`
+	}
+	q := url.Values{"ParentId": {libraryID}, "Recursive": {"true"}, "IncludeItemTypes": {types}, "Limit": {"5000"},
+		"MinDateCreated": {since.UTC().Format("2006-01-02T15:04:05Z")}, "Fields": {"DateCreated"}, "SortBy": {"DateCreated"}, "SortOrder": {"Descending"}}
+	if err := s.Do(ctx, http.MethodGet, "/Items?"+q.Encode(), nil, &r); err != nil {
+		return nil, err
+	}
+	out := make([]time.Time, 0, len(r.Items))
+	for _, it := range r.Items {
+		if !it.DateCreated.IsZero() && !it.DateCreated.Before(since) {
+			out = append(out, it.DateCreated)
+		}
+	}
+	return out, nil
+}
