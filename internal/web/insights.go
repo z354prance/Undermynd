@@ -81,7 +81,15 @@ type insSlow struct {
 	Transcode float64
 }
 
+type insStatus struct {
+	Running  bool      `json:"running"`
+	Started  time.Time `json:"started"`
+	Finished time.Time `json:"finished"`
+	Notes    []string  `json:"notes"`
+}
+
 type insights struct {
+	status   insStatus
 	mu       sync.Mutex
 	st       insState
 	loaded   bool
@@ -375,20 +383,40 @@ type arrMovie struct {
 
 func (s *Server) refreshSlow(parent context.Context) {
 	started := time.Now()
+	s.ins.mu.Lock()
+	if s.ins.status.Running {
+		s.ins.mu.Unlock()
+		return
+	}
+	s.ins.status = insStatus{Running: true, Started: started}
+	s.ins.mu.Unlock()
+	defer func() {
+		s.ins.mu.Lock()
+		s.ins.status.Running, s.ins.status.Finished = false, time.Now()
+		s.ins.mu.Unlock()
+	}()
 	ctx, cancel := context.WithTimeout(parent, 10*time.Minute)
 	defer cancel()
 	var out insSlow
 	out.Library = map[string]libCounts{}
 	out.Upgrades.Share = -1
 	since := time.Now().AddDate(0, 0, -insightDays)
+	s.insNote("reading the library and trends")
 	watched := s.watchedTitles(ctx)
+	if watched.ok {
+		s.insNote("Tracearr: %d movies and %d shows played in the last year (for Tonight)", len(watched.movies), len(watched.shows))
+	} else if s.Cfg.Get().Playback.TracearrURL != "" {
+		s.insNote("Tracearr: the last year's plays could not be read (Tonight marks nothing unwatched)")
+	}
 	var pool []pick
 	var withFiles, belowCutoff int
 	cutoffKnown := true
 
 	if c, a, ok := s.arrOf("radarr"); ok {
 		var movies []arrMovie
-		if err := a.Get(ctx, "/movie", &movies); err == nil {
+		err := a.Get(ctx, "/movie", &movies)
+		s.insNote("Radarr (%s): %d movies%s", c.Name, len(movies), errNote(err))
+		if err == nil {
 			lc := libCounts{}
 			for _, m := range movies {
 				if !m.HasFile {
@@ -410,7 +438,9 @@ func (s *Server) refreshSlow(parent context.Context) {
 	}
 	if c, a, ok := s.arrOf("sonarr"); ok {
 		var series []arrSeries
-		if err := a.Get(ctx, "/series", &series); err == nil {
+		err := a.Get(ctx, "/series", &series)
+		s.insNote("Sonarr (%s): %d series%s", c.Name, len(series), errNote(err))
+		if err == nil {
 			lc := libCounts{}
 			for _, x := range series {
 				if strings.EqualFold(x.SeriesType, "anime") || x.Statistics.EpisodeFileCount == 0 {
@@ -508,7 +538,7 @@ func (s *Server) refreshSlow(parent context.Context) {
 		out.Picks = []pick{}
 	}
 	out.At = time.Now()
-	s.Log.Printf("insights: library and trends read in %s", time.Since(started).Round(time.Second))
+	s.insNote("done in %s", time.Since(started).Round(time.Second))
 	s.ins.mu.Lock()
 	s.ins.slow = out
 	s.ins.mu.Unlock()
@@ -658,7 +688,7 @@ func (s *Server) embyCounts(ctx context.Context, added map[string]map[string]int
 	ms := mediaserver.Server{Kind: set.Access.Provider, URL: set.Playback.EmbyURL, Key: string(set.Playback.EmbyKey)}
 	libs, err := ms.Libraries(ctx)
 	if err != nil {
-		s.Log.Printf("insights: media server libraries: %v", err)
+		s.insNote("media server: libraries could not be read: %v", err)
 		return nil, nil, false
 	}
 	byKind, byName := map[string]libCounts{}, map[string]libCounts{}
@@ -712,6 +742,7 @@ func (s *Server) embyCounts(ctx context.Context, added map[string]map[string]int
 		t.Audio += c.Audio
 		byKind[k] = t
 	}
+	s.insNote("media server: %d libraries counted%s", len(byName), map[bool]string{true: "; added dates could not be read", false: ""}[addedErr])
 	return byKind, byName, len(byName) > 0
 }
 
@@ -759,10 +790,10 @@ func (s *Server) watchHistory(ctx context.Context) (map[string]map[string]float6
 			if mt == "track" {
 				continue
 			}
-			s.Log.Printf("insights: Tracearr history (%s): %v", mt, err)
+			s.insNote("Tracearr history (%s): %v", mt, err)
 			return nil, 0, 0
 		}
-		s.Log.Printf("insights: Tracearr history (%s): %d plays; %s", mt, len(plays), c.LastHistory)
+		s.insNote("Tracearr history (%s): %d plays; %s", mt, len(plays), c.LastHistory)
 		all = append(all, plays...)
 	}
 	runtimes := s.runtimesFor(ctx, all)
@@ -811,8 +842,8 @@ func (s *Server) watchHistory(ctx context.Context) (map[string]map[string]float6
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
-		s.Log.Printf("insights: Tracearr history: %d plays in %d days, %.1f h counted, %d without a play time; fields: %s",
-			len(all), insightDays, total, missing, strings.Join(keys, ", "))
+		s.insNote("Tracearr history: %d plays in %d days, %.1f h counted, %d without a play time", len(all), insightDays, total, missing)
+		s.Log.Printf("insights: Tracearr history fields: %s", strings.Join(keys, ", "))
 	}
 	if total == 0 {
 		return nil, 0, 0
@@ -886,4 +917,36 @@ func (s *Server) runtimesFor(ctx context.Context, plays []tracearr.Play) func(st
 		ids = ids[n:]
 	}
 	return look
+}
+
+// insNote records a line about the panel's last read (shown in Settings) and logs it.
+func (s *Server) insNote(format string, a ...any) {
+	line := fmt.Sprintf(format, a...)
+	s.Log.Printf("insights: %s", line)
+	s.ins.mu.Lock()
+	s.ins.status.Notes = append(s.ins.status.Notes, time.Now().Format("15:04:05")+"  "+line)
+	s.ins.mu.Unlock()
+}
+
+func (s *Server) insightsStatus(w http.ResponseWriter, r *http.Request) {
+	s.ins.mu.Lock()
+	st := s.ins.status
+	st.Notes = append([]string(nil), st.Notes...)
+	s.ins.mu.Unlock()
+	if st.Notes == nil {
+		st.Notes = []string{}
+	}
+	writeJSON(w, st)
+}
+
+func (s *Server) insightsRefresh(w http.ResponseWriter, r *http.Request) {
+	go s.refreshSlow(context.Background())
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+func errNote(err error) string {
+	if err != nil {
+		return " (" + err.Error() + ")"
+	}
+	return ""
 }
