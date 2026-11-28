@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -129,5 +130,43 @@ func TestKindAndCount(t *testing.T) {
 	}
 	if addedCount("movie", []string{"a.mkv", "b.mkv"}) != 1 || addedCount("tv", []string{"a.srt"}) != 1 || addedCount("anime", []string{"1.mkv", "2.mp4"}) != 2 {
 		t.Fatal("counts")
+	}
+}
+
+// With the media server connected, its own counts are used: every library,
+// anime and books included, by kind and by library name.
+func TestInsightsFromMediaServer(t *testing.T) {
+	ms := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/Library/VirtualFolders":
+			_, _ = io.WriteString(w, `[{"Name":"TV","ItemId":"1","CollectionType":"tvshows"},{"Name":"Anime","ItemId":"2","CollectionType":"tvshows"},
+				{"Name":"Movies","ItemId":"3","CollectionType":"movies"},{"Name":"Music","ItemId":"4","CollectionType":"music"},{"Name":"Books","ItemId":"5","CollectionType":"books"},{"Name":"Home videos","ItemId":"6","CollectionType":"homevideos"}]`)
+		case "/Artists/AlbumArtists":
+			_, _ = io.WriteString(w, `{"TotalRecordCount":210}`)
+		case "/Items":
+			n := map[string]map[string]int{"1": {"Series": 412, "Season": 1960, "Episode": 18240}, "2": {"Series": 186, "Season": 402, "Episode": 6120},
+				"3": {"Movie": 1284}, "4": {"MusicAlbum": 932, "Audio": 11480}, "5": {"Book": 28, "AudioBook": 13}}[r.URL.Query().Get("ParentId")][r.URL.Query().Get("IncludeItemTypes")]
+			_, _ = io.WriteString(w, `{"TotalRecordCount":`+strconv.Itoa(n)+`}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ms.Close()
+	dir := t.TempDir()
+	cfg, _ := config.Load(config.Env{ConfigDir: filepath.Join(dir, "c"), DataDir: filepath.Join(dir, "d")})
+	s0 := cfg.Get()
+	s0.Playback.EmbyURL, s0.Playback.EmbyKey = ms.URL, "k"
+	cfg.Set(s0)
+	st, _ := store.Open(filepath.Join(dir, "c", "jobs.json"))
+	au, _ := auth.New(filepath.Join(dir, "c"))
+	l := log.New(io.Discard, "", 0)
+	srv := New(st, pipeline.New(st, cfg, l), cfg, au, l)
+	srv.refreshSlow(context.Background())
+	lib, byName := srv.ins.slow.Library, srv.ins.slow.ByName
+	if lib["tv"].Episodes != 18240 || lib["anime"].Shows != 186 || lib["movie"].Movies != 1284 || lib["music"].Artists != 210 || lib["music"].Tracks != 11480 || lib["book"].Ebooks != 28 || lib["book"].Audio != 13 {
+		t.Fatalf("by kind %+v", lib)
+	}
+	if byName["anime"].Seasons != 402 || len(byName) != 5 {
+		t.Fatalf("by name %+v", byName)
 	}
 }

@@ -165,3 +165,24 @@ func (s Server) ItemPath(ctx context.Context, id string) (string, error) {
 	}
 	return r.Items[0].Path, nil
 }
+
+// Count is how many items of the given types (Movie, Series, Season, Episode,
+// MusicAlbum, Audio, Book, AudioBook) a library holds, all levels down.
+func (s Server) Count(ctx context.Context, libraryID, types string) (int, error) {
+	var r struct {
+		Total int `json:"TotalRecordCount"`
+	}
+	q := url.Values{"ParentId": {libraryID}, "Recursive": {"true"}, "IncludeItemTypes": {types}, "Limit": {"0"}}
+	err := s.Do(ctx, http.MethodGet, "/Items?"+q.Encode(), nil, &r)
+	return r.Total, err
+}
+
+// AlbumArtists is how many album artists a music library holds.
+func (s Server) AlbumArtists(ctx context.Context, libraryID string) (int, error) {
+	var r struct {
+		Total int `json:"TotalRecordCount"`
+	}
+	q := url.Values{"ParentId": {libraryID}, "Limit": {"0"}}
+	err := s.Do(ctx, http.MethodGet, "/Artists/AlbumArtists?"+q.Encode(), nil, &r)
+	return r.Total, err
+}

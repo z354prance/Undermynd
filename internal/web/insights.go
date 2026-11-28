@@ -16,6 +16,7 @@ import (
 	"github.com/z354prance/undermynd/internal/arr"
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/job"
+	"github.com/z354prance/undermynd/internal/mediaserver"
 	"github.com/z354prance/undermynd/internal/tracearr"
 )
 
@@ -64,7 +65,8 @@ type pick struct {
 }
 
 type insSlow struct {
-	Library  map[string]libCounts `json:"library"`
+	Library  map[string]libCounts `json:"library"`   // by kind
+	ByName   map[string]libCounts `json:"libraries"` // by media-server library name, lower case
 	Upgrades struct {
 		Episodes int     `json:"episodes"`
 		Movies   int     `json:"movies"`
@@ -473,6 +475,12 @@ func (s *Server) refreshSlow(ctx context.Context) {
 			}
 		}
 	}
+	// The media server's own counts, when it is connected, take the place of
+	// the arrs' and the anime folders': it holds everything, not only what the
+	// arrs manage.
+	if lib, byName, ok := s.embyCounts(ctx); ok {
+		out.Library, out.ByName = lib, byName
+	}
 	if cutoffKnown && withFiles > 0 {
 		out.Upgrades.Share = 1 - float64(min(belowCutoff, withFiles))/float64(withFiles)
 	}
@@ -581,7 +589,7 @@ func (s *Server) v1Insights(w http.ResponseWriter, r *http.Request) {
 	}
 	out := map[string]any{
 		"days": days, "play": play,
-		"library": slow.Library, "upgrades": slow.Upgrades, "picks": slow.Picks,
+		"library": slow.Library, "libraries": slow.ByName, "upgrades": slow.Upgrades, "picks": slow.Picks,
 		"watchKnown": s.Cfg.Get().Playback.TracearrURL != "",
 	}
 	if s.Engine != nil {
@@ -591,9 +599,85 @@ func (s *Server) v1Insights(w http.ResponseWriter, r *http.Request) {
 	if out["library"] == nil {
 		out["library"] = map[string]libCounts{}
 	}
+	if out["libraries"] == nil {
+		out["libraries"] = map[string]libCounts{}
+	}
 	if out["picks"] == nil {
 		out["picks"] = []pick{}
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, out)
+}
+
+// embyCounts reads each media-server library's counts: by kind (summed) and by
+// library name.
+func (s *Server) embyCounts(ctx context.Context) (map[string]libCounts, map[string]libCounts, bool) {
+	set := s.Cfg.Get()
+	if set.Playback.EmbyURL == "" || set.Playback.EmbyKey == "" {
+		return nil, nil, false
+	}
+	ms := mediaserver.Server{Kind: set.Access.Provider, URL: set.Playback.EmbyURL, Key: string(set.Playback.EmbyKey)}
+	libs, err := ms.Libraries(ctx)
+	if err != nil {
+		s.Log.Printf("insights: media server libraries: %v", err)
+		return nil, nil, false
+	}
+	byKind, byName := map[string]libCounts{}, map[string]libCounts{}
+	n := func(types string, id string) int {
+		v, err := ms.Count(ctx, id, types)
+		if err != nil {
+			return 0
+		}
+		return v
+	}
+	for _, l := range libs {
+		k := embyKind(l)
+		var c libCounts
+		switch k {
+		case "movie":
+			c.Movies = n("Movie", l.ID)
+		case "tv", "anime":
+			c.Shows, c.Seasons, c.Episodes = n("Series", l.ID), n("Season", l.ID), n("Episode", l.ID)
+		case "music":
+			c.Artists, _ = ms.AlbumArtists(ctx, l.ID)
+			c.Albums, c.Tracks = n("MusicAlbum", l.ID), n("Audio", l.ID)
+		case "book":
+			c.Ebooks, c.Audio = n("Book", l.ID), n("AudioBook", l.ID)
+		default:
+			continue
+		}
+		byName[strings.ToLower(l.Name)] = c
+		t := byKind[k]
+		t.Movies += c.Movies
+		t.Shows += c.Shows
+		t.Seasons += c.Seasons
+		t.Episodes += c.Episodes
+		t.Artists += c.Artists
+		t.Albums += c.Albums
+		t.Tracks += c.Tracks
+		t.Ebooks += c.Ebooks
+		t.Audio += c.Audio
+		byKind[k] = t
+	}
+	return byKind, byName, len(byName) > 0
+}
+
+// embyKind is a media-server library's kind: anime by its name, otherwise by
+// its collection type.
+func embyKind(l mediaserver.Library) string {
+	n := strings.ToLower(l.Name)
+	if strings.Contains(n, "anime") {
+		return "anime"
+	}
+	switch strings.ToLower(l.Kind) {
+	case "movies":
+		return "movie"
+	case "tvshows":
+		return "tv"
+	case "music":
+		return "music"
+	case "books", "audiobooks":
+		return "book"
+	}
+	return ""
 }

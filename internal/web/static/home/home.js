@@ -315,7 +315,7 @@
     var added = d.days.reduce(function (t, x) { return t + KINDS.reduce(function (a, k) { return a + (x.added[k] || 0); }, 0); }, 0);
     var c1 = insCard("ADDED", String(added)); var s1 = stackBars(d.days, function (x) { return x.added; }); s1.setAttribute("aria-label", "Added per day, by library"); c1.appendChild(s1); box.appendChild(c1);
     var hours = d.days.reduce(function (t, x) { return t + KINDS.reduce(function (a, k) { return a + (x.watchHours[k] || 0); }, 0); }, 0);
-    var c2 = insCard("WATCHED", d.watchKnown ? Math.round(hours) + " h" : null);
+    var c2 = insCard("WATCHED", d.watchKnown ? (hours < 10 ? hours.toFixed(1) : Math.round(hours)) + " h" : null);
     if (!d.watchKnown) c2.appendChild(el("p", "ins-empty", "Tracearr is not set up."));
     else {
       var s2 = stackBars(d.days, function (x) { return x.watchHours; }); s2.setAttribute("aria-label", "Hours watched per day, by library"); c2.appendChild(s2);
@@ -352,7 +352,7 @@
     cats.forEach(function (c) {
       var k = libKind(c.name), b = el("div", "ins-lib"), top = el("div", "lib"); var sw = el("span", "sw"); sw.style.background = k ? mediaColor(k) : "#8f959c"; top.appendChild(sw); top.appendChild(el("span", "n", c.name));
       top.appendChild(el("span", "v", c.bytes == null ? "…" : fmtSize(c.bytes) + (total ? " · " + Math.round(100 * c.bytes / total) + "%" : ""))); b.appendChild(top);
-      if (d && k && !seen[k]) { seen[k] = true; var r = countsRow(k, (d.library || {})[k]); if (r) b.appendChild(r); }
+      if (d && k) { var byName = (d.libraries || {})[c.name.toLowerCase()], cnt = byName || (!seen[k] ? (d.library || {})[k] : null); seen[k] = true; var r = countsRow(k, cnt); if (r) b.appendChild(r); }
       box.appendChild(b);
     });
     if (d) drawBottom(box, d);
@@ -364,9 +364,9 @@
     if (picks.length) {
       var pk = el("div", "ins-pick"), i = 0; var ph = el("div", "ins-ph"); ph.appendChild(el("span", "", "TONIGHT"));
       var sh = el("button", "ins-shuf"); sh.type = "button"; sh.setAttribute("aria-label", "Pick something else"); sh.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>';
-      ph.appendChild(sh); pk.appendChild(ph); var body = el("div"); pk.appendChild(body);
+      ph.appendChild(sh); pk.appendChild(ph); var body = el("div", "ins-pbody"); pk.appendChild(body);
       var show = function () { var x = picks[i % picks.length]; body.replaceChildren(); var art = x.poster ? el("img", "ins-poster") : el("div", "ins-poster"); if (x.poster) { art.src = x.poster; art.alt = ""; art.loading = "lazy"; } else art.style.background = "linear-gradient(160deg,color-mix(in srgb," + mediaColor(x.kind) + " 35%,transparent),#303336)"; body.appendChild(art);
-        body.appendChild(el("div", "ins-pt", x.title)); body.appendChild(el("div", "ins-pm", [x.year || "", x.unwatched ? "unwatched" : (x.kind === "tv" ? "show" : "movie")].filter(Boolean).join(" · "))); };
+        var tx = el("div", "ins-ptx"); tx.appendChild(el("div", "ins-pt", x.title)); tx.appendChild(el("div", "ins-pm", String(x.year || ""))); tx.appendChild(el("div", "ins-pm", x.unwatched ? "unwatched" : (x.kind === "tv" ? "show" : "movie"))); body.appendChild(tx); };
       sh.onclick = function (e) { e.stopPropagation(); i++; show(); }; show(); if (picks.length < 2) sh.hidden = true; row.appendChild(pk);
     }
     var up = el("div", "ins-up"); var uh = el("div", "ins-h small"); uh.appendChild(el("h4", "", "Upgrades")); uh.appendChild(el("span", "ins-note", "last " + d.days.length + " days")); up.appendChild(uh);
