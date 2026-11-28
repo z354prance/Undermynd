@@ -788,8 +788,23 @@
     }).catch(fail)}
   // Settings › Getting started: everything HyveMynd works with, what it is
   // for and whether it is set up here.
+  // Test everything: every connection that is set up, tried at once.
+  function testAllBox(body){
+    var box=hvBox('');box.classList.add('hv-tall');var top=el('div','hv-tallh');var t=el('div');t.appendChild(el('b','','Test everything'));t.appendChild(el('span','hv-note','Tries every connection that is set up, the way each page\'s Test button does, and checks the folders HyveMynd writes to.'));top.appendChild(t);
+    var res=el('div','hv-tallr');var btn=hvBtn('Test everything','',function(b){b.disabled=true;b.textContent='Testing…';res.replaceChildren(el('div','hv-note','Trying each connection (up to 20 seconds each, all at once)…'));
+      api('POST','/testall').then(function(d){b.disabled=false;b.textContent='Test again';draw(d)}).catch(function(e){b.disabled=false;b.textContent='Test everything';res.replaceChildren(el('div','err',e.message))})},true);
+    top.appendChild(btn);box.appendChild(top);box.appendChild(res);body.appendChild(box);
+    function draw(d){res.replaceChildren();var rs=d.results||[];if(!rs.length){res.appendChild(el('div','hv-empty','Nothing is set up yet.'));return}
+      var bad=rs.filter(function(r){return !r.ok}).length,warn=rs.filter(function(r){return r.ok&&r.warn}).length;
+      res.appendChild(el('div','hv-tallsum '+(bad?'t-bad':warn?'t-warn':'t-ok'),bad?bad+' of '+rs.length+' failed'+(warn?' · '+warn+' to look at':''):warn?'All '+rs.length+' answered · '+warn+' to look at':'All '+rs.length+' passed'));
+      var g='';rs.forEach(function(r){if(r.group!==g){g=r.group;res.appendChild(el('div','hv-tallg',g.toUpperCase()))}
+        var row=el('div','hv-tallrow '+(r.ok?(r.warn?'t-warn':'t-ok'):'t-bad'));row.appendChild(el('i'));var tx=el('div','hv-tallt');tx.appendChild(el('b','',r.name));tx.appendChild(el('span','',r.detail||''));row.appendChild(tx);
+        row.appendChild(el('span','hv-tallms',r.ms>=1000?(r.ms/1000).toFixed(1)+' s':r.ms+' ms'));
+        if(!r.ok||r.warn){var o=el('button','hv-linkbtn','Open');o.type='button';o.onclick=function(){tab=r.page;app()};row.appendChild(o)}res.appendChild(row)})}
+  }
   function startView(body){
     body.appendChild(head('Getting started','HyveMynd sits between your arrs and the places files come from. It downloads, checks, sends files through Tdarr and hands them back to the arrs to import. Here is everything it works with, and whether yours is set up.'));
+    testAllBox(body);
     var need=el('ol','hv-start');var opt=el('div','hv-startx');body.appendChild(el('h2','hv-grph','NEEDED'));body.appendChild(need);body.appendChild(el('h2','hv-grph','OPTIONAL EXTRAS'));body.appendChild(opt);
     Promise.all([api('GET','/settings'),api('GET','/clients').catch(function(){return null}),api('GET','/vpn').catch(function(){return null}),api('GET','/system').catch(function(){return null}),api('GET','/gpus').catch(function(){return null})]).then(function(x){
       var st=x[0],cl=x[1],vp=x[2],sy=x[3],gx=x[4];var cats=st.categories||[];
