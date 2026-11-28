@@ -115,7 +115,7 @@ body.ui td.acts button{height:26px;padding:0 8px;font-size:11px;margin:0 6px 6px
   .card.setting{grid-template-columns:1fr;gap:4px;padding:20px 0}
   .savebar{margin:0 -16px;padding:12px 16px}
   body.ui table,body.ui thead,body.ui tbody,body.ui tr,body.ui td{display:block}
-  body.ui tr:first-child{display:none}
+  body.ui thead,body.ui tr:first-child:has(> th){display:none}
   body.ui tr{border-bottom:1px solid var(--line);padding:12px 0}
   body.ui td{border:0;padding:3px 0}
 }
