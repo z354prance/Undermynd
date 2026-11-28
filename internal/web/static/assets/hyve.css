@@ -681,3 +681,31 @@ body.ui .hv-setnav .hv-setsearch input{border:0;height:34px;padding:0;box-shadow
 @media (max-width:760px){body.ui .hv-main,body.ui .hv-head{min-width:0;max-width:100vw}body.ui .hv-head .hv-pills{min-width:0;max-width:100%}}
 body.ui .hv-potsec{margin-top:22px;padding-top:14px;border-top:1px solid var(--line)}body.ui .hv-potsec h4{margin:0 0 6px}
 body.ui .hv-note.warn{color:var(--warn)}
+
+/* What Tdarr could still save (v85) */
+body.ui .hv-potlead{margin:6px 0 8px;font-size:14px;color:var(--dim)}body.ui .hv-potlead b{font-size:20px;color:var(--text);font-weight:600}
+body.ui .hv-potbar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--line);margin-bottom:14px}
+body.ui .hv-potbar i.up,body.ui .hv-potp.up .hv-potph>i{background:#4aa8ff}body.ui .hv-potbar i.re,body.ui .hv-potp.re .hv-potph>i{background:var(--st-convert)}
+body.ui .hv-potgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+body.ui .hv-potp{border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px;min-width:0}
+body.ui .hv-potph{display:flex;gap:10px;align-items:flex-start}body.ui .hv-potph>i{width:10px;height:10px;border-radius:3px;margin-top:6px;flex:none}
+body.ui .hv-potph div{display:flex;flex-direction:column}body.ui .hv-potph b{font-size:15px}body.ui .hv-potph span{font-size:12.5px;color:var(--dim)}
+body.ui .hv-potp>.hv-note{margin:0;font-size:12.5px}
+body.ui .hv-potl{display:flex;flex-direction:column}
+body.ui .hv-potr,body.ui .hv-potpr{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:12px;padding:7px 0;border-top:1px solid rgba(255,255,255,.05)}
+body.ui .hv-potr b,body.ui .hv-potpr b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+body.ui .hv-potr span{grid-column:1;font-size:12px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+body.ui .hv-potr em{grid-column:2;grid-row:1/3;align-self:center;font:12.5px var(--mono);color:var(--dim)}
+body.ui .hv-potp .hv-acts{margin-top:auto}
+body.ui .hv-potpick{margin-top:14px;border:1px solid var(--line2);border-radius:12px;padding:14px}
+body.ui .hv-potpickh{display:flex;align-items:center;gap:12px;margin-bottom:6px}body.ui .hv-potpickh b{flex:1}body.ui .hv-potpickh input{width:240px}
+body.ui label.hv-potpr{grid-template-columns:22px minmax(0,1fr) auto;cursor:pointer;align-items:center}
+body.ui label.hv-potpr>input{grid-row:1/3;grid-column:1;margin:0}body.ui label.hv-potpr>b{grid-column:2}
+body.ui label.hv-potpr>span{grid-column:2;font-size:12px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+body.ui label.hv-potpr>em{grid-column:3;grid-row:1/3;align-self:center;font:12.5px var(--mono);color:var(--dim)}
+body.ui label.hv-potpr.dim{opacity:.5;cursor:default}
+body.ui .hv-potpg{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.05)}
+body.ui .hv-potcount{font-weight:600;margin-right:6px}
+@media (max-width:760px){body.ui .hv-potgrid{grid-template-columns:1fr}body.ui .hv-potpickh{flex-wrap:wrap}body.ui .hv-potpickh input{width:100%}}
+body.ui label.hv-potpr{font:400 14px var(--ui);color:var(--text);margin:0;padding:6px 0;text-transform:none;letter-spacing:0}
+body.ui label.hv-potpr>b{font-size:14px;color:var(--text)}

@@ -59,10 +59,27 @@ type potSummary struct {
 	Largest []potFile  `json:"largest"`
 	// Better downloaded again (encodes the arrs or the media server can
 	// name) and fine to re-encode.
-	Redownload potGroup   `json:"redownload"`
-	Reencode   potGroup   `json:"reencode"`
-	Titles     []potTitle `json:"titles"` // the re-downloads by movie or series, largest first
-	Notes      []string   `json:"notes,omitempty"`
+	Redownload potGroup     `json:"redownload"`
+	Reencode   potGroup     `json:"reencode"`
+	Titles     []potTitle   `json:"titles"` // the re-downloads by movie or series, largest first
+	Groups     []potReGroup `json:"groups"` // the re-encodes by movie or show folder, largest first
+	Notes      []string     `json:"notes,omitempty"`
+}
+
+// potReGroup is a movie or show folder with files fine to re-encode.
+type potReGroup struct {
+	Key   string   `json:"key"`  // library folder / title folder
+	Name  string   `json:"name"` // the title folder
+	Lib   string   `json:"lib"`
+	Files int      `json:"files"`
+	Bytes int64    `json:"bytes"`
+	Why   string   `json:"why"`
+	Kind  string   `json:"kind,omitempty"`
+	TMDB  int64    `json:"tmdb,omitempty"`
+	TVDB  int64    `json:"tvdb,omitempty"`
+	Title string   `json:"title,omitempty"`
+	Year  int      `json:"year,omitempty"`
+	Paths []string `json:"paths,omitempty"`
 }
 
 // potTitle is a movie or series with files better downloaded again.
@@ -202,13 +219,43 @@ func (s *Server) scanPotential() {
 		sum.Titles = append(sum.Titles, *t)
 	}
 	sort.Slice(sum.Titles, func(i, j int) bool { return sum.Titles[i].Bytes > sum.Titles[j].Bytes })
-	var reenc []potFile
+	groups := map[string]*potReGroup{}
+	whys := map[string]map[string]int{}
 	for _, f := range older {
-		if f.Way != "redownload" && len(reenc) < 300 {
-			reenc = append(reenc, f)
+		if f.Way == "redownload" {
+			continue
+		}
+		key := splitRel(f.Rel)
+		segs := strings.Split(key, "/")
+		name, lib := segs[len(segs)-1], ""
+		if len(segs) == 2 {
+			lib = segs[0]
+		}
+		g := groups[key]
+		if g == nil {
+			g = &potReGroup{Key: key, Name: name, Lib: lib}
+			groups[key] = g
+			whys[key] = map[string]int{}
+		}
+		g.Files++
+		g.Bytes += f.Size
+		g.Paths = append(g.Paths, f.Path)
+		whys[key][f.Why]++
+		if g.Kind == "" && f.Kind != "" {
+			g.Kind, g.TMDB, g.TVDB, g.Title, g.Year = f.Kind, f.TMDB, f.TVDB, f.Title, f.Year
 		}
 	}
-	older = reenc
+	for k, g := range groups {
+		best := 0
+		for w, n := range whys[k] {
+			if n > best || (n == best && w < g.Why) {
+				g.Why, best = w, n
+			}
+		}
+		sum.Groups = append(sum.Groups, *g)
+	}
+	sort.Slice(sum.Groups, func(i, j int) bool { return sum.Groups[i].Bytes > sum.Groups[j].Bytes })
+	older = nil
 	sum.Largest = older
 	sum.Took = time.Since(started).Round(time.Second).String()
 	s.pot.mu.Lock()
@@ -258,16 +305,23 @@ func (s *Server) adminPotential(w http.ResponseWriter, r *http.Request) {
 	}
 	out["keep"], out["measured"] = keep, measured
 	if sum != nil {
-		largest := make([]map[string]any, 0, len(sum.Largest))
-		for _, f := range sum.Largest {
-			q := false
-			if j, ok := s.Store.Get(pipeline.ReencodeID(f.Path)); ok && j.State != job.Cleaned && j.State != job.Failed {
-				q = true
+		view := *sum
+		view.Largest = nil
+		view.Groups = make([]potReGroup, 0, len(sum.Groups))
+		queuedFiles := map[string]int{}
+		for _, g := range sum.Groups {
+			q := 0
+			for _, p := range g.Paths {
+				if j, ok := s.Store.Get(pipeline.ReencodeID(p)); ok && j.State != job.Cleaned && j.State != job.Failed {
+					q++
+				}
 			}
-			largest = append(largest, map[string]any{"path": f.Path, "rel": f.Rel, "size": f.Size, "codec": f.Codec, "queued": q, "why": f.Why, "kind": f.Kind, "tmdb": f.TMDB, "tvdb": f.TVDB, "title": f.Title, "year": f.Year})
+			queuedFiles[g.Key] = q
+			g.Paths = nil
+			view.Groups = append(view.Groups, g)
 		}
-		out["summary"] = sum
-		out["largest"] = largest
+		out["queuedFiles"] = queuedFiles
+		out["summary"] = view
 		queued := []string{}
 		if s.Attention != nil {
 			for _, q := range s.Attention.Snapshot().Queue {
@@ -283,6 +337,55 @@ func (s *Server) adminPotential(w http.ResponseWriter, r *http.Request) {
 	}
 	out["upgrades"] = map[string]any{"on": at.On && s.Attention != nil, "movies": at.On && strings.TrimSpace(at.MovieProfile) != "", "shows": at.On && strings.TrimSpace(at.TVProfile) != "", "moviePerDay": perDay}
 	writeJSON(w, out)
+}
+
+// adminPotentialReencode queues every file of the chosen folders for Tdarr
+// through Re-encode (files already queued are left as they are).
+func (s *Server) adminPotentialReencode(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Keys []string `json:"keys"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	s.pot.mu.Lock()
+	s.potLoad()
+	sum := s.pot.sum
+	s.pot.mu.Unlock()
+	if sum == nil {
+		jsonErr(w, http.StatusConflict, "scan the library first")
+		return
+	}
+	want := map[string]bool{}
+	for _, k := range in.Keys {
+		want[k] = true
+	}
+	queued, already, failed := 0, 0, []string{}
+	for _, g := range sum.Groups {
+		if !want[g.Key] {
+			continue
+		}
+		for _, p := range g.Paths {
+			if j, ok := s.Store.Get(pipeline.ReencodeID(p)); ok && j.State != job.Cleaned && j.State != job.Failed {
+				already++
+				continue
+			}
+			if queued >= 2000 {
+				failed = append(failed, "more than 2000 files at once: send the rest after these")
+				break
+			}
+			if _, err := s.Engine.SubmitReencode(p); err != nil {
+				failed = append(failed, filepath.Base(p)+": "+err.Error())
+				continue
+			}
+			queued++
+		}
+	}
+	s.Log.Printf("tdarr potential: queued %d file(s) from %d folder(s) for re-encoding", queued, len(in.Keys))
+	if len(failed) > 5 {
+		failed = append(failed[:5], fmt.Sprintf("and %d more", len(failed)-5))
+	}
+	writeJSON(w, map[string]any{"queued": queued, "already": already, "skipped": failed})
 }
 
 // adminPotentialUpgrade sends titles to Upgrades to be downloaded again from a
@@ -325,4 +428,15 @@ func (s *Server) adminPotentialUpgrade(w http.ResponseWriter, r *http.Request) {
 func (s *Server) adminPotentialScan(w http.ResponseWriter, r *http.Request) {
 	go s.scanPotential()
 	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// splitRel is the movie or show folder a library file belongs to: its
+// library folder and the folder under it ("TV/Suits"), or the path itself for
+// a file directly in a library folder.
+func splitRel(rel string) string {
+	segs := strings.Split(filepath.ToSlash(rel), "/")
+	if len(segs) >= 3 {
+		return segs[0] + "/" + segs[1]
+	}
+	return filepath.ToSlash(rel)
 }
