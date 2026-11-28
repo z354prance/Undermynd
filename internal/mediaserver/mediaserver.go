@@ -165,3 +165,46 @@ func (s Server) ItemPath(ctx context.Context, id string) (string, error) {
 	}
 	return r.Items[0].Path, nil
 }
+
+// Count is how many items of the given types (Movie, Series, Season, Episode,
+// MusicAlbum, Audio, Book, AudioBook) a library holds, all levels down.
+func (s Server) Count(ctx context.Context, libraryID, types string) (int, error) {
+	var r struct {
+		Total int `json:"TotalRecordCount"`
+	}
+	q := url.Values{"ParentId": {libraryID}, "Recursive": {"true"}, "IncludeItemTypes": {types}, "Limit": {"0"}}
+	err := s.Do(ctx, http.MethodGet, "/Items?"+q.Encode(), nil, &r)
+	return r.Total, err
+}
+
+// AlbumArtists is how many album artists a music library holds.
+func (s Server) AlbumArtists(ctx context.Context, libraryID string) (int, error) {
+	var r struct {
+		Total int `json:"TotalRecordCount"`
+	}
+	q := url.Values{"ParentId": {libraryID}, "Limit": {"0"}}
+	err := s.Do(ctx, http.MethodGet, "/Artists/AlbumArtists?"+q.Encode(), nil, &r)
+	return r.Total, err
+}
+
+// AddedSince lists when each item of the given types in a library was added,
+// since a time (at most 5000 items).
+func (s Server) AddedSince(ctx context.Context, libraryID, types string, since time.Time) ([]time.Time, error) {
+	var r struct {
+		Items []struct {
+			DateCreated time.Time `json:"DateCreated"`
+		} `json:"Items"`
+	}
+	q := url.Values{"ParentId": {libraryID}, "Recursive": {"true"}, "IncludeItemTypes": {types}, "Limit": {"5000"},
+		"MinDateCreated": {since.UTC().Format("2006-01-02T15:04:05Z")}, "Fields": {"DateCreated"}, "SortBy": {"DateCreated"}, "SortOrder": {"Descending"}}
+	if err := s.Do(ctx, http.MethodGet, "/Items?"+q.Encode(), nil, &r); err != nil {
+		return nil, err
+	}
+	out := make([]time.Time, 0, len(r.Items))
+	for _, it := range r.Items {
+		if !it.DateCreated.IsZero() && !it.DateCreated.Before(since) {
+			out = append(out, it.DateCreated)
+		}
+	}
+	return out, nil
+}

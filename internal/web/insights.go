@@ -16,6 +16,7 @@ import (
 	"github.com/z354prance/undermynd/internal/arr"
 	"github.com/z354prance/undermynd/internal/config"
 	"github.com/z354prance/undermynd/internal/job"
+	"github.com/z354prance/undermynd/internal/mediaserver"
 	"github.com/z354prance/undermynd/internal/tracearr"
 )
 
@@ -64,7 +65,8 @@ type pick struct {
 }
 
 type insSlow struct {
-	Library  map[string]libCounts `json:"library"`
+	Library  map[string]libCounts `json:"library"`   // by kind
+	ByName   map[string]libCounts `json:"libraries"` // by media-server library name, lower case
 	Upgrades struct {
 		Episodes int     `json:"episodes"`
 		Movies   int     `json:"movies"`
@@ -72,6 +74,11 @@ type insSlow struct {
 	} `json:"upgrades"`
 	Picks []pick `json:"picks"`
 	At    time.Time
+	// From the media server and Tracearr, when they answer: per day, per kind.
+	Added     map[string]map[string]int
+	Watch     map[string]map[string]float64 // hours
+	Direct    float64
+	Transcode float64
 }
 
 type insights struct {
@@ -473,6 +480,17 @@ func (s *Server) refreshSlow(ctx context.Context) {
 			}
 		}
 	}
+	// The media server's own counts, when it is connected, take the place of
+	// the arrs' and the anime folders': it holds everything, not only what the
+	// arrs manage.
+	embyAdded := map[string]map[string]int{}
+	if lib, byName, ok := s.embyCounts(ctx, embyAdded, dayStart(time.Now().AddDate(0, 0, -(insightDays-1)))); ok {
+		out.Library, out.ByName = lib, byName
+		if len(embyAdded) > 0 {
+			out.Added = embyAdded
+		}
+	}
+	out.Watch, out.Direct, out.Transcode = s.watchHistory(ctx)
 	if cutoffKnown && withFiles > 0 {
 		out.Upgrades.Share = 1 - float64(min(belowCutoff, withFiles))/float64(withFiles)
 	}
@@ -575,13 +593,30 @@ func (s *Server) v1Insights(w http.ResponseWriter, r *http.Request) {
 	}
 	slow := in.slow
 	in.mu.Unlock()
+	for i := range days {
+		if slow.Added != nil {
+			days[i].Added = map[string]int{}
+			for k, v := range slow.Added[days[i].Date] {
+				days[i].Added[k] = v
+			}
+		}
+		if slow.Watch != nil {
+			days[i].Watch = map[string]float64{}
+			for k, v := range slow.Watch[days[i].Date] {
+				days[i].Watch[k] = v
+			}
+		}
+	}
+	if slow.Direct+slow.Transcode > 0 {
+		direct, trans = slow.Direct, slow.Transcode
+	}
 	play := map[string]float64{"direct": 0, "transcode": 0}
 	if t := direct + trans; t > 0 {
 		play["direct"], play["transcode"] = direct/t, trans/t
 	}
 	out := map[string]any{
 		"days": days, "play": play,
-		"library": slow.Library, "upgrades": slow.Upgrades, "picks": slow.Picks,
+		"library": slow.Library, "libraries": slow.ByName, "upgrades": slow.Upgrades, "picks": slow.Picks,
 		"watchKnown": s.Cfg.Get().Playback.TracearrURL != "",
 	}
 	if s.Engine != nil {
@@ -591,9 +626,173 @@ func (s *Server) v1Insights(w http.ResponseWriter, r *http.Request) {
 	if out["library"] == nil {
 		out["library"] = map[string]libCounts{}
 	}
+	if out["libraries"] == nil {
+		out["libraries"] = map[string]libCounts{}
+	}
 	if out["picks"] == nil {
 		out["picks"] = []pick{}
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, out)
+}
+
+// embyCounts reads each media-server library's counts: by kind (summed) and by
+// library name.
+func (s *Server) embyCounts(ctx context.Context, added map[string]map[string]int, addedSince time.Time) (map[string]libCounts, map[string]libCounts, bool) {
+	addedErr := false
+	defer func() {
+		if addedErr {
+			for k := range added {
+				delete(added, k)
+			}
+		}
+	}()
+	set := s.Cfg.Get()
+	if set.Playback.EmbyURL == "" || set.Playback.EmbyKey == "" {
+		return nil, nil, false
+	}
+	ms := mediaserver.Server{Kind: set.Access.Provider, URL: set.Playback.EmbyURL, Key: string(set.Playback.EmbyKey)}
+	libs, err := ms.Libraries(ctx)
+	if err != nil {
+		s.Log.Printf("insights: media server libraries: %v", err)
+		return nil, nil, false
+	}
+	byKind, byName := map[string]libCounts{}, map[string]libCounts{}
+	n := func(types string, id string) int {
+		v, err := ms.Count(ctx, id, types)
+		if err != nil {
+			return 0
+		}
+		return v
+	}
+	for _, l := range libs {
+		k := embyKind(l)
+		var c libCounts
+		switch k {
+		case "movie":
+			c.Movies = n("Movie", l.ID)
+		case "tv", "anime":
+			c.Shows, c.Seasons, c.Episodes = n("Series", l.ID), n("Season", l.ID), n("Episode", l.ID)
+		case "music":
+			c.Artists, _ = ms.AlbumArtists(ctx, l.ID)
+			c.Albums, c.Tracks = n("MusicAlbum", l.ID), n("Audio", l.ID)
+		case "book":
+			c.Ebooks, c.Audio = n("Book", l.ID), n("AudioBook", l.ID)
+		default:
+			continue
+		}
+		byName[strings.ToLower(l.Name)] = c
+		if added != nil {
+			types := map[string]string{"movie": "Movie", "tv": "Episode", "anime": "Episode", "music": "MusicAlbum", "book": "Book,AudioBook"}[k]
+			if ts, err := ms.AddedSince(ctx, l.ID, types, addedSince); err == nil {
+				for _, t := range ts {
+					dk := dayKey(t)
+					if added[dk] == nil {
+						added[dk] = map[string]int{}
+					}
+					added[dk][k]++
+				}
+			} else {
+				addedErr = true
+			}
+		}
+		t := byKind[k]
+		t.Movies += c.Movies
+		t.Shows += c.Shows
+		t.Seasons += c.Seasons
+		t.Episodes += c.Episodes
+		t.Artists += c.Artists
+		t.Albums += c.Albums
+		t.Tracks += c.Tracks
+		t.Ebooks += c.Ebooks
+		t.Audio += c.Audio
+		byKind[k] = t
+	}
+	return byKind, byName, len(byName) > 0
+}
+
+// embyKind is a media-server library's kind: anime by its name, otherwise by
+// its collection type.
+func embyKind(l mediaserver.Library) string {
+	n := strings.ToLower(l.Name)
+	if strings.Contains(n, "anime") {
+		return "anime"
+	}
+	switch strings.ToLower(l.Kind) {
+	case "movies":
+		return "movie"
+	case "tvshows":
+		return "tv"
+	case "music":
+		return "music"
+	case "books", "audiobooks":
+		return "book"
+	}
+	return ""
+}
+
+func dayStart(t time.Time) time.Time {
+	t = t.Local()
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+}
+
+// watchHistory reads the last days' plays from Tracearr: hours per day and
+// kind, and direct against transcoded time when Tracearr says. Nil when
+// Tracearr gives no play time (the minute-by-minute samples are used then).
+func (s *Server) watchHistory(ctx context.Context) (map[string]map[string]float64, float64, float64) {
+	c, ok := s.tracearr()
+	if !ok {
+		return nil, 0, 0
+	}
+	since := dayStart(time.Now().AddDate(0, 0, -(insightDays - 1)))
+	anime := s.animeNames()
+	out := map[string]map[string]float64{}
+	var direct, trans, total float64
+	for _, mt := range []string{"movie", "episode", "track"} {
+		plays, err := c.History(ctx, mt, since)
+		if err != nil && len(plays) == 0 {
+			if mt == "track" {
+				continue
+			}
+			return nil, 0, 0
+		}
+		for _, p := range plays {
+			if p.StartedAt == nil || p.StartedAt.Before(since) {
+				continue
+			}
+			ms := p.WatchedMs
+			if ms <= 0 {
+				ms = p.ProgressMs
+			}
+			if ms <= 0 && p.DurationMs > 0 {
+				pc := p.Percent
+				if pc <= 0 && p.Watched {
+					pc = 100
+				}
+				ms = int64(float64(p.DurationMs) * pc / 100)
+			}
+			if ms <= 0 {
+				continue
+			}
+			h := float64(ms) / 3.6e6
+			k := streamKind(tracearr.Session{MediaType: p.MediaType, ShowTitle: p.ShowTitle, Genres: p.Genres}, anime)
+			dk := dayKey(*p.StartedAt)
+			if out[dk] == nil {
+				out[dk] = map[string]float64{}
+			}
+			out[dk][k] += h
+			total += h
+			if p.IsTranscode != nil {
+				if *p.IsTranscode {
+					trans += h
+				} else {
+					direct += h
+				}
+			}
+		}
+	}
+	if total == 0 {
+		return nil, 0, 0
+	}
+	return out, direct, trans
 }
