@@ -259,6 +259,7 @@ func main() {
 		go site.Shows.Run(ctx)
 	}
 	go site.RunInsights(ctx)
+	go site.RunPotential(ctx)
 	go rp.Run(ctx)
 	go watch.New(cfg, eng, logger).Run(ctx)
 

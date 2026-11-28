@@ -967,7 +967,7 @@
     d.appendChild(el('b','',b<=a?'Tdarr saved '+gb(a-b):'Tdarr made it '+gb(b-a)+' larger'));d.appendChild(el('span','',gb(a)+' → '+gb(b)+' · '+pct+'% of the original'));d.appendChild(bar);return d}
   // Downloads › Tdarr: what converting has saved, and the cards it runs on.
   function tdarrStatsView(body){
-    var tops=el('div','hv-stats');body.appendChild(tops);var cats=el('div');body.appendChild(cats);var gs=el('div');body.appendChild(gs);var rb=hvBox('Converted lately');var rl=el('div','hv-scroll');rb.appendChild(rl);body.appendChild(rb);
+    var tops=el('div','hv-stats');body.appendChild(tops);var cats=el('div');body.appendChild(cats);var pot=el('div');body.appendChild(pot);potentialBox(pot);var gs=el('div');body.appendChild(gs);var rb=hvBox('Converted lately');var rl=el('div','hv-scroll');rb.appendChild(rl);body.appendChild(rb);
     api('GET','/tdarr/savings').then(function(d){var t=d.total||{};var saved=(t.before||0)-(t.after||0);
       function stat(l,v,tone){var c=el('div','hv-stat'+(tone?' '+tone:''));c.appendChild(el('span','',l));c.appendChild(el('b','',v));tops.appendChild(c)}
       stat('Space saved',gb(saved),'ok');stat('Files converted',String(t.files||0));stat('Before → after',gb(t.before)+' → '+gb(t.after));stat('Average size',t.before?Math.round(t.after/t.before*100)+'% of the original':'—');
@@ -1012,6 +1012,32 @@
         var rl=el('div','hv-scroll');rl.appendChild(rtable(['Download','Why','When'],d.recentFails.map(function(x){var n=el('div');n.appendChild(el('b','',x.name||x.id));if(x.reason)n.appendChild(el('div','hv-note',x.reason));return [n,x.why,ago(x.at)+' ago']})));wb.appendChild(el('h4','','Recent failures'));wb.appendChild(rl)}
     }).catch(fail)}
     chips();load();
+  }
+  // What Tdarr could still save: older-format videos in the library.
+  function potentialBox(host){
+    var box=hvBox('What Tdarr could still save');host.appendChild(box);var inner=el('div');box.appendChild(inner);
+    function load(){api('GET','/tdarr/potential').then(function(d){inner.replaceChildren();
+      if(!d.library){inner.appendChild(el('div','hv-empty','No media library is set (UNDERMYND_STORAGE_ROOT), so the library cannot be scanned.'));return}
+      var top=el('div','hv-acts');var sc=hvBtn(d.running?'Scanning…':'Scan the library now','',function(b){b.disabled=true;api('POST','/tdarr/potential/scan').then(function(){setTimeout(load,1500)})});sc.disabled=!!d.running;top.appendChild(sc);
+      var sm=d.summary;if(sm)top.appendChild(el('span','hv-note','Scanned '+ago(sm.at)+' ago, in '+sm.took+'. It scans again once a day.'));inner.appendChild(top);
+      if(d.running){setTimeout(load,4000)}
+      if(!sm){inner.appendChild(el('div','hv-empty',d.running?'Scanning the library… this can take a while on a large one.':'Not scanned yet.'));return}
+      var keep=d.measured>=5&&d.keep>0?d.keep:0;var est=keep?sm.older.bytes*(1-keep):0;
+      var st=el('div','hv-stats');function stat(l,v,tone){var c=el('div','hv-stat'+(tone?' '+tone:''));c.appendChild(el('span','',l));c.appendChild(el('b','',v));st.appendChild(c)}
+      stat('In older formats',sm.older.files.toLocaleString()+' videos · '+gb(sm.older.bytes));stat('Could free',keep?'about '+gb(est):'—',keep?'ok':'');stat('Already HEVC',sm.hevc.files.toLocaleString()+' · '+gb(sm.hevc.bytes));if(sm.unknown.files)stat('Format not read',sm.unknown.files.toLocaleString()+' · '+gb(sm.unknown.bytes));inner.appendChild(st);
+      inner.appendChild(el('p','hv-note',keep?'Estimated at the size Tdarr has been reaching: '+Math.round(keep*100)+'% of the original, over '+d.measured+' files. HEVC files are not counted; they shrink less.':'The estimate appears once Tdarr has converted a few files (its results so far set how much it is likely to save).'));
+      if(sm.byLibrary&&sm.byLibrary.length){var rows=sm.byLibrary.map(function(g){return [g.name,g.files.toLocaleString(),gb(g.bytes),keep?gb(g.bytes*(1-keep)):'—']});inner.appendChild(rtable(['Library folder','Videos','Size','Could free'],rows))}
+      var lg=d.largest||[];if(!lg.length)return;
+      inner.appendChild(el('h4','','Largest videos in older formats'));
+      var sel={};var acts=el('div','hv-acts');var msg=el('span','msg');var send=hvBtn('Send selected to Tdarr','',function(b){var paths=Object.keys(sel).filter(function(k){return sel[k]});if(!paths.length){msg.textContent='Tick some files first.';return}b.disabled=true;msg.className='msg';msg.textContent='queueing…';
+        api('POST','/reencode',{paths:paths}).then(function(r){msg.className='msg ok';msg.textContent=r.queued+' queued for Tdarr'+(r.skipped&&r.skipped.length?'; '+r.skipped.length+' skipped':'');setTimeout(load,800)}).catch(function(e){b.disabled=false;msg.className='msg err';msg.textContent=e.message})},true);
+      var all=hvBtn('Tick the 20 largest','',function(){lg.filter(function(f){return !f.queued}).slice(0,20).forEach(function(f){sel[f.path]=true});draw()});acts.appendChild(send);acts.appendChild(all);acts.appendChild(msg);inner.appendChild(acts);
+      inner.appendChild(el('p','hv-note','They go through Re-encode: Tdarr converts a copy and the library file is replaced only once the result has passed the checks.'));
+      var lw=el('div','hv-scroll');inner.appendChild(lw);
+      function draw(){lw.replaceChildren(rtable(['','File','Format','Size','Could free'],lg.map(function(f){var cb=el('input');cb.type='checkbox';cb.checked=!!sel[f.path];cb.disabled=f.queued;cb.setAttribute('aria-label','Send '+f.rel);cb.onchange=function(){sel[f.path]=cb.checked};
+        return [cb,f.rel+(f.queued?' (queued)':''),f.codec.toUpperCase(),gb(f.size),keep?gb(f.size*(1-keep)):'—']})))}draw();
+    }).catch(function(e){inner.replaceChildren(el('div','hv-empty',e.message))})}
+    load();
   }
   function gpuLine(g){var p=[];if(g.video>=0)p.push('video '+Math.round(g.video)+'%');if(g.render>=0&&g.vendor!=='amd')p.push('render '+Math.round(g.render)+'%');else if(g.busy>=0&&g.video<0)p.push(Math.round(g.busy)+'% busy');
     if(g.freq>=0)p.push(Math.round(g.freq)+(g.freqMax>0?'/'+Math.round(g.freqMax):'')+' MHz');if(g.power>=0)p.push(Math.round(g.power)+' W');if(g.temp>0)p.push(Math.round(g.temp)+'°C');return p.join(' · ')}
