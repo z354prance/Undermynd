@@ -74,7 +74,7 @@
     var SETTINGS=[['','Getting started',[['start','Getting started']]],
       ['Connections',[['arrs','Sonarr · Radarr · categories','arr sonarr radarr lidarr category categories folders library'],['playback','Media server · Tracearr','emby jellyfin tracearr playback'],['public','Public page · Seerr','seerr requests donate public'],['transcode','Tdarr','tdarr transcode'],['metadata','Metadata','tmdb anime lists']]],
       ['Downloading',[['clients','TorBox','torbox token'],['usenet','Usenet providers','usenet news provider server connections'],['vpn','VPN and torrents','vpn wireguard pia proton mullvad nord torrent port'],['limits','Speed limits','speed limit bandwidth'],['reencode','Re-encode','av1 re-encode']]],
-      ['Server',[['system','Server · sign-in · backups','password backup intake client login'],['log','Log','log']]]];
+      ['Server',[['system','Server · sign-in · backups','password backup intake client login'],['leftovers','Leftover files','leftover orphan clean cleanup disk space delete'],['log','Log','log']]]];
     var SETTING_IDS={};SETTINGS.forEach(function(g){(g[2]||g[1]).forEach(function(p){SETTING_IDS[p[0]]=p})});
     if(tab==='downloaders')tab='torbox';
     function first(p){return p[2]?p[2][0][0]:p[0]}
@@ -117,7 +117,7 @@
     groups.forEach(function(g){var items=g[2]||g[1],title=g[2]?g[0]:g[0];var box=el('div','hv-setgrp');if(title)box.appendChild(el('div','hv-setgh',title.toUpperCase()));
       items.forEach(function(p){var a=el('button','hv-setlink'+(p[0]===tab?' on':''),p[1]);a.type='button';if(p[0]===tab)a.setAttribute('aria-current','page');a.onclick=function(){go(p[0])};a.dataset.k=(p[1]+' '+(p[2]||'')).toLowerCase();links.push(a);box.appendChild(a)});nav.appendChild(box)});
     si.oninput=function(){var q=si.value.trim().toLowerCase();links.forEach(function(a){a.hidden=!!q&&a.dataset.k.indexOf(q)<0});[].forEach.call(nav.querySelectorAll('.hv-setgrp'),function(g){g.hidden=![].some.call(g.querySelectorAll('.hv-setlink'),function(a){return !a.hidden})})};
-    if(tab==='start')startView(main);else if(tab==='usenet')usenetView(main);else if(tab==='vpn')vpnView(main);else if(tab==='reencode')reencodeView(main);else if(tab==='log')logView(main);else if(tab==='limits')limitsView(main);else settingsView(main);
+    if(tab==='start')startView(main);else if(tab==='usenet')usenetView(main);else if(tab==='vpn')vpnView(main);else if(tab==='reencode')reencodeView(main);else if(tab==='log')logView(main);else if(tab==='leftovers')leftoversView(main);else if(tab==='limits')limitsView(main);else settingsView(main);
   }
   function fail(e){if(e.status===401){start()}else{var d=el('div','err',e.message);root.appendChild(d)}}
   function ago(t){var s=Math.max(0,(Date.now()-new Date(t))/1000);if(s<90)return Math.round(s)+'s';if(s<5400)return Math.round(s/60)+'m';if(s<172800)return Math.round(s/3600)+'h';return Math.round(s/86400)+'d'}
@@ -788,6 +788,26 @@
     }).catch(fail)}
   // Settings › Getting started: everything HyveMynd works with, what it is
   // for and whether it is set up here.
+  // Leftover files: what downloads that no longer exist left behind.
+  function leftoversView(body){
+    body.appendChild(head('Leftover files','Folders and files HyveMynd made for downloads that no longer exist: staging, the built-in clients\' folders, Tdarr\'s input and output, the complete folder and saved .nzb and .torrent files. Only things named the way HyveMynd names them are listed, and nothing changed in the last 6 hours.'));
+    var box=el('div');body.appendChild(box);
+    function load(){box.replaceChildren(el('div','hv-note','Looking…'));api('GET','/leftovers').then(function(d){box.replaceChildren();var it=d.items||[];homeCache.left=d;
+      if(!it.length){box.appendChild(el('div','hv-empty','No leftovers. Everything in HyveMynd\'s folders belongs to a current download.'));return}
+      var st=el('div','hv-stats');var c1=el('div','hv-stat');c1.appendChild(el('span','','Taking up'));c1.appendChild(el('b','',gb(d.total)));st.appendChild(c1);var c2=el('div','hv-stat');c2.appendChild(el('span','','Items'));c2.appendChild(el('b','',String(it.length)));st.appendChild(c2);box.appendChild(st);
+      var sel={};var acts=el('div','hv-acts');var msg=el('span','msg');
+      var del=hvBtn('Delete selected','',function(b){var ps=Object.keys(sel).filter(function(k){return sel[k]});if(!ps.length){msg.textContent='Tick something first.';return}
+        var sz=it.filter(function(x){return sel[x.path]}).reduce(function(a,x){return a+x.size},0);if(!confirm('Delete '+ps.length+' item'+(ps.length===1?'':'s')+' ('+gb(sz)+')? This cannot be undone.'))return;b.disabled=true;
+        api('POST','/leftovers/clear',{paths:ps}).then(function(r){msg.className='msg ok';msg.textContent='Deleted '+r.removed+', freed '+gb(r.freed)+(r.skipped&&r.skipped.length?'; '+r.skipped.length+' left alone (in use again or could not be deleted)':'');setTimeout(load,1500)}).catch(function(e){b.disabled=false;msg.className='msg err';msg.textContent=e.message})},true);
+      del.classList.add('bad');
+      var all=hvBtn('Tick all','',function(){var on=!it.every(function(x){return sel[x.path]});it.forEach(function(x){sel[x.path]=on});draw()});
+      acts.appendChild(del);acts.appendChild(all);acts.appendChild(msg);box.appendChild(acts);
+      var tw=el('div','hv-scroll');box.appendChild(tw);
+      function draw(){tw.replaceChildren(rtable(['','Where','Name','Size','Last changed'],it.map(function(x){var cb=el('input');cb.type='checkbox';cb.checked=!!sel[x.path];cb.setAttribute('aria-label','Delete '+x.path);cb.onchange=function(){sel[x.path]=cb.checked};
+        var nm=el('span','hv-lpath',x.path.split('/').pop()+(x.dir?'/':''));nm.title=x.path;return [cb,x.where,nm,gb(x.size),ago(x.changed)+' ago']})))}draw();
+    }).catch(function(e){box.replaceChildren(el('div','err',e.message))})}
+    load();
+  }
   // Test everything: every connection that is set up, tried at once.
   function testAllBox(body){
     var box=hvBox('');box.classList.add('hv-tall');var top=el('div','hv-tallh');var t=el('div');t.appendChild(el('b','','Test everything'));t.appendChild(el('span','hv-note','Tries every connection that is set up, the way each page\'s Test button does, and checks the folders HyveMynd writes to.'));top.appendChild(t);
@@ -892,7 +912,7 @@
     var need=el('section','hv-need');body.appendChild(need);
     var g=el('div','hv-two');var mv=hvBox('Moving now'),fin=hvBox('Just finished');g.appendChild(mv);g.appendChild(fin);body.appendChild(g);
     var tr=el('section','hv-trends');body.appendChild(tr);trendsBox(tr);
-    var sysInfo=homeCache.sys||null,cl=homeCache.cl||null,vp=homeCache.vp||null,reqList=[],music=[],gpus=homeCache.gpus||[];
+    var sysInfo=homeCache.sys||null,cl=homeCache.cl||null,vp=homeCache.vp||null,reqList=[],music=[],gpus=homeCache.gpus||[],lefto=homeCache.left||null;
     function tile(label,line,tone,to){var b=el('button','hv-tile6 '+(tone||'ok'));b.type='button';var h=el('span','hv-th');h.appendChild(el('i'));h.appendChild(document.createTextNode(label));b.appendChild(h);b.appendChild(el('span','hv-tline',line));b.onclick=function(){tab=to;app()};tiles.appendChild(b)}
     function drawTiles(){tiles.replaceChildren();var s=sysInfo;if(!s)return;
       if(s.torbox&&s.torbox.off)tile('TorBox','Off: token kept, nothing new sent','dim','clients');else if(s.torbox&&s.torbox.configured)tile('TorBox',s.torbox.backoffUntil?'New adds paused by TorBox':'Working · '+((s.torbox.used||0)+(s.torbox.torrentUsed||0))+' adds this hour',s.torbox.backoffUntil?'warn':'ok','torbox');else tile('TorBox','Not set up','dim','clients');
@@ -904,9 +924,10 @@
       (gpus||[]).forEach(function(g){var L=g.video>=0?g.video:g.busy;tile('GPU '+(g.slot||g.id),L<0?(g.note||'load unknown'):gpuLine(g),g.overloaded?'bad':L>=90?'warn':L<0?'dim':'ok','transcode')})}
     function needRow(kind,tone,title,why,btns){var r=el('div','hv-needrow '+tone);r.appendChild(el('span','hv-needk',kind));var t=el('div','hv-needt');t.appendChild(el('b','',title));t.appendChild(el('span','',why));r.appendChild(t);var a=el('div','hv-acts');btns.forEach(function(b){a.appendChild(b)});r.appendChild(a);return r}
     function drawNeed(){need.replaceChildren();var jobs=lastRows.filter(function(r){return r.attention&&r.state!=='cleaned'});var nreq=reqList.length+music.length;
-      var nh=jobs.length+(nreq?1:0)+(gpus||[]).filter(function(g){return g.overloaded}).length;var h=el('h2','','Needs you');if(nh)h.appendChild(el('span','hv-n bad',String(nh)));need.appendChild(h);
+      var bigLeft=lefto&&lefto.total>=5e9;var nh=jobs.length+(nreq?1:0)+(bigLeft?1:0)+(gpus||[]).filter(function(g){return g.overloaded}).length;var h=el('h2','','Needs you');if(nh)h.appendChild(el('span','hv-n bad',String(nh)));need.appendChild(h);
       var hot=(gpus||[]).filter(function(g){return g.overloaded});
-      if(!jobs.length&&!nreq&&!hot.length){need.appendChild(el('div','hv-empty','Nothing needs you right now.'));return}
+      if(!jobs.length&&!nreq&&!hot.length&&!bigLeft){need.appendChild(el('div','hv-empty','Nothing needs you right now.'));return}
+      if(bigLeft)need.appendChild(needRow('SPACE','warn',gb(lefto.total)+' in leftover files',lefto.items.length+' folder'+(lefto.items.length===1?'':'s')+' or file'+(lefto.items.length===1?'':'s')+' from downloads that no longer exist.',[hvBtn('Review','',function(){tab='leftovers';app()},true)]));
       hot.forEach(function(g){var L=g.video>=0?g.video:g.busy;var t=sysInfo&&sysInfo.tdarr&&sysInfo.tdarr.api?' Tdarr is running '+sysInfo.tdarr.inFlight+' of '+sysInfo.tdarr.max+' workers; fewer workers on this card would help.':'';
         need.appendChild(needRow('GPU','warn',g.name+' · '+(g.slot||g.id),(g.video>=0?'Video engines':'The card')+' at '+Math.round(L)+'% for '+Math.max(1,Math.round((Date.now()-new Date(g.since))/60000))+' min.'+t,[hvBtn('Tdarr settings','',function(){tab='transcode';app()},true)]))});
       jobs.forEach(function(j){var failed=j.state==='failed';var why=((j.flag?j.flag+' ':'')+(j.reason||'')).trim()||j.state;var btns=[];
@@ -934,7 +955,8 @@
     function draw(){drawHello();drawNeed();drawMoving();drawFin();railCounts(lastRows)}
     function refresh(){loadReqs().then(function(l){reqList=l||[];music=(reqMusic||[]).concat(reqBooks||[]);setReqBadge(reqList.length+music.length);draw()})}
     function poll(){api('GET','/jobs').then(function(d){lastRows=Array.isArray(d)?d:(d.jobs||[]);draw()}).catch(fail)}
-    function pollSys(){Promise.all([api('GET','/system').catch(function(){return null}),api('GET','/clients').catch(function(){return null}),api('GET','/vpn').catch(function(){return null}),api('GET','/gpus').catch(function(){return null})]).then(function(x){sysInfo=x[0]||sysInfo;cl=x[1]||cl;vp=x[2]||vp;if(x[3])gpus=x[3].cards||[];homeCache={sys:sysInfo,cl:cl,vp:vp,gpus:gpus};drawTiles();drawNeed()})}
+    function pollSys(){Promise.all([api('GET','/system').catch(function(){return null}),api('GET','/clients').catch(function(){return null}),api('GET','/vpn').catch(function(){return null}),api('GET','/gpus').catch(function(){return null})]).then(function(x){sysInfo=x[0]||sysInfo;cl=x[1]||cl;vp=x[2]||vp;if(x[3])gpus=x[3].cards||[];homeCache={sys:sysInfo,cl:cl,vp:vp,gpus:gpus,left:lefto};drawTiles();drawNeed()})}
+    function pollLeft(){api('GET','/leftovers').then(function(d){lefto=d;homeCache.left=d;drawNeed()}).catch(function(){})}pollLeft();var leftT=setInterval(function(){if(tab!=='overview'){clearInterval(leftT);return}pollLeft()},300000);
     drawTiles();poll();pollSys();refresh();timer=setInterval(function(){if(tab!=='overview')return;poll();pollSys();refresh()},5000);
     softReload=function(){poll();pollSys();refresh()};
   }
@@ -979,7 +1001,7 @@
     if(tab==='transcode'){var gs=el('div');var first=body.querySelector('.hv-erows');if(first&&first.nextSibling)body.insertBefore(gs,first.nextSibling);else body.appendChild(gs);gpuSection(gs)}
     else if(tab!=='system'&&tab!=='rss')split(body);
   }
-  function gb(b){b=b||0;var a=Math.abs(b);return a>=1099511627776?(b/1099511627776).toFixed(2)+' TB':a>=1073741824?(b/1073741824).toFixed(2)+' GB':Math.round(b/1048576)+' MB'}
+  function gb(b){b=b||0;var a=Math.abs(b);return a>=1099511627776?(b/1099511627776).toFixed(2)+' TB':a>=1073741824?(b/1073741824).toFixed(2)+' GB':a>=1048576||!a?Math.round(b/1048576)+' MB':Math.max(1,Math.round(b/1024))+' KB'}
   function savedLine(a,b){var d=el('div','hv-saved');var pct=a?Math.round(b/a*100):0;var bar=el('div','hv-savebar');var f=el('span');f.style.width=Math.min(100,pct)+'%';bar.appendChild(f);
     d.appendChild(el('b','',b<=a?'Tdarr saved '+gb(a-b):'Tdarr made it '+gb(b-a)+' larger'));d.appendChild(el('span','',gb(a)+' → '+gb(b)+' · '+pct+'% of the original'));d.appendChild(bar);return d}
   // Downloads › Tdarr: what converting has saved, and the cards it runs on.
@@ -999,7 +1021,7 @@
   }
   // Downloads › Reports: providers, indexers, clients and why downloads fail.
   function rtable(cols,rows){var wrap=el('div','hv-twrap');var t=el('table','hv-table');var hd=el('thead');var hr=el('tr');cols.forEach(function(c){var th=el('th','',c);th.scope='col';hr.appendChild(th)});hd.appendChild(hr);t.appendChild(hd);var bd=el('tbody');
-    rows.forEach(function(r){var tr=el('tr');r.forEach(function(v,i){var td=el('td');if(v&&v.nodeType)td.appendChild(v);else td.textContent=v==null?'':String(v);if(i===0)td.className='hv-tname';tr.appendChild(td)});bd.appendChild(tr)});t.appendChild(bd);wrap.appendChild(t);return wrap}
+    rows.forEach(function(r){var tr=el('tr');r.forEach(function(v,i){var td=el('td');if(v&&v.nodeType)td.appendChild(v);else td.textContent=v==null?'':String(v);if(i===0)td.className=v&&v.tagName==='INPUT'?'hv-tcheck':'hv-tname';tr.appendChild(td)});bd.appendChild(tr)});t.appendChild(bd);wrap.appendChild(t);return wrap}
   function pct(x){return x==null?'—':Math.round(x*100)+'%'}
   function rateBar(x){var w=el('span','hv-rate');var b=el('i');b.style.width=Math.round((x||0)*100)+'%';b.style.background=x>=.9?'var(--ok,#3fb950)':x>=.7?'#e3b341':'#f05454';w.appendChild(b);var t=el('span','');t.textContent=' '+pct(x);var d=el('span');d.appendChild(w);d.appendChild(t);return d}
   function reportsView(body){
