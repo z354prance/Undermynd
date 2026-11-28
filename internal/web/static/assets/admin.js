@@ -1131,6 +1131,14 @@
     tb.onclick=function(){tm.className='msg';tm.textContent='testing…';api('POST','/playback/test',{tracearrUrl:tu.value,tracearrKey:tk.value,embyUrl:eu.value,embyKey:ek.value}).then(function(r){tm.className='msg ok';tm.textContent=[r.tracearr?'Tracearr ok':'',r.emby?'Emby ok: '+r.emby:''].filter(Boolean).join(' · ')||'nothing to test'}).catch(function(e){tm.className='msg err';tm.textContent=e.message})};
     c2.appendChild(tb);c2.appendChild(tm);body.appendChild(c2);
     var ps=el('p','hint','last poll: checking…');body.appendChild(ps);api('GET','/playback/status').then(function(r){ps.textContent='last poll: '+r.status}).catch(function(){ps.textContent='last poll: unknown'});
+    var ic=el('div','card');var ih=el('div','');ih.style.cssText='font-weight:700;font-size:16px;margin-bottom:6px';ih.appendChild(document.createTextNode('Public storage panel '));var ichip=chip(true,'…');ih.appendChild(ichip);ic.appendChild(ih);
+    ic.appendChild(help('What the storage ring\'s panel last read from Emby, Tracearr and the arrs. It reads again every 30 minutes.'));
+    var ipre=el('pre','hv-log');ipre.style.maxHeight='260px';ipre.style.overflow='auto';ic.appendChild(ipre);
+    var ib=el('button','','Read now');ic.appendChild(ib);body.appendChild(ic);
+    var itimer=null;
+    function iload(){api('GET','/insights/status').then(function(st){ipre.textContent=(st.notes||[]).join('\n')||'Not read yet.';ichip.textContent=st.running?'reading…':st.finished&&st.finished[0]!=='0'?'read '+new Date(st.finished).toLocaleTimeString():'not read yet';ichip.className='chip2 '+(st.running?'dim':'ok');ib.disabled=!!st.running;
+      clearTimeout(itimer);if(st.running&&document.body.contains(ipre))itimer=setTimeout(iload,3000)}).catch(function(){ipre.textContent='unknown'})}
+    ib.onclick=function(){ib.disabled=true;api('POST','/insights/refresh').then(function(){setTimeout(iload,800)})};iload();
     var rf=row(g2,'tell the media server about new files',{type:'checkbox',value:!!P.refreshAfterPlace,help:'Off by default: Emby and Jellyfin find new files on their own. On: each file the simple importer places is announced so it shows up at once.'});
     var pf=row(g2,'path here',{value:P.pathFrom||'',ph:'/media',help:'Only when the media server sees the library under another path.'});var pt=row(g2,'path on the media server',{value:P.pathTo||'',ph:'/mnt/user/media'});
     saveBar(body,function(m){save(function(b){b.playback={tracearrUrl:tu.value,tracearrKey:tk.value,embyUrl:eu.value,embyKey:ek.value,hiddenLibraries:hl.value,refreshAfterPlace:rf.checked,pathFrom:pf.value,pathTo:pt.value}},m).then(function(){pane(body)})})
