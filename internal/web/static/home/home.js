@@ -11,7 +11,7 @@
     return fetch(path, { method: opts.method || "GET", headers: h, body: opts.body ? JSON.stringify(opts.body) : undefined, credentials: "same-origin" })
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { if (!r.ok) { var e = new Error(d.error || d.message || ("HTTP " + r.status)); e.status = r.status; throw e; } return d; }); });
   }
-  function mediaColor(kind) { return { tv: "var(--tv)", series: "var(--tv)", episode: "var(--tv)", movie: "var(--movie)", anime: "var(--anime)", music: "var(--music)", track: "var(--music)", album: "var(--music)" }[kind] || "var(--tv)"; }
+  function mediaColor(kind) { return { tv: "var(--tv)", series: "var(--tv)", episode: "var(--tv)", movie: "var(--movie)", anime: "var(--anime)", music: "var(--music)", track: "var(--music)", album: "var(--music)", book: "var(--book)" }[kind] || "var(--tv)"; }
   function fmtDur(ms) { var m = Math.round(ms / 60000); return m >= 60 ? Math.floor(m / 60) + "h " + (m % 60) + "m" : m + "m"; }
   function fmtSize(b) { if (!b) return "0 B"; var u = ["B", "KB", "MB", "GB", "TB", "PB"], i = 0; while (b >= 1024 && i < 5) { b /= 1024; i++; } return b.toFixed(i > 2 ? 1 : 0) + " " + u[i]; }
   function ago(t) { var s = Math.max(0, (Date.now() - new Date(t)) / 1000); if (s < 90) return "just now"; if (s < 5400) return Math.round(s / 60) + " min ago"; if (s < 172800) return Math.round(s / 3600) + " h ago"; return Math.round(s / 86400) + " days ago"; }
@@ -277,7 +277,7 @@
   }
 
   // ------------------------------------------------------------ storage ring
-  function libKind(name) { var n = name.toLowerCase(); if (/anime/.test(n)) return "anime"; if (/movie|film/.test(n)) return "movie"; if (/music|audio/.test(n)) return "music"; if (/tv|show|series/.test(n)) return "tv"; return ""; }
+  function libKind(name) { var n = name.toLowerCase(); if (/anime/.test(n)) return "anime"; if (/movie|film/.test(n)) return "movie"; if (/book/.test(n)) return "book"; if (/music|audio/.test(n)) return "music"; if (/tv|show|series/.test(n)) return "tv"; return ""; }
   var storage = null;
   function ring() {
     api("/api/v1/storage").then(function (d) {
@@ -290,16 +290,97 @@
       $("ringBtn").setAttribute("aria-label", "Storage: " + (total ? Math.round(100 * (d.free_bytes || 0) / total) + "% free. " : "") + "Show details");
     }).catch(function () { });
   }
+  // The storage panel (pinned v5): trends on the left, the library on the right.
+  var KINDS = ["tv", "anime", "movie", "music", "book"], DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  function stackBars(days, val) {
+    var W = 358, H = 52, gap = 5, n = days.length, bw = (W - gap * (n - 1)) / n;
+    var mx = Math.max.apply(null, days.map(function (d) { return KINDS.reduce(function (t, k) { return t + (val(d)[k] || 0); }, 0); })) || 1;
+    var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", height: H, role: "img" });
+    days.forEach(function (d, i) {
+      var x = i * (bw + gap), y = H - 16;
+      KINDS.forEach(function (k) { var v = val(d)[k] || 0; if (!v) return; var h = v / mx * (H - 22); y -= h; svg.appendChild(svgEl("rect", { x: x.toFixed(1), y: y.toFixed(1), width: bw.toFixed(1), height: h.toFixed(1), rx: 1.5, fill: mediaColor(k) })); });
+      var t = svgEl("text", { x: (x + bw / 2).toFixed(1), y: H - 3, "text-anchor": "middle", "font-size": 11, fill: "#a0a4a8" }); t.textContent = DAYS[new Date(d.date + "T12:00:00").getDay()]; svg.appendChild(t);
+    });
+    return svg;
+  }
+  function insCard(label, value) { var c = el("div", "ins-card"); var h = el("div", "ins-ch"); h.appendChild(el("span", "", label)); if (value != null) h.appendChild(el("b", "mono", value)); c.appendChild(h); return c; }
+  function splitBar(parts, label) {
+    var w = el("div"); var bar = el("div", "ins-split"); bar.setAttribute("role", "img"); bar.setAttribute("aria-label", label + ": " + parts.map(function (p) { return p[0] + " " + p[1] + "%"; }).join(", "));
+    parts.forEach(function (p) { var s = el("span"); s.style.width = p[1] + "%"; s.style.background = p[2]; bar.appendChild(s); }); w.appendChild(bar);
+    var leg = el("div", "ins-leg"); parts.forEach(function (p) { var i = el("span"); var sw = el("i"); sw.style.background = p[2]; i.appendChild(sw); i.appendChild(document.createTextNode(p[0] + " ")); i.appendChild(el("b", "mono", p[1] + "%")); leg.appendChild(i); }); w.appendChild(leg);
+    return w;
+  }
+  function drawTrends(box, d) {
+    box.replaceChildren(); var h = el("div", "ins-h"); h.appendChild(el("h3", "", "Trends")); h.appendChild(el("span", "ins-note", "last " + d.days.length + " days")); box.appendChild(h);
+    var added = d.days.reduce(function (t, x) { return t + KINDS.reduce(function (a, k) { return a + (x.added[k] || 0); }, 0); }, 0);
+    var c1 = insCard("ADDED", String(added)); var s1 = stackBars(d.days, function (x) { return x.added; }); s1.setAttribute("aria-label", "Added per day, by library"); c1.appendChild(s1); box.appendChild(c1);
+    var hours = d.days.reduce(function (t, x) { return t + KINDS.reduce(function (a, k) { return a + (x.watchHours[k] || 0); }, 0); }, 0);
+    var c2 = insCard("WATCHED", d.watchKnown ? Math.round(hours) + " h" : null);
+    if (!d.watchKnown) c2.appendChild(el("p", "ins-empty", "Tracearr is not set up."));
+    else {
+      var s2 = stackBars(d.days, function (x) { return x.watchHours; }); s2.setAttribute("aria-label", "Hours watched per day, by library"); c2.appendChild(s2);
+      if (d.play.direct + d.play.transcode > 0) { var dp = Math.round(d.play.direct * 100); c2.appendChild(el("div", "ins-sub", "How it plays")); c2.appendChild(splitBar([["Direct play", dp, "var(--ok)"], ["Transcoded", 100 - dp, "var(--st-convert)"]], "How it plays")); }
+    }
+    box.appendChild(c2);
+    var t = d.tdarr; var c3 = insCard("SPACE SAVED BY TDARR", null); c3.querySelector(".ins-ch").appendChild(el("span", "ins-note", "all time"));
+    if (!t || !t.files) c3.appendChild(el("p", "ins-empty", "Nothing converted yet."));
+    else {
+      var kept = t.after, saved = Math.max(0, t.before - t.after), kp = t.before ? Math.max(1, Math.round(kept / t.before * 100)) : 0;
+      var bar = el("div", "ins-tdarr"); bar.setAttribute("role", "img"); bar.setAttribute("aria-label", "Of " + fmtSize(t.before) + " converted, " + fmtSize(kept) + " kept and " + fmtSize(saved) + " saved");
+      var a = el("span", "kept"); a.style.width = kp + "%"; bar.appendChild(a); bar.appendChild(el("span", "saved")); c3.appendChild(bar);
+      var lg = el("div", "ins-leg spread"); var l1 = el("span"); var i1 = el("i"); i1.style.background = "var(--st-convert)"; l1.appendChild(i1); l1.appendChild(document.createTextNode("Kept ")); l1.appendChild(el("b", "mono", fmtSize(kept)));
+      var l2 = el("span"); var i2 = el("i"); i2.style.background = "#3a7a45"; l2.appendChild(i2); l2.appendChild(document.createTextNode("Saved ")); l2.appendChild(el("b", "mono good", fmtSize(saved))); lg.appendChild(l1); lg.appendChild(l2); c3.appendChild(lg);
+      c3.appendChild(el("p", "ins-foot", fmtSize(t.before) + " went into Tdarr across " + t.files + " file" + (t.files === 1 ? "" : "s")));
+    }
+    box.appendChild(c3);
+  }
+  function countCell(v, unit, shade, kind) { var c = el("span", "ins-c"); var n = el("b", "mono", v.toLocaleString()); n.style.color = shade ? "color-mix(in srgb, " + mediaColor(kind) + " " + (100 - shade) + "%, #fff)" : mediaColor(kind); c.appendChild(n); c.appendChild(document.createTextNode(" " + unit)); return c; }
+  function countsRow(kind, c) {
+    if (!c) return null; var r = el("div", "ins-counts");
+    if (kind === "movie") { if (!c.movies) return null; r.appendChild(el("span")); r.appendChild(countCell(c.movies, "movies", 0, kind)); r.appendChild(el("span")); return r; }
+    if (kind === "book") { if (!c.ebooks && !c.audiobooks) return null; r.className = "ins-counts six"; var a = countCell(c.ebooks || 0, "ebooks", 0, kind), b = countCell(c.audiobooks || 0, "audiobooks", 0, kind); a.className += " l"; b.className += " r"; r.appendChild(a); r.appendChild(b); return r; }
+    var cells = kind === "music" ? [[c.artists, "artists"], [c.albums, "albums"], [c.tracks, "tracks"]] : [[c.shows, "shows"], [c.seasons, "seasons"], [c.episodes, "episodes"]];
+    if (!cells.some(function (x) { return x[0]; })) return null;
+    cells.forEach(function (x, i) { r.appendChild(countCell(x[0] || 0, x[1], [0, 38, 68][i], kind)); }); return r;
+  }
+  function drawLibrary(box, d) {
+    box.replaceChildren(); var h = el("div", "ins-h"); h.appendChild(el("h3", "", "Library"));
+    if (storage && storage.free_bytes != null && storage.total_bytes) { var f = el("span", "ins-note"); f.appendChild(el("b", "mono", fmtSize(storage.free_bytes))); f.appendChild(document.createTextNode(" free of " + fmtSize(storage.total_bytes))); h.appendChild(f); }
+    box.appendChild(h);
+    if (!storage || !storage.enabled) { box.appendChild(el("p", "ins-empty", "Storage is not measured.")); return; }
+    var cats = storage.categories || [], used = cats.reduce(function (n, c) { return n + (c.bytes || 0); }, 0), total = storage.total_bytes || used + (storage.free_bytes || 0), seen = {};
+    cats.forEach(function (c) {
+      var k = libKind(c.name), b = el("div", "ins-lib"), top = el("div", "lib"); var sw = el("span", "sw"); sw.style.background = k ? mediaColor(k) : "#8f959c"; top.appendChild(sw); top.appendChild(el("span", "n", c.name));
+      top.appendChild(el("span", "v", c.bytes == null ? "…" : fmtSize(c.bytes) + (total ? " · " + Math.round(100 * c.bytes / total) + "%" : ""))); b.appendChild(top);
+      if (d && k && !seen[k]) { seen[k] = true; var r = countsRow(k, (d.library || {})[k]); if (r) b.appendChild(r); }
+      box.appendChild(b);
+    });
+    if (d) drawBottom(box, d);
+  }
+  function drawBottom(box, d) {
+    var picks = d.picks || [], u = d.upgrades || {};
+    if (!picks.length && !u.episodes && !u.movies && !(u.share >= 0)) return;
+    var row = el("div", "ins-bottom");
+    if (picks.length) {
+      var pk = el("div", "ins-pick"), i = 0; var ph = el("div", "ins-ph"); ph.appendChild(el("span", "", "TONIGHT"));
+      var sh = el("button", "ins-shuf"); sh.type = "button"; sh.setAttribute("aria-label", "Pick something else"); sh.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>';
+      ph.appendChild(sh); pk.appendChild(ph); var body = el("div"); pk.appendChild(body);
+      var show = function () { var x = picks[i % picks.length]; body.replaceChildren(); var art = x.poster ? el("img", "ins-poster") : el("div", "ins-poster"); if (x.poster) { art.src = x.poster; art.alt = ""; art.loading = "lazy"; } else art.style.background = "linear-gradient(160deg,color-mix(in srgb," + mediaColor(x.kind) + " 35%,transparent),#303336)"; body.appendChild(art);
+        body.appendChild(el("div", "ins-pt", x.title)); body.appendChild(el("div", "ins-pm", [x.year || "", x.unwatched ? "unwatched" : (x.kind === "tv" ? "show" : "movie")].filter(Boolean).join(" · "))); };
+      sh.onclick = function (e) { e.stopPropagation(); i++; show(); }; show(); if (picks.length < 2) sh.hidden = true; row.appendChild(pk);
+    }
+    var up = el("div", "ins-up"); var uh = el("div", "ins-h small"); uh.appendChild(el("h4", "", "Upgrades")); uh.appendChild(el("span", "ins-note", "last " + d.days.length + " days")); up.appendChild(uh);
+    var cr = el("div", "ins-counts two"); var e1 = el("span", "ins-c"); e1.appendChild(el("b", "mono good", String(u.episodes || 0))); e1.appendChild(document.createTextNode(" episodes")); var e2 = el("span", "ins-c"); e2.appendChild(el("b", "mono good", String(u.movies || 0))); e2.appendChild(document.createTextNode(" movies")); cr.appendChild(e1); cr.appendChild(e2); up.appendChild(cr);
+    if (u.share >= 0) { var pc = Math.round(u.share * 100); up.appendChild(el("div", "ins-sub", "Library at the better quality")); var q = el("div", "ins-split q"); q.setAttribute("role", "img"); q.setAttribute("aria-label", pc + "% upgraded, " + (100 - pc) + "% not yet"); var g = el("span"); g.style.width = pc + "%"; g.style.background = "#7ee08a"; q.appendChild(g); var rest = el("span"); rest.style.flex = "1"; rest.style.background = "var(--line)"; q.appendChild(rest); up.appendChild(q);
+      var lg = el("div", "ins-leg spread"); var a = el("span"); a.appendChild(el("b", "mono good", pc + "%")); a.appendChild(document.createTextNode(" upgraded")); var b = el("span"); b.appendChild(el("b", "mono", (100 - pc) + "%")); b.appendChild(document.createTextNode(" not yet")); lg.appendChild(a); lg.appendChild(b); up.appendChild(lg); }
+    row.appendChild(up); box.appendChild(row);
+  }
   function storagePop() {
     var p = $("storagePop"); if (!p.hidden) { p.hidden = true; $("ringBtn").setAttribute("aria-expanded", "false"); return; }
-    p.replaceChildren(); p.appendChild(el("h3", "", "Storage"));
-    if (!storage || !storage.enabled) p.appendChild(el("p", "empty", "Storage is not measured."));
-    else {
-      var cats = storage.categories || [], used = cats.reduce(function (n, c) { return n + (c.bytes || 0); }, 0), total = storage.total_bytes || used + (storage.free_bytes || 0);
-      cats.forEach(function (c) { var r = el("div", "lib"); var sw = el("span", "sw"); sw.style.background = libKind(c.name) ? mediaColor(libKind(c.name)) : "#8f959c"; r.appendChild(sw); r.appendChild(el("span", "n", c.name)); r.appendChild(el("span", "v", c.bytes == null ? "…" : fmtSize(c.bytes) + (total ? " · " + Math.round(100 * c.bytes / total) + "%" : ""))); p.appendChild(r); });
-      var f = el("div", "foot"); if (storage.free_bytes != null) f.appendChild(el("span", "", fmtSize(storage.free_bytes) + " free of " + fmtSize(storage.total_bytes)));
-      f.appendChild(el("span", "", storage.scanning ? "Scanning now" : "Last scan " + ago(storage.updated_at))); p.appendChild(f);
-    }
+    p.replaceChildren(); p.classList.add("ins");
+    var left = el("section", "ins-left"), right = el("section", "ins-right"); left.setAttribute("aria-label", "Trends"); right.setAttribute("aria-label", "Library");
+    left.appendChild(el("p", "ins-empty", "Loading…")); p.appendChild(left); p.appendChild(right); drawLibrary(right, null);
+    api("/api/v1/insights").then(function (d) { drawTrends(left, d); drawLibrary(right, d); }).catch(function () { left.replaceChildren(el("p", "ins-empty", "Trends are unavailable right now.")); });
     p.hidden = false; $("ringBtn").setAttribute("aria-expanded", "true");
   }
   $("ringBtn").onclick = storagePop;

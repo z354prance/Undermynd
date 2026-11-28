@@ -258,6 +258,7 @@ func main() {
 		rp.Claim = site.Shows.Claims
 		go site.Shows.Run(ctx)
 	}
+	go site.RunInsights(ctx)
 	go rp.Run(ctx)
 	go watch.New(cfg, eng, logger).Run(ctx)
 
