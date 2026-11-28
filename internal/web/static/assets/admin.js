@@ -1455,6 +1455,28 @@
     showFeeds();
   }
 
+  // Settings backup and restore: one file locked with a passphrase.
+  function backupCard(){
+    var c=el('div','card hv-bkp');c.appendChild(el('h4','','Back up and restore settings'));
+    c.appendChild(help('Saves every setting, API keys and passwords included, as one file locked with a passphrase you choose, so you can keep it anywhere and bring it back here or on a new install. The sign-in password and the download history are not in it. Without the passphrase the file cannot be opened, and it cannot be recovered.'));
+    var g=el('div','hv-bkpg');c.appendChild(g);
+    var ex=el('div','hv-bkpc');ex.appendChild(el('b','','Back up'));var p1=el('input');p1.type='password';p1.placeholder='Passphrase (8 or more characters)';p1.autocomplete='new-password';p1.setAttribute('aria-label','Passphrase for the backup');var p2=el('input');p2.type='password';p2.placeholder='Passphrase again';p2.autocomplete='new-password';p2.setAttribute('aria-label','Passphrase again');ex.appendChild(p1);ex.appendChild(p2);
+    var em=el('span','msg');var eb=hvBtn('Download settings file','dl',function(b){em.className='msg err';if(p1.value.length<8){em.textContent='Use at least 8 characters.';return}if(p1.value!==p2.value){em.textContent='The two passphrases differ.';return}b.disabled=true;em.className='msg';em.textContent='Locking…';
+      api('POST','/settings/export',{passphrase:p1.value}).then(function(f){var blob=new Blob([JSON.stringify(f,null,1)],{type:'application/json'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='hyvemynd-settings-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},1000);
+        b.disabled=false;p1.value='';p2.value='';em.className='msg ok';em.textContent='Saved. Keep the passphrase somewhere safe.'}).catch(function(e){b.disabled=false;em.className='msg err';em.textContent=e.message})},true);
+    var ea=el('div','hv-acts');ea.appendChild(eb);ea.appendChild(em);ex.appendChild(ea);g.appendChild(ex);
+    var im=el('div','hv-bkpc');im.appendChild(el('b','','Restore'));var fi=el('input');fi.type='file';fi.accept='.json,application/json';fi.setAttribute('aria-label','Settings file');var ip=el('input');ip.type='password';ip.placeholder='The file\'s passphrase';ip.autocomplete='off';ip.setAttribute('aria-label','The file\'s passphrase');im.appendChild(fi);im.appendChild(ip);
+    var out=el('div','hv-bkpo');var imsg=el('span','msg');var fileData=null;
+    fi.onchange=function(){out.replaceChildren();fileData=null;var f=fi.files&&fi.files[0];if(!f)return;var rd=new FileReader();rd.onload=function(){try{fileData=JSON.parse(rd.result)}catch(x){imsg.className='msg err';imsg.textContent='That is not a HyveMynd settings file.'}};rd.readAsText(f)};
+    function send(apply,b){if(!fileData){imsg.className='msg err';imsg.textContent='Choose the settings file first.';return}b.disabled=true;imsg.className='msg';imsg.textContent=apply?'Restoring…':'Opening…';
+      return api('POST','/settings/import',{file:fileData,passphrase:ip.value,apply:apply}).then(function(d){b.disabled=false;imsg.textContent='';out.replaceChildren();
+        if(d.applied){out.appendChild(el('div','msg ok','Restored. The settings you had are kept in '+(d.savedOld||'the config folder')+'. Restart HyveMynd so every part picks up the change.'));ip.value='';fileData=null;fi.value='';return}
+        out.appendChild(el('p','','Made '+new Date(d.created).toLocaleString()+'. '+(d.changes.length?'Restoring it changes:':'It holds the same settings you have now.')));
+        if(d.changes.length){var ul=el('ul','hv-bkpl');d.changes.forEach(function(x){ul.appendChild(el('li','',x))});out.appendChild(ul);
+          var go=hvBtn('Restore these settings','',function(bb){if(!confirm('Replace your settings with the ones in this file?'))return;send(true,bb)},true);go.classList.add('bad');out.appendChild(go)}
+      }).catch(function(e){b.disabled=false;imsg.className='msg err';imsg.textContent=e.message})}
+    var ib=hvBtn('Open the file','',function(b){send(false,b)});var ia=el('div','hv-acts');ia.appendChild(ib);ia.appendChild(imsg);im.appendChild(ia);im.appendChild(out);g.appendChild(im);
+    return c}
   function systemPane(body){
     body.appendChild(head('Server','What the pipeline is doing right now, the login the arrs use, and timing.'));
     var libErr=el('div');body.appendChild(libErr);
@@ -1478,6 +1500,7 @@
         if(p[1].totalBytes){var f=el('div','kv');f.appendChild(el('span','k','free on this disk'));f.appendChild(el('span','v',bytes(p[1].freeBytes)+' of '+bytes(p[1].totalBytes)));c.appendChild(f)}g.appendChild(c)});
       live.appendChild(g)}).catch(fail)}
     drawSystem();timer=setInterval(function(){if(tab==='system')drawSystem()},5000);
+    body.appendChild(backupCard());
     var c=el('div','card');c.appendChild(el('h4','','Client login for the arrs'));
     c.appendChild(help('Used as the qBittorrent login, and the password is also the SABnzbd API key. It is never shown again; generate a new one to see it once.'));
     var u=el('div','kv');u.appendChild(el('span','k','username'));u.appendChild(el('span','v',S.clientUser));c.appendChild(u);
