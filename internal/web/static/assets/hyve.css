@@ -605,3 +605,16 @@ body.ui .hv-gss.ok{color:var(--ok);border-color:rgba(78,201,176,.35)}body.ui .hv
 body.ui .hv-gsw{font-size:11.5px;color:#6b7075;white-space:nowrap}
 body.ui .hv-gse{padding:14px 10px;color:#8f959c;font-size:13px}
 @media (max-width:760px){body.ui .hv-gsin{width:auto;max-width:none}body.ui .hv-gsin kbd{display:none}body.ui .hv-gs{flex:1 1 100%;order:5}body.ui .hv-gsp{left:0;right:0;width:auto}}
+
+/* Test everything (Getting started) */
+body.ui .hv-tall{margin:4px 0 22px}
+body.ui .hv-tallh{display:flex;align-items:center;gap:16px}body.ui .hv-tallh>div{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}body.ui .hv-tallh b{font-size:15px}
+body.ui .hv-tallr:not(:empty){margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+body.ui .hv-tallsum{font-weight:600;margin-bottom:6px}body.ui .hv-tallsum.t-ok{color:var(--ok)}body.ui .hv-tallsum.t-warn{color:var(--warn)}body.ui .hv-tallsum.t-bad{color:var(--bad)}
+body.ui .hv-tallg{font-size:11px;letter-spacing:.06em;color:#6b7075;margin:12px 0 4px}
+body.ui .hv-tallrow{display:flex;align-items:center;gap:12px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+body.ui .hv-tallrow>i{width:9px;height:9px;border-radius:50%;flex:none;background:var(--ok)}body.ui .hv-tallrow.t-warn>i{background:var(--warn)}body.ui .hv-tallrow.t-bad>i{background:var(--bad)}
+body.ui .hv-tallt{display:flex;flex-direction:column;min-width:0;flex:1}body.ui .hv-tallt span{font-size:12.5px;color:#9aa0a6;overflow-wrap:anywhere}
+body.ui .hv-tallrow.t-bad .hv-tallt span{color:var(--bad)}body.ui .hv-tallrow.t-warn .hv-tallt span{color:var(--warn)}
+body.ui .hv-tallms{font-size:11.5px;color:#6b7075;white-space:nowrap}
+@media (max-width:760px){body.ui .hv-tallh{flex-direction:column;align-items:stretch}body.ui .hv-tallms{display:none}}
