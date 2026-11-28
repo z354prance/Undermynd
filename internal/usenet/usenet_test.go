@@ -886,3 +886,42 @@ func TestDeadReleaseFailsFast(t *testing.T) {
 		t.Fatalf("%d articles downloaded; none should be", srv.served.Load())
 	}
 }
+
+// The report card counts, per provider, what it served, what it lacked and
+// what only it had.
+func TestProviderReports(t *testing.T) {
+	secret.SetKeyForTest(make([]byte, 32))
+	data := randBytes(100 << 10)
+	rel := makeRelease(map[string][]byte{"x.mkv": data}, 10<<10, func(n string) string { return n })
+	partial := map[string][]byte{}
+	n := 0
+	for id, b := range rel.articles {
+		if n%10 != 0 {
+			partial[id] = b
+		}
+		n++
+	}
+	a := startNews(t, partial, "")
+	b := startNews(t, rel.articles, "")
+	cfg := config.Usenet{Servers: []config.NewsServer{a.cfg("A", 0), b.cfg("B", 1)}}
+	d := &Downloader{Cfg: func() config.Usenet { return cfg }, Dir: t.TempDir(), State: &blobs{}}
+	defer d.closePools()
+	tk := fetchTask(t, d, rel.nzb)
+	if _, err := d.fetch(context.Background(), tk); err != nil {
+		t.Fatal(err)
+	}
+	reps := d.ProviderReports(30)
+	byName := map[string]ProviderReport{}
+	for _, r := range reps {
+		byName[r.Name] = r
+	}
+	ra, rb := byName[a.cfg("A", 0).Label()], byName[b.cfg("B", 1).Label()]
+	if ra.Missing == 0 || rb.Rescued == 0 || rb.Rescued != ra.Missing || ra.Articles == 0 || ra.Share <= rb.Share {
+		t.Fatalf("A %+v B %+v", ra, rb)
+	}
+	d.saveProvStats()
+	d2 := &Downloader{Cfg: d.Cfg, Dir: d.Dir, State: d.State}
+	if r := d2.ProviderReports(30); len(r) != 2 || r[0].Articles == 0 {
+		t.Fatalf("after a restart: %+v", r)
+	}
+}

@@ -148,6 +148,7 @@ type Downloader struct {
 	pools   []*pool
 	poolKey string
 	speed   atomic.Int64 // bytes in the last second
+	pstats  provStats
 	once    sync.Once
 	postSem chan struct{}
 	lim     *rate.Limiter
@@ -731,11 +732,16 @@ func (d *Downloader) meter(ctx context.Context) {
 	tk := time.NewTicker(time.Second)
 	defer tk.Stop()
 	var last int64
+	n := 0
 	for {
 		select {
 		case <-ctx.Done():
+			d.saveProvStats()
 			return
 		case <-tk.C:
+		}
+		if n++; n%60 == 0 {
+			d.saveProvStats()
 		}
 		var now int64
 		d.mu.Lock()
@@ -829,9 +835,11 @@ var errAllDown = errors.New("no usenet provider could be reached")
 // skipped; a broken connection is retried once.
 func (d *Downloader) fetchArticle(ctx context.Context, tiers [][]*pool, id string, turn int) ([]byte, int, error) {
 	reached := false
+	lacked := false // a provider before this one did not have it
 	for ti, tier := range tiers {
 		for k := range tier {
 			p := tier[(turn+k)%len(tier)]
+			name := p.srv.Label()
 			for try := 0; try < 2; try++ {
 				c, err := p.get(ctx)
 				if err != nil {
@@ -841,17 +849,30 @@ func (d *Downloader) fetchArticle(ctx context.Context, tiers [][]*pool, id strin
 					break // this provider is down: next one
 				}
 				var buf bytes.Buffer
+				started := time.Now()
 				err = c.body(id, &buf)
+				took := time.Since(started).Seconds()
 				if err == nil {
 					p.put(c, true)
+					n := int64(buf.Len())
+					d.stat(name, func(x *ProvDay) {
+						x.Articles++
+						x.Bytes += n
+						x.Seconds += took
+						if lacked {
+							x.Rescued++
+						}
+					})
 					return buf.Bytes(), ti, nil
 				}
 				if errors.Is(err, ErrNoArticle) {
 					p.put(c, true)
-					reached = true
+					reached, lacked = true, true
+					d.stat(name, func(x *ProvDay) { x.Missing++ })
 					break
 				}
 				p.put(c, false) // broken connection: drop it and retry
+				d.stat(name, func(x *ProvDay) { x.Errors++ })
 			}
 		}
 	}

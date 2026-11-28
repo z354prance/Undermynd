@@ -332,8 +332,10 @@ func (s *Server) RunInsights(ctx context.Context) {
 		now := time.Now()
 		s.countImports(now)
 		s.sampleWatching(ctx, now)
+		s.recordOutcomes(ctx)
 		if n%5 == 0 {
 			s.insSave()
+			s.outSave()
 		}
 		if n > 0 && n%30 == 0 {
 			s.refreshSlow(ctx)

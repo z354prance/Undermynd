@@ -561,3 +561,12 @@ body.ui .hv-saved span{font-size:14px;color:#c4c7ca}
 body.ui .hv-savebar{height:6px;border-radius:3px;background:var(--line)}
 body.ui .hv-savebar span{display:block;height:6px;border-radius:3px;background:var(--st-convert)}
 body.ui .hv-stat.ok b{color:#7ee08a}
+body.ui .hv-rate{display:inline-block;width:60px;height:6px;border-radius:3px;background:var(--line);vertical-align:middle;overflow:hidden}
+body.ui .hv-rate i{display:block;height:6px}
+body.ui .hv-why{display:flex;flex-direction:column;gap:6px;margin:6px 0 14px}
+body.ui .hv-whyrow{display:grid;grid-template-columns:170px 1fr 40px;gap:10px;align-items:center;font-size:14px}
+body.ui .hv-whyrow .b{height:10px;border-radius:5px;background:var(--line);overflow:hidden}
+body.ui .hv-whyrow .b i{display:block;height:10px;background:#f05454;border-radius:5px}
+body.ui .hv-whyrow b{text-align:right;font-family:var(--mono,monospace);font-weight:400}
+body.ui .hv-kvrow{display:flex;justify-content:space-between;font-size:14px;padding:3px 0;border-bottom:1px solid var(--line)}
+body.ui .hv-kvrow b{font-weight:400;font-family:var(--mono,monospace)}

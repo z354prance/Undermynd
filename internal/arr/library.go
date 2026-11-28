@@ -417,3 +417,33 @@ func (c *Client) Total(ctx context.Context, path string) (int, error) {
 	err := c.get(ctx, path+"?pageSize=1&monitored=true", &r)
 	return r.TotalRecords, err
 }
+
+// GrabDetail is where the arr says a download came from.
+type GrabDetail struct {
+	Indexer string
+	Group   string
+}
+
+// GrabDetail reads the indexer and release group of a download from the
+// arr's grab history (empty when the arr has no such grab).
+func (c *Client) GrabDetail(ctx context.Context, downloadID string) (GrabDetail, error) {
+	q := url.Values{"page": {"1"}, "pageSize": {"20"}, "downloadId": {downloadID}}
+	var r struct {
+		Records []struct {
+			EventType string `json:"eventType"`
+			Data      struct {
+				Indexer      string `json:"indexer"`
+				ReleaseGroup string `json:"releaseGroup"`
+			} `json:"data"`
+		} `json:"records"`
+	}
+	if err := c.get(ctx, "/history?"+q.Encode(), &r); err != nil {
+		return GrabDetail{}, err
+	}
+	for _, x := range r.Records {
+		if strings.EqualFold(x.EventType, "grabbed") {
+			return GrabDetail{Indexer: x.Data.Indexer, Group: x.Data.ReleaseGroup}, nil
+		}
+	}
+	return GrabDetail{}, nil
+}
