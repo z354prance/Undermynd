@@ -157,6 +157,10 @@ type Queued struct {
 	Season int       `json:"season,omitempty"`
 	Reason string    `json:"reason"`
 	Since  time.Time `json:"since"` // when it first qualified
+	// From is "tdarr" for titles sent from Downloads › Tdarr to be downloaded
+	// again from a better source: they wait behind the watched titles and
+	// are not dropped after queueKeep.
+	From string `json:"from,omitempty"`
 }
 
 // queueKeep is how long a queued title waits at most.
@@ -295,16 +299,25 @@ func (s *Service) Check(ctx context.Context) {
 	s.handoffs(ctx, set, now)
 	s.progress(ctx, set, now)
 
+	var cands []candidate
+	animeShows := map[int64]bool{}
 	if set.Playback.TracearrURL == "" || set.Playback.TracearrKey == "" {
 		s.st.LastError = "Tracearr is not set up (Settings › Media server)"
-		return
-	}
-	h := s.history(set.Playback)
-	cands, animeShows, err := s.candidates(ctx, h, now, ac)
-	if err != nil {
-		s.st.LastError = "reading Tracearr's history: " + err.Error()
-		s.Log.Printf("attention: %s", s.st.LastError)
-		return
+		if !s.hasFrom("tdarr") {
+			return
+		}
+	} else {
+		h := s.history(set.Playback)
+		var err error
+		cands, animeShows, err = s.candidates(ctx, h, now, ac)
+		if err != nil {
+			s.st.LastError = "reading Tracearr's history: " + err.Error()
+			s.Log.Printf("attention: %s", s.st.LastError)
+			if !s.hasFrom("tdarr") {
+				return
+			}
+			cands, animeShows = nil, map[int64]bool{}
+		}
 	}
 	// Each kind has its own daily limit: shows (Sonarr) and movies (Radarr).
 	// Movies: a daily limit. Shows: one at a time; the next show starts only
@@ -327,6 +340,8 @@ func (s *Service) Check(ctx context.Context) {
 			q2 = append(q2, q)
 		}
 	}
+	// Watched titles first, then the ones sent from the Tdarr page.
+	sort.SliceStable(q2, func(i, j int) bool { return q2[i].From == "" && q2[j].From != "" })
 	s.st.Queue = q2
 	s.screenQueue(ctx, set, now)
 	var keep []Queued
@@ -351,7 +366,7 @@ func (s *Service) enqueue(cands []candidate, now time.Time) {
 	idx := map[string]int{}
 	var q []Queued
 	for _, x := range s.st.Queue {
-		if now.Sub(x.Since) > queueKeep {
+		if x.From == "" && now.Sub(x.Since) > queueKeep {
 			continue
 		}
 		idx[qkey(x.Kind, x.TVDB, x.TMDB)] = len(q)
@@ -363,7 +378,7 @@ func (s *Service) enqueue(cands []candidate, now time.Time) {
 		c := cands[i]
 		k := qkey(c.kind, c.tvdb, c.tmdb)
 		if j, ok := idx[k]; ok {
-			q[j].Reason, q[j].Title = c.reason, c.title
+			q[j].Reason, q[j].Title, q[j].From = c.reason, c.title, ""
 			if c.season > 0 {
 				q[j].Season = c.season
 			}
@@ -373,6 +388,75 @@ func (s *Service) enqueue(cands []candidate, now time.Time) {
 		q = append(q, Queued{Kind: c.kind, TVDB: c.tvdb, TMDB: c.tmdb, Title: c.title, Year: c.year, Season: c.season, Reason: c.reason, Since: now})
 	}
 	s.st.Queue = q
+}
+
+func (s *Service) hasFrom(from string) bool {
+	for _, q := range s.st.Queue {
+		if q.From == from {
+			return true
+		}
+	}
+	return false
+}
+
+// Request is a title to download again from a better source (sent from
+// Downloads › Tdarr): a movie by TMDB id or a series by TVDB id.
+type Request struct {
+	Kind   string // movie | show
+	TMDB   int64
+	TVDB   int64
+	Title  string
+	Year   int
+	Reason string
+}
+
+// ErrOff is returned by Enqueue when Upgrades cannot take that kind.
+var ErrOff = errors.New("Upgrades is off")
+
+// Enqueue puts titles in the Upgrades queue, behind the watched ones. They go
+// through the same steps and daily limits: moved to the upgrade profile and
+// searched, a movie Radarr lacks added when its folder is found. It says how
+// many were added and how many were already waiting.
+func (s *Service) Enqueue(reqs []Request) (added, waiting int, err error) {
+	set := s.Cfg.Get()
+	at := set.Attention
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.load()
+	if !at.On {
+		return 0, 0, ErrOff
+	}
+	now := s.now()
+	idx := map[string]bool{}
+	for _, q := range s.st.Queue {
+		idx[qkey(q.Kind, q.TVDB, q.TMDB)] = true
+	}
+	for _, r := range reqs {
+		switch {
+		case r.Kind == "movie" && (r.TMDB == 0 || strings.TrimSpace(at.MovieProfile) == ""):
+			continue
+		case r.Kind == "show" && (r.TVDB == 0 || strings.TrimSpace(at.TVProfile) == ""):
+			continue
+		case r.Kind != "movie" && r.Kind != "show":
+			continue
+		}
+		if r.Kind == "movie" {
+			r.TVDB = 0
+			delete(s.st.Dismissed, r.TMDB) // asked for again by the admin
+		} else {
+			r.TMDB = 0
+		}
+		k := qkey(r.Kind, r.TVDB, r.TMDB)
+		if idx[k] {
+			waiting++
+			continue
+		}
+		idx[k] = true
+		s.st.Queue = append(s.st.Queue, Queued{Kind: r.Kind, TVDB: r.TVDB, TMDB: r.TMDB, Title: r.Title, Year: r.Year, Reason: r.Reason, Since: now, From: "tdarr"})
+		added++
+	}
+	s.save()
+	return added, waiting, nil
 }
 
 func qkey(kind string, tvdb, tmdb int64) string { return fmt.Sprintf("%s:%d:%d", kind, tvdb, tmdb) }
