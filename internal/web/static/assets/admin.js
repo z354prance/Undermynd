@@ -110,13 +110,19 @@
   function railCounts(rows){var bad=rows.filter(function(r){return r.attention&&r.state!=='cleaned'}).length,mv=rows.filter(function(r){return WORKING[r.group]}).length;
     if(homeCount){homeCount.textContent=bad;homeCount.hidden=!bad;homeCount.setAttribute('aria-label',bad+' need you')}if(dlCount){dlCount.textContent=mv;dlCount.hidden=!mv;dlCount.setAttribute('aria-label',mv+' moving')}}
   // The settings page: a menu in groups with a search box, and the chosen page beside it.
+  // Phone tables: every cell carries its column's name, so a row can be shown
+  // as a small card with labels (hyve.css, under 820px).
+  function labelTables(){[].forEach.call(document.querySelectorAll('table.hv-table'),function(t){var hr=t.querySelector('thead tr')||t.querySelector('tr');if(!hr)return;var hs=[].map.call(hr.children,function(h){return h.tagName==='TH'?h.textContent:''});
+    [].forEach.call(t.querySelectorAll('tr'),function(tr){if(tr===hr)return;[].forEach.call(tr.children,function(td,i){if(td.tagName==='TD'&&!td.hasAttribute('data-label'))td.setAttribute('data-label',hs[i]||'')})})})}
+  var labelT=null;try{new MutationObserver(function(){if(labelT)return;labelT=setTimeout(function(){labelT=null;labelTables()},60)}).observe(document.body,{childList:true,subtree:true})}catch(x){}
   function settingsShell(body,groups,go){
     var wrap=el('div','hv-set');var nav=el('nav','hv-setnav');nav.setAttribute('aria-label','Settings sections');var main=el('div','hv-setmain');wrap.appendChild(nav);wrap.appendChild(main);body.appendChild(wrap);
     var sw=el('label','hv-setsearch');sw.appendChild(svg('search'));var si=el('input');si.type='search';si.placeholder='Find a setting';si.setAttribute('aria-label','Find a setting');sw.appendChild(si);nav.appendChild(sw);
+    var curL='Settings';groups.forEach(function(g){(g[2]||g[1]).forEach(function(p){if(p[0]===tab)curL=p[1]})});var mt=el('button','hv-setmenu');mt.type='button';mt.setAttribute('aria-expanded','false');mt.appendChild(el('span','',curL));mt.appendChild(el('i','','All settings ▾'));mt.onclick=function(){var o=nav.classList.toggle('open');mt.setAttribute('aria-expanded',String(o))};nav.insertBefore(mt,sw);
     var links=[];
     groups.forEach(function(g){var items=g[2]||g[1],title=g[2]?g[0]:g[0];var box=el('div','hv-setgrp');if(title)box.appendChild(el('div','hv-setgh',title.toUpperCase()));
       items.forEach(function(p){var a=el('button','hv-setlink'+(p[0]===tab?' on':''),p[1]);a.type='button';if(p[0]===tab)a.setAttribute('aria-current','page');a.onclick=function(){go(p[0])};a.dataset.k=(p[1]+' '+(p[2]||'')).toLowerCase();links.push(a);box.appendChild(a)});nav.appendChild(box)});
-    si.oninput=function(){var q=si.value.trim().toLowerCase();links.forEach(function(a){a.hidden=!!q&&a.dataset.k.indexOf(q)<0});[].forEach.call(nav.querySelectorAll('.hv-setgrp'),function(g){g.hidden=![].some.call(g.querySelectorAll('.hv-setlink'),function(a){return !a.hidden})})};
+    si.oninput=function(){var q=si.value.trim().toLowerCase();nav.classList.toggle('q',!!q);links.forEach(function(a){a.hidden=!!q&&a.dataset.k.indexOf(q)<0});[].forEach.call(nav.querySelectorAll('.hv-setgrp'),function(g){g.hidden=![].some.call(g.querySelectorAll('.hv-setlink'),function(a){return !a.hidden})})};
     if(tab==='start')startView(main);else if(tab==='usenet')usenetView(main);else if(tab==='vpn')vpnView(main);else if(tab==='reencode')reencodeView(main);else if(tab==='log')logView(main);else if(tab==='leftovers')leftoversView(main);else if(tab==='limits')limitsView(main);else settingsView(main);
   }
   function fail(e){if(e.status===401){start()}else{var d=el('div','err',e.message);root.appendChild(d)}}
@@ -1021,7 +1027,7 @@
   }
   // Downloads › Reports: providers, indexers, clients and why downloads fail.
   function rtable(cols,rows){var wrap=el('div','hv-twrap');var t=el('table','hv-table');var hd=el('thead');var hr=el('tr');cols.forEach(function(c){var th=el('th','',c);th.scope='col';hr.appendChild(th)});hd.appendChild(hr);t.appendChild(hd);var bd=el('tbody');
-    rows.forEach(function(r){var tr=el('tr');r.forEach(function(v,i){var td=el('td');if(v&&v.nodeType)td.appendChild(v);else td.textContent=v==null?'':String(v);if(i===0)td.className=v&&v.tagName==='INPUT'?'hv-tcheck':'hv-tname';tr.appendChild(td)});bd.appendChild(tr)});t.appendChild(bd);wrap.appendChild(t);return wrap}
+    rows.forEach(function(r){var tr=el('tr');r.forEach(function(v,i){var td=el('td');td.setAttribute('data-label',cols[i]||'');if(v&&v.nodeType)td.appendChild(v);else td.textContent=v==null?'':String(v);if(i===0)td.className=v&&v.tagName==='INPUT'?'hv-tcheck':'hv-tname';tr.appendChild(td)});bd.appendChild(tr)});t.appendChild(bd);wrap.appendChild(t);return wrap}
   function pct(x){return x==null?'—':Math.round(x*100)+'%'}
   function rateBar(x){var w=el('span','hv-rate');var b=el('i');b.style.width=Math.round((x||0)*100)+'%';b.style.background=x>=.9?'var(--ok,#3fb950)':x>=.7?'#e3b341':'#f05454';w.appendChild(b);var t=el('span','');t.textContent=' '+pct(x);var d=el('span');d.appendChild(w);d.appendChild(t);return d}
   function reportsView(body){
