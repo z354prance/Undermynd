@@ -875,6 +875,7 @@
     var tiles=el('section','hv-tiles6');tiles.setAttribute('aria-label','Health');body.appendChild(tiles);
     var need=el('section','hv-need');body.appendChild(need);
     var g=el('div','hv-two');var mv=hvBox('Moving now'),fin=hvBox('Just finished');g.appendChild(mv);g.appendChild(fin);body.appendChild(g);
+    var tr=el('section','hv-trends');body.appendChild(tr);trendsBox(tr);
     var sysInfo=homeCache.sys||null,cl=homeCache.cl||null,vp=homeCache.vp||null,reqList=[],music=[],gpus=homeCache.gpus||[];
     function tile(label,line,tone,to){var b=el('button','hv-tile6 '+(tone||'ok'));b.type='button';var h=el('span','hv-th');h.appendChild(el('i'));h.appendChild(document.createTextNode(label));b.appendChild(h);b.appendChild(el('span','hv-tline',line));b.onclick=function(){tab=to;app()};tiles.appendChild(b)}
     function drawTiles(){tiles.replaceChildren();var s=sysInfo;if(!s)return;
@@ -1014,6 +1015,33 @@
     chips();load();
   }
   // What Tdarr could still save: older-format videos in the library.
+  // Trend charts on Home: the last 14 or 30 days, a small bar chart each.
+  var trendDays=14;
+  function trendsBox(host){
+    function draw(d){host.replaceChildren();var h=el('div','hv-trh');h.appendChild(el('h2','','The last '+trendDays+' days'));
+      var sw=el('div','hv-seg');[14,30].forEach(function(n){var b=el('button',n===trendDays?'on':'',n+' days');b.type='button';b.setAttribute('aria-pressed',String(n===trendDays));b.onclick=function(){trendDays=n;load()};sw.appendChild(b)});h.appendChild(sw);host.appendChild(h);
+      var days=d.days||[];var grid=el('div','hv-trgrid');host.appendChild(grid);
+      function fmtDay(k){var t=new Date(k+'T12:00:00');return t.toLocaleDateString(undefined,{month:'short',day:'numeric'})}
+      function card(title,total,series,fmt,empty){var c=el('div','hv-trc');var hd=el('div','hv-trt');hd.appendChild(el('span','',title));hd.appendChild(el('b','',total));c.appendChild(hd);
+        var max=0;days.forEach(function(_,i){var t=0;series.forEach(function(se){t+=se.v(days[i])||0});if(t>max)max=t});
+        if(!max){c.appendChild(el('div','hv-trempty',empty));grid.appendChild(c);return}
+        var W=280,H=70,n=days.length,gap=n>20?2:3,bw=(W-gap*(n-1))/n;var NS='http://www.w3.org/2000/svg';var svg=document.createElementNS(NS,'svg');svg.setAttribute('viewBox','0 0 '+W+' '+H);svg.setAttribute('class','hv-trsvg');svg.setAttribute('role','img');svg.setAttribute('aria-label',title+': '+total);
+        days.forEach(function(dd,i){var y=H,tip=[fmtDay(dd.date)];series.forEach(function(se){var v=se.v(dd)||0;tip.push(se.name+': '+fmt(v));if(!v)return;var hh=Math.max(1.5,H*v/max);y-=hh;var r=document.createElementNS(NS,'rect');r.setAttribute('x',(i*(bw+gap)).toFixed(1));r.setAttribute('y',y.toFixed(1));r.setAttribute('width',bw.toFixed(1));r.setAttribute('height',hh.toFixed(1));r.setAttribute('rx','1.5');r.setAttribute('fill',se.c);svg.appendChild(r)});
+          var hit=document.createElementNS(NS,'rect');hit.setAttribute('x',(i*(bw+gap)).toFixed(1));hit.setAttribute('y','0');hit.setAttribute('width',(bw+gap).toFixed(1));hit.setAttribute('height',String(H));hit.setAttribute('fill','transparent');var tt=document.createElementNS(NS,'title');tt.textContent=tip.join('\n');hit.appendChild(tt);svg.appendChild(hit)});
+        c.appendChild(svg);var ax=el('div','hv-trax');ax.appendChild(el('span','',fmtDay(days[0].date)));ax.appendChild(el('span','','today'));c.appendChild(ax);
+        if(series.length>1){var lg=el('div','hv-trlg');series.forEach(function(se){var k=el('span');var i=el('i');i.style.background=se.c;k.appendChild(i);k.appendChild(document.createTextNode(se.name));lg.appendChild(k)});c.appendChild(lg)}
+        grid.appendChild(c)}
+      function sum(f){return days.reduce(function(a,x){return a+(f(x)||0)},0)}
+      var nd=sum(function(x){return x.done}),nf=sum(function(x){return x.failed});
+      card('Downloads',nd.toLocaleString()+' done',[{name:'Done',c:'var(--st-ready)',v:function(x){return x.done}},{name:'Failed'+(nf?' ('+nf+')':''),c:'var(--bad)',v:function(x){return x.failed}}],function(v){return String(v)},'No downloads finished yet.');
+      card('Downloaded',gb(sum(function(x){return x.bytes})),[{name:'Downloaded',c:'var(--st-down)',v:function(x){return x.bytes}}],gb,'Nothing downloaded yet.');
+      card('Saved by Tdarr',gb(sum(function(x){return x.saved})),[{name:'Saved',c:'var(--st-convert)',v:function(x){return x.saved}}],gb,'Counted per day from this version on.');
+      card('Added to the library',sum(function(x){return x.added}).toLocaleString(),[{name:'Added',c:'var(--st-transfer)',v:function(x){return x.added}}],function(v){return String(v)},'Nothing counted yet.');
+      card('Watched',sum(function(x){return x.watchedHours}).toFixed(1)+' h',[{name:'Watched',c:'var(--accent)',v:function(x){return x.watchedHours}}],function(v){return v.toFixed(1)+' h'},'No watch time counted yet (needs Tracearr).');
+    }
+    function load(){api('GET','/trends?days='+trendDays).then(draw).catch(function(e){host.replaceChildren(el('div','hv-empty',e.message))})}
+    load();
+  }
   function potentialBox(host){
     var box=hvBox('What Tdarr could still save');host.appendChild(box);var inner=el('div');box.appendChild(inner);
     function load(){api('GET','/tdarr/potential').then(function(d){inner.replaceChildren();

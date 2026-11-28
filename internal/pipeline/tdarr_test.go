@@ -70,6 +70,9 @@ func TestTdarrStage(t *testing.T) {
 	if sv := u.eng.TdarrSavings(); sv.Files != 1 || sv.Before != int64(len(body)) || sv.After != int64(len(small)) || sv.Categories[j.Category].Files != 1 {
 		t.Fatalf("savings %+v", sv)
 	}
+	if sv := u.eng.TdarrSavings(); len(sv.Days) != 1 {
+		t.Fatalf("savings by day = %+v, want one day", sv.Days)
+	}
 }
 
 func TestTdarrBadOutputFails(t *testing.T) {
