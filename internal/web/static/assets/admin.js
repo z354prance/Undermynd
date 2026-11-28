@@ -96,6 +96,7 @@
     api('GET','/jobs').then(function(d){railCounts(Array.isArray(d)?d:(d.jobs||[]))}).catch(function(){});
     var mainCol=el('div','hv-main'),head=el('header','hv-head');head.appendChild(el('h1','',cur.label));
     if(cur.pages.length>1&&!cur.settings){var pl=el('div','hv-pills');pl.setAttribute('role','tablist');cur.pages.forEach(function(p){var b=el('button',p===curPage?'on':'',p[1]);b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-selected',p===curPage?'true':'false');b.onclick=function(){go(first(p))};tabBtns[p[0]]=b;pl.appendChild(b)});head.appendChild(pl)}
+    head.appendChild(searchBox(NAV,SETTINGS,go));
     var out=el('button','hv-out','Sign out');out.type='button';out.onclick=function(){api('POST','/logout').then(start)};head.appendChild(out);
     mainCol.appendChild(head);
     if(curPage[2]){var tb=el('div','hv-tabs');tb.setAttribute('role','tablist');curPage[2].forEach(function(q){var b=el('button',q[0]===tab?'on':'',q[1]);b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-selected',q[0]===tab?'true':'false');b.onclick=function(){go(q[0])};tabBtns[q[0]]=b;tb.appendChild(b)});mainCol.appendChild(tb)}
@@ -1015,6 +1016,40 @@
     chips();load();
   }
   // What Tdarr could still save: older-format videos in the library.
+  // One search across everything, in the header: downloads, finished and
+  // failed ones, requests, anime folders, what the feeds saw, and pages.
+  var searchKeyBound=false,searchInput=null;
+  function searchBox(NAV,SETTINGS,go){
+    var w=el('div','hv-gs');var lab=el('label','hv-gsin');lab.appendChild(svg('search'));var inp=el('input');inp.type='search';inp.placeholder='Search everything';inp.setAttribute('aria-label','Search everything');inp.setAttribute('autocomplete','off');lab.appendChild(inp);lab.appendChild(el('kbd','','/'));w.appendChild(lab);
+    var pan=el('div','hv-gsp');pan.hidden=true;pan.setAttribute('role','listbox');w.appendChild(pan);searchInput=inp;
+    if(!searchKeyBound){searchKeyBound=true;document.addEventListener('keydown',function(e){if(e.key==='/'&&searchInput&&document.activeElement.tagName!=='INPUT'&&document.activeElement.tagName!=='TEXTAREA'&&document.activeElement.tagName!=='SELECT'){e.preventDefault();searchInput.focus()}})}
+    var pages=[];NAV.forEach(function(sec){if(sec.settings)return;sec.pages.forEach(function(p){pages.push({label:sec.label+' › '+p[1],id:p[0],k:(sec.label+' '+p[1]).toLowerCase()})})});
+    SETTINGS.forEach(function(g){(g[2]||g[1]).forEach(function(p){pages.push({label:'Settings › '+p[1],id:p[0],k:('settings '+p[1]+' '+(p[2]||'')).toLowerCase()})})});
+    var seq=0,tmr=null,first=null;
+    function close(){pan.hidden=true}
+    function openHit(h){close();inp.value='';inp.blur();if(h.page){go(h.page);return}
+      if(h.kind==='download'){stopLive();tab='jobs';detailId=h.id;try{history.replaceState(null,'','#jobs')}catch(x){}app();return}
+      if(h.kind==='show'){stopLive();tab='anime';aView.page='show';aView.folder=h.arg;app();return}
+      go(h.open)}
+    function row(h,title,sub,tone,when){var b=el('button','hv-gsr');b.type='button';b.setAttribute('role','option');var t=el('span','hv-gst');t.appendChild(el('b','',title));if(sub)t.appendChild(el('span','',sub));b.appendChild(t);
+      if(h.state)b.appendChild(el('span','hv-gss '+(tone||'dim'),h.state));if(when)b.appendChild(el('span','hv-gsw',ago(when)));b.onclick=function(){openHit(h)};if(!first)first=h;return b}
+    function draw(d,q){pan.replaceChildren();first=null;var ql=q.toLowerCase(),n=0;
+      var pg=pages.filter(function(p){return ql.split(/\s+/).every(function(w){return p.k.indexOf(w)>=0})}).slice(0,5);
+      function grp(title,list,mk){if(!list.length)return;pan.appendChild(el('div','hv-gsh',title));list.forEach(function(h){pan.appendChild(mk(h));n++})}
+      grp('Pages',pg,function(p){return row({page:p.id},p.label,'','','')});
+      if(d){grp('In the pipeline',d.downloads||[],function(h){return row(h,h.title,h.sub,h.tone,h.at)});
+        grp('Finished and failed (40 days)',d.history||[],function(h){return row(h,h.title,h.sub,h.tone,h.at)});
+        grp('Requests',d.requests||[],function(h){return row(h,h.title,h.sub,h.tone,h.at)});
+        grp('Anime folders',d.shows||[],function(h){return row(h,h.title,h.sub,'','')});
+        grp('Seen in feeds',d.feeds||[],function(h){return row(h,h.title,h.sub,'',h.at)})}
+      if(!n)pan.appendChild(el('div','hv-gse',d?'Nothing found for “'+q+'”.':'Searching…'));pan.hidden=false}
+    inp.oninput=function(){var q=inp.value.trim();clearTimeout(tmr);if(q.length<2){close();return}draw(null,q);var my=++seq;
+      tmr=setTimeout(function(){api('GET','/search?q='+encodeURIComponent(q)).then(function(d){if(my===seq)draw(d,q)}).catch(function(e){if(my===seq){pan.replaceChildren(el('div','hv-gse',e.message));pan.hidden=false}})},220)};
+    inp.onkeydown=function(e){if(e.key==='Escape'){close();inp.blur()}else if(e.key==='Enter'&&first){e.preventDefault();openHit(first)}else if(e.key==='ArrowDown'){var r=pan.querySelector('.hv-gsr');if(r){e.preventDefault();r.focus()}}};
+    pan.onkeydown=function(e){var rs=[].slice.call(pan.querySelectorAll('.hv-gsr')),i=rs.indexOf(document.activeElement);if(e.key==='ArrowDown'&&i<rs.length-1){e.preventDefault();rs[i+1].focus()}else if(e.key==='ArrowUp'){e.preventDefault();if(i>0)rs[i-1].focus();else inp.focus()}else if(e.key==='Escape'){close();inp.focus()}};
+    inp.onfocus=function(){if(inp.value.trim().length>=2&&pan.childNodes.length)pan.hidden=false};
+    document.addEventListener('mousedown',function(e){if(!w.contains(e.target))close()});
+    return w}
   // Trend charts on Home: the last 14 or 30 days, a small bar chart each.
   var trendDays=14;
   function trendsBox(host){
