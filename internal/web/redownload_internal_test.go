@@ -56,3 +56,15 @@ func TestClassify(t *testing.T) {
 		}
 	}
 }
+
+// Re-encode files are grouped by their movie or show folder.
+func TestPotentialGroups(t *testing.T) {
+	g := map[string]int{}
+	for _, rel := range []string{"TV/Suits/Season 1/a.mkv", "TV/Suits/Season 2/b.mkv", "Movies/Heat (1995)/Heat.mkv", "loose.mkv"} {
+		segs := splitRel(rel)
+		g[segs]++
+	}
+	if g["TV/Suits"] != 2 || g["Movies/Heat (1995)"] != 1 || g["loose.mkv"] != 1 {
+		t.Fatalf("%v", g)
+	}
+}
